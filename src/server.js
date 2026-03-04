@@ -41,6 +41,7 @@ const openai = new OpenAI({
         budget TEXT,
         use_case TEXT,
         interest_level TEXT DEFAULT 'LOW',
+        intent TEXT,
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()
       );
@@ -69,12 +70,12 @@ const openai = new OpenAI({
 app.get("/", (req, res) => {
   res.json({
     status: "EVA Core running 🚀",
-    version: "1.1.5"
+    version: "1.2.0"
   });
 });
 
 /* ===============================
-   INBOUND MESSAGE ENDPOINT
+   INBOUND MESSAGE
 ================================ */
 app.post("/v1/messages/inbound", async (req, res) => {
   try {
@@ -131,7 +132,7 @@ app.post("/v1/messages/inbound", async (req, res) => {
     );
 
     /* ===============================
-       LOAD CONVERSATION HISTORY
+       LOAD HISTORY
     ============================== */
     const history = await pool.query(
       "SELECT role, content FROM messages WHERE conversation_id = $1 ORDER BY created_at ASC LIMIT 10",
@@ -144,16 +145,14 @@ You are EVA, an AI sales assistant designed to help businesses convert conversat
 Your mission is to understand the customer's needs and guide them to the best product or solution.
 
 Personality:
-- Friendly and professional
-- Clear and easy to understand
-- Helpful and trustworthy
+- Friendly
+- Professional
+- Natural
 
 Rules:
-- Keep responses short and natural.
-- Ask questions to understand what the customer needs.
-- Guide the conversation toward a solution or purchase.
-- Never list your capabilities like a chatbot.
-- Speak like a human sales advisor.
+- Keep responses short
+- Ask clarifying questions
+- Guide toward a solution
 `;
 
     /* ===============================
@@ -172,6 +171,33 @@ Rules:
     const reply = response.choices[0].message.content;
 
     /* ===============================
+       SIMPLE INTENT DETECTION
+    ============================== */
+
+    let intent = "INFO";
+
+    if (text.toLowerCase().includes("precio") ||
+        text.toLowerCase().includes("comprar") ||
+        text.toLowerCase().includes("cuesta")) {
+      intent = "BUY";
+    }
+
+    if (text.toLowerCase().includes("hola") ||
+        text.toLowerCase().includes("buenas")) {
+      intent = "GREETING";
+    }
+
+    if (text.toLowerCase().includes("problema") ||
+        text.toLowerCase().includes("no funciona")) {
+      intent = "SUPPORT";
+    }
+
+    await pool.query(
+      "UPDATE leads SET intent=$1, updated_at=NOW() WHERE phone=$2",
+      [intent, external_user_id]
+    );
+
+    /* ===============================
        SAVE EVA RESPONSE
     ============================== */
     await pool.query(
@@ -181,6 +207,7 @@ Rules:
 
     res.json({
       reply,
+      intent,
       stage: "AI_ACTIVE",
       confidence: 0.95
     });
