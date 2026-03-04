@@ -831,7 +831,48 @@ app.post("/v1/messages/inbound", async (req, res) => {
 (async () => {
   try {
     await ensureSchema();
+app.get("/v1/conversations", async (req, res) => {
+  try {
+    const api_key = req.query.api_key;
 
+    if (!api_key) {
+      return res.status(401).json({ error: "Missing API key" });
+    }
+
+    const org = await getOrgByApiKey(api_key);
+    if (!org) {
+      return res.status(401).json({ error: "Unauthorized - Invalid API Key" });
+    }
+
+    const result = await pool.query(`
+      SELECT 
+        c.id AS conversation_id,
+        c.external_user_id,
+        l.intent,
+        l.score,
+        l.stage,
+        l.interest_level,
+        (
+          SELECT text
+          FROM messages
+          WHERE conversation_id = c.id
+          ORDER BY created_at DESC
+          LIMIT 1
+        ) AS last_message
+      FROM conversations c
+      LEFT JOIN leads l 
+        ON l.external_user_id = c.external_user_id
+      WHERE c.organization_id = $1
+      ORDER BY c.created_at DESC
+    `, [org.id]);
+
+    res.json({ conversations: result.rows });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
     app.listen(PORT, () => {
       console.log(`EVA running on port ${PORT}`);
     });
