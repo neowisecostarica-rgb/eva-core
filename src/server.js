@@ -47,6 +47,21 @@ app.get("/", (req, res) => {
 app.post("/v1/messages/inbound", async (req, res) => {
   try {
     const { api_key, external_user_id, text, channel } = req.body;
+    
+    // Buscar o crear conversación
+let conversation = await pool.query(
+  "SELECT * FROM conversations WHERE external_user_id = $1 LIMIT 1",
+  [external_user_id]
+);
+
+if (conversation.rows.length === 0) {
+  conversation = await pool.query(
+    "INSERT INTO conversations (external_user_id, channel) VALUES ($1, $2) RETURNING *",
+    [external_user_id, channel || "unknown"]
+  );
+}
+
+const conversation_id = conversation.rows[0].id;
 
     if (!api_key || !external_user_id || !text) {
       return res.status(400).json({
