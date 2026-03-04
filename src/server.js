@@ -100,7 +100,17 @@ app.get("/test", async (req, res) => {
       messages: [
         {
           role: "system",
-          content: "You are EVA, a helpful AI sales assistant."
+          content: content: `
+You are EVA, an AI sales assistant.
+
+Your job is to help customers find the right product and guide them toward purchase.
+
+Rules:
+- Keep responses short
+- Ask questions to understand the customer
+- Guide the conversation toward a purchase
+- Speak like a friendly human sales advisor
+`
         },
         {
           role: "user",
