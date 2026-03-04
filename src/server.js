@@ -1,5 +1,6 @@
 import express from "express";
 import dotenv from "dotenv";
+import OpenAI from "openai";
 
 dotenv.config();
 
@@ -8,32 +9,63 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
 
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
+
 // Health check
 app.get("/", (req, res) => {
   res.json({
     status: "EVA Core running 🚀",
-    version: "1.0.0"
+    version: "1.1.0"
   });
 });
 
-// MVP inbound endpoint
+// Real inbound endpoint connected to OpenAI
 app.post("/v1/messages/inbound", async (req, res) => {
-  const { api_key, external_user_id, text, channel } = req.body;
+  try {
+    const { api_key, external_user_id, text, channel } = req.body;
 
-  if (!api_key || !external_user_id || !text) {
-    return res.status(400).json({
-      error: "Missing required fields"
+    if (!api_key || !external_user_id || !text) {
+      return res.status(400).json({
+        error: "Missing required fields"
+      });
+    }
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content: `
+You are EVA, a professional AI assistant for sales and customer service.
+Be concise, friendly, persuasive and structured.
+`
+        },
+        {
+          role: "user",
+          content: text
+        }
+      ],
+      temperature: 0.7
+    });
+
+    const reply = response.choices[0].message.content;
+
+    res.json({
+      reply,
+      stage: "AI_ACTIVE",
+      confidence: 0.95
+    });
+
+  } catch (error) {
+    console.error("OpenAI Error:", error);
+
+    res.status(500).json({
+      error: "EVA failed to respond",
+      stage: "ERROR"
     });
   }
-
-  // Respuesta simulada por ahora (luego conectamos LLM)
-  const reply = `Hola 🙌 Recibí tu mensaje: "${text}". Estamos construyendo EVA 🚀`;
-
-  res.json({
-    reply,
-    stage: "DISCOVERY",
-    confidence: 0.80
-  });
 });
 
 app.listen(PORT, () => {
