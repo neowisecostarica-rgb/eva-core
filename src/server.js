@@ -29,7 +29,22 @@ const openai = new OpenAI({
         updated_at TIMESTAMP DEFAULT NOW()
       );
     `);
-
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS leads (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    phone TEXT,
+    email TEXT,
+    instagram TEXT,
+    source TEXT,
+    status TEXT DEFAULT 'NEW',
+    budget TEXT,
+    use_case TEXT,
+    interest_level TEXT DEFAULT 'LOW',
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+  );
+`);
+    
     await pool.query(`
       CREATE TABLE IF NOT EXISTS messages (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
