@@ -17,7 +17,7 @@ const openai = new OpenAI({
 app.get("/", (req, res) => {
   res.json({
     status: "EVA Core running 🚀",
-    version: "1.1.0"
+    version: "1.1.1"
   });
 });
 
@@ -29,6 +29,13 @@ app.post("/v1/messages/inbound", async (req, res) => {
     if (!api_key || !external_user_id || !text) {
       return res.status(400).json({
         error: "Missing required fields"
+      });
+    }
+
+    // 🔐 API SECURITY CHECK
+    if (api_key !== process.env.MASTER_API_KEY) {
+      return res.status(401).json({
+        error: "Unauthorized - Invalid API Key"
       });
     }
 
