@@ -98,6 +98,11 @@ app.post("/v1/messages/inbound", async (req, res) => {
       [conversation_id, "user", text]
     );
 
+    const history = await pool.query(
+  "SELECT role, content FROM messages WHERE conversation_id = $1 ORDER BY created_at ASC LIMIT 10",
+  [conversation_id]
+);
+    
     const systemPrompt = `
 You are EVA, an AI sales assistant designed to help businesses convert conversations into sales.
 
@@ -118,10 +123,11 @@ Rules:
 
     const response = await openai.chat.completions.create({
       model: "gpt-4o-mini",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: text }
-      ],
+     messages: [
+  { role: "system", content: systemPrompt },
+  ...history.rows,
+  { role: "user", content: text }
+],
       temperature: 0.7
     });
 
