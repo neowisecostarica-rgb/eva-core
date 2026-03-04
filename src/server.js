@@ -29,22 +29,23 @@ const openai = new OpenAI({
         updated_at TIMESTAMP DEFAULT NOW()
       );
     `);
-await pool.query(`
-  CREATE TABLE IF NOT EXISTS leads (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    phone TEXT,
-    email TEXT,
-    instagram TEXT,
-    source TEXT,
-    status TEXT DEFAULT 'NEW',
-    budget TEXT,
-    use_case TEXT,
-    interest_level TEXT DEFAULT 'LOW',
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW()
-  );
-`);
-    
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS leads (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        phone TEXT UNIQUE,
+        email TEXT,
+        instagram TEXT,
+        source TEXT,
+        status TEXT DEFAULT 'NEW',
+        budget TEXT,
+        use_case TEXT,
+        interest_level TEXT DEFAULT 'LOW',
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      );
+    `);
+
     await pool.query(`
       CREATE TABLE IF NOT EXISTS messages (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -68,7 +69,7 @@ await pool.query(`
 app.get("/", (req, res) => {
   res.json({
     status: "EVA Core running 🚀",
-    version: "1.1.4"
+    version: "1.1.5"
   });
 });
 
@@ -92,7 +93,21 @@ app.post("/v1/messages/inbound", async (req, res) => {
       });
     }
 
-    /* Buscar o crear conversación */
+    /* ===============================
+       CREATE LEAD IF NOT EXISTS
+    ============================== */
+    await pool.query(
+      `
+      INSERT INTO leads (phone, source)
+      VALUES ($1,$2)
+      ON CONFLICT (phone) DO NOTHING
+      `,
+      [external_user_id, channel || "unknown"]
+    );
+
+    /* ===============================
+       FIND OR CREATE CONVERSATION
+    ============================== */
     let conversation = await pool.query(
       "SELECT * FROM conversations WHERE external_user_id = $1 LIMIT 1",
       [external_user_id]
@@ -107,17 +122,22 @@ app.post("/v1/messages/inbound", async (req, res) => {
 
     const conversation_id = conversation.rows[0].id;
 
-    /* Guardar mensaje del usuario */
+    /* ===============================
+       SAVE USER MESSAGE
+    ============================== */
     await pool.query(
       "INSERT INTO messages (conversation_id, role, content) VALUES ($1,$2,$3)",
       [conversation_id, "user", text]
     );
 
+    /* ===============================
+       LOAD CONVERSATION HISTORY
+    ============================== */
     const history = await pool.query(
-  "SELECT role, content FROM messages WHERE conversation_id = $1 ORDER BY created_at ASC LIMIT 10",
-  [conversation_id]
-);
-    
+      "SELECT role, content FROM messages WHERE conversation_id = $1 ORDER BY created_at ASC LIMIT 10",
+      [conversation_id]
+    );
+
     const systemPrompt = `
 You are EVA, an AI sales assistant designed to help businesses convert conversations into sales.
 
@@ -136,19 +156,24 @@ Rules:
 - Speak like a human sales advisor.
 `;
 
+    /* ===============================
+       AI RESPONSE
+    ============================== */
     const response = await openai.chat.completions.create({
       model: "gpt-4o-mini",
-     messages: [
-  { role: "system", content: systemPrompt },
-  ...history.rows,
-  { role: "user", content: text }
-],
+      messages: [
+        { role: "system", content: systemPrompt },
+        ...history.rows,
+        { role: "user", content: text }
+      ],
       temperature: 0.7
     });
 
     const reply = response.choices[0].message.content;
 
-    /* Guardar respuesta de EVA */
+    /* ===============================
+       SAVE EVA RESPONSE
+    ============================== */
     await pool.query(
       "INSERT INTO messages (conversation_id, role, content) VALUES ($1,$2,$3)",
       [conversation_id, "assistant", reply]
