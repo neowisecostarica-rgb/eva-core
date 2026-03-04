@@ -10,23 +10,25 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
 
-// Test DB connection
-pool.query("SELECT NOW()", (err, res) => {
-  if (err) {
-    console.error("DB connection error:", err);
-  } else {
-    console.log("DB connected:", res.rows[0]);
-  }
-});
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
+
+// Test DB connection
+(async () => {
+  try {
+    const result = await pool.query("SELECT NOW()");
+    console.log("DB connected:", result.rows[0]);
+  } catch (err) {
+    console.error("DB connection error:", err);
+  }
+})();
 
 // Health check
 app.get("/", (req, res) => {
   res.json({
     status: "EVA Core running 🚀",
-    version: "1.1.2"
+    version: "1.1.3"
   });
 });
 
