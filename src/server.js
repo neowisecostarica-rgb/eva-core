@@ -10,6 +10,14 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
 
+// Test DB connection
+pool.query("SELECT NOW()", (err, res) => {
+  if (err) {
+    console.error("DB connection error:", err);
+  } else {
+    console.log("DB connected:", res.rows[0]);
+  }
+});
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
