@@ -42,6 +42,7 @@ const openai = new OpenAI({
         use_case TEXT,
         interest_level TEXT DEFAULT 'LOW',
         intent TEXT,
+        score INTEGER DEFAULT 0,
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()
       );
@@ -70,7 +71,7 @@ const openai = new OpenAI({
 app.get("/", (req, res) => {
   res.json({
     status: "EVA Core running 🚀",
-    version: "1.2.0"
+    version: "1.3.0"
   });
 });
 
@@ -171,30 +172,45 @@ Rules:
     const reply = response.choices[0].message.content;
 
     /* ===============================
-       SIMPLE INTENT DETECTION
+       INTENT DETECTION
     ============================== */
 
     let intent = "INFO";
+    let score = 40;
 
-    if (text.toLowerCase().includes("precio") ||
-        text.toLowerCase().includes("comprar") ||
-        text.toLowerCase().includes("cuesta")) {
+    const msg = text.toLowerCase();
+
+    if (
+      msg.includes("precio") ||
+      msg.includes("comprar") ||
+      msg.includes("cuesta")
+    ) {
       intent = "BUY";
+      score = 80;
     }
 
-    if (text.toLowerCase().includes("hola") ||
-        text.toLowerCase().includes("buenas")) {
+    if (
+      msg.includes("hola") ||
+      msg.includes("buenas")
+    ) {
       intent = "GREETING";
+      score = 10;
     }
 
-    if (text.toLowerCase().includes("problema") ||
-        text.toLowerCase().includes("no funciona")) {
+    if (
+      msg.includes("problema") ||
+      msg.includes("no funciona")
+    ) {
       intent = "SUPPORT";
+      score = 30;
     }
 
+    /* ===============================
+       UPDATE LEAD
+    ============================== */
     await pool.query(
-      "UPDATE leads SET intent=$1, updated_at=NOW() WHERE phone=$2",
-      [intent, external_user_id]
+      "UPDATE leads SET intent=$1, score=$2, updated_at=NOW() WHERE phone=$3",
+      [intent, score, external_user_id]
     );
 
     /* ===============================
@@ -208,6 +224,7 @@ Rules:
     res.json({
       reply,
       intent,
+      score,
       stage: "AI_ACTIVE",
       confidence: 0.95
     });
