@@ -100,7 +100,7 @@ app.get("/test", async (req, res) => {
       messages: [
         {
           role: "system",
-          content: content: `
+          content:`
 You are EVA, an AI sales assistant.
 
 Your job is to help customers find the right product and guide them toward purchase.
