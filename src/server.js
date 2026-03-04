@@ -17,8 +17,19 @@ const openai = new OpenAI({
 // Test DB connection
 (async () => {
   try {
-    const result = await pool.query("SELECT NOW()");
-    console.log("DB connected:", result.rows[0]);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS conversations (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        external_user_id TEXT NOT NULL,
+        channel TEXT,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      );
+    `);
+
+    console.log("DB connected and conversations table ready");
+
   } catch (err) {
     console.error("DB connection error:", err);
   }
