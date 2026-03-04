@@ -38,6 +38,7 @@ const openai = new OpenAI({
         instagram TEXT,
         source TEXT,
         status TEXT DEFAULT 'NEW',
+        stage TEXT DEFAULT 'NEW',
         budget TEXT,
         use_case TEXT,
         interest_level TEXT DEFAULT 'LOW',
@@ -58,6 +59,17 @@ const openai = new OpenAI({
       );
     `);
 
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS pipeline_events (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        lead_phone TEXT NOT NULL,
+        from_stage TEXT,
+        to_stage TEXT NOT NULL,
+        reason TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+    `);
+
     console.log("DB connected and tables ready");
 
   } catch (err) {
@@ -71,7 +83,7 @@ const openai = new OpenAI({
 app.get("/", (req, res) => {
   res.json({
     status: "EVA Core running 🚀",
-    version: "1.3.0"
+    version: "1.4.0"
   });
 });
 
@@ -84,16 +96,15 @@ app.post("/v1/messages/inbound", async (req, res) => {
     const { api_key, external_user_id, text, channel } = req.body;
 
     if (!api_key || !external_user_id || !text) {
-      return res.status(400).json({
-        error: "Missing required fields"
-      });
+      return res.status(400).json({ error: "Missing required fields" });
     }
 
     if (api_key !== process.env.MASTER_API_KEY) {
-      return res.status(401).json({
-        error: "Unauthorized - Invalid API Key"
-      });
+      return res.status(401).json({ error: "Unauthorized - Invalid API Key" });
     }
+
+    const leadPhone = external_user_id;
+    const leadSource = channel || "unknown";
 
     /* ===============================
        CREATE LEAD IF NOT EXISTS
@@ -104,7 +115,7 @@ app.post("/v1/messages/inbound", async (req, res) => {
       VALUES ($1,$2)
       ON CONFLICT (phone) DO NOTHING
       `,
-      [external_user_id, channel || "unknown"]
+      [leadPhone, leadSource]
     );
 
     /* ===============================
@@ -112,13 +123,13 @@ app.post("/v1/messages/inbound", async (req, res) => {
     ============================== */
     let conversation = await pool.query(
       "SELECT * FROM conversations WHERE external_user_id = $1 LIMIT 1",
-      [external_user_id]
+      [leadPhone]
     );
 
     if (conversation.rows.length === 0) {
       conversation = await pool.query(
         "INSERT INTO conversations (external_user_id, channel) VALUES ($1,$2) RETURNING *",
-        [external_user_id, channel || "unknown"]
+        [leadPhone, leadSource]
       );
     }
 
@@ -143,17 +154,10 @@ app.post("/v1/messages/inbound", async (req, res) => {
     const systemPrompt = `
 You are EVA, an AI sales assistant designed to help businesses convert conversations into sales.
 
-Your mission is to understand the customer's needs and guide them to the best product or solution.
-
-Personality:
-- Friendly
-- Professional
-- Natural
-
 Rules:
-- Keep responses short
-- Ask clarifying questions
-- Guide toward a solution
+- Keep responses short and natural.
+- Ask clarifying questions.
+- Guide toward a solution or purchase.
 `;
 
     /* ===============================
@@ -172,46 +176,93 @@ Rules:
     const reply = response.choices[0].message.content;
 
     /* ===============================
-       INTENT DETECTION
+       INTENT + SCORE
     ============================== */
-
     let intent = "INFO";
     let score = 40;
 
     const msg = text.toLowerCase();
 
-    if (
+    const isBuy =
       msg.includes("precio") ||
       msg.includes("comprar") ||
-      msg.includes("cuesta")
-    ) {
+      msg.includes("cuesta") ||
+      msg.includes("disponible") ||
+      msg.includes("apartarlo") ||
+      msg.includes("apartar");
+
+    const isGreeting =
+      msg.includes("hola") ||
+      msg.includes("buenas") ||
+      msg.includes("buenos");
+
+    const isSupport =
+      msg.includes("problema") ||
+      msg.includes("no funciona") ||
+      msg.includes("reparar") ||
+      msg.includes("arreglar") ||
+      msg.includes("diagnóstico") ||
+      msg.includes("diagnostico");
+
+    if (isBuy) {
       intent = "BUY";
       score = 80;
-    }
-
-    if (
-      msg.includes("hola") ||
-      msg.includes("buenas")
-    ) {
+    } else if (isGreeting) {
       intent = "GREETING";
       score = 10;
-    }
-
-    if (
-      msg.includes("problema") ||
-      msg.includes("no funciona")
-    ) {
+    } else if (isSupport) {
       intent = "SUPPORT";
       score = 30;
     }
 
     /* ===============================
-       UPDATE LEAD
+       PIPELINE STAGE AUTO
+    ============================== */
+    // stages: NEW → CONTACTED → QUALIFIED → PROPOSAL → CLOSED
+    const leadRow = await pool.query(
+      "SELECT stage FROM leads WHERE phone=$1 LIMIT 1",
+      [leadPhone]
+    );
+    const currentStage = leadRow.rows[0]?.stage || "NEW";
+
+    let newStage = currentStage;
+    let reason = null;
+
+    // si ya habló, pasa a CONTACTED
+    if (currentStage === "NEW") {
+      newStage = "CONTACTED";
+      reason = "first_message";
+    }
+
+    // intención de compra o score alto => QUALIFIED
+    if (intent === "BUY" && (currentStage === "NEW" || currentStage === "CONTACTED")) {
+      newStage = "QUALIFIED";
+      reason = "buy_intent";
+    }
+
+    // si pregunta precio/apartar => PROPOSAL (ya está listo para oferta)
+    if (isBuy && (msg.includes("precio") || msg.includes("apart") || msg.includes("pago") || msg.includes("sinpe"))) {
+      newStage = "PROPOSAL";
+      reason = "price_or_reserve";
+    }
+
+    /* ===============================
+       UPDATE LEAD + PIPELINE EVENT
     ============================== */
     await pool.query(
-      "UPDATE leads SET intent=$1, score=$2, updated_at=NOW() WHERE phone=$3",
-      [intent, score, external_user_id]
+      "UPDATE leads SET intent=$1, score=$2, stage=$3, updated_at=NOW() WHERE phone=$4",
+      [intent, score, newStage, leadPhone]
     );
+
+    if (newStage !== currentStage) {
+      await pool.query(
+        `
+        INSERT INTO pipeline_events (lead_phone, from_stage, to_stage, reason)
+        VALUES ($1,$2,$3,$4)
+        `,
+        [leadPhone, currentStage, newStage, reason]
+      );
+    }
 
     /* ===============================
        SAVE EVA RESPONSE
@@ -225,19 +276,16 @@ Rules:
       reply,
       intent,
       score,
-      stage: "AI_ACTIVE",
+      stage: newStage,
+      stage_prev: currentStage,
+      stage_reason: reason,
+      ai_stage: "AI_ACTIVE",
       confidence: 0.95
     });
 
   } catch (error) {
-
-    console.error("OpenAI Error:", error);
-
-    res.status(500).json({
-      error: "EVA failed to respond",
-      stage: "ERROR"
-    });
-
+    console.error("EVA Error:", error);
+    res.status(500).json({ error: "EVA failed to respond", stage: "ERROR" });
   }
 });
 
