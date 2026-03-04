@@ -27,6 +27,22 @@ const openai = new OpenAI({
         updated_at TIMESTAMP DEFAULT NOW()
       );
     `);
+await pool.query(`
+      CREATE TABLE IF NOT EXISTS messages (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        conversation_id UUID REFERENCES conversations(id),
+        role TEXT,
+        content TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+    `);
+
+    console.log("DB connected and tables ready");
+
+  } catch (err) {
+    console.error("DB connection error:", err);
+  }
+})();
 
     console.log("DB connected and conversations table ready");
 
