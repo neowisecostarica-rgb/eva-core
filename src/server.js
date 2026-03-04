@@ -88,6 +88,42 @@ app.get("/", (req, res) => {
 });
 
 /* ===============================
+   TEST ENDPOINT
+================================ */
+app.get("/test", async (req, res) => {
+  try {
+
+    const text = req.query.msg || "hola";
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content: "You are EVA, a helpful AI sales assistant."
+        },
+        {
+          role: "user",
+          content: text
+        }
+      ]
+    });
+
+    res.json({
+      question: text,
+      reply: response.choices[0].message.content
+    });
+
+  } catch (error) {
+
+    res.json({
+      error: "EVA test failed"
+    });
+
+  }
+});
+
+/* ===============================
    INBOUND MESSAGE
 ================================ */
 app.post("/v1/messages/inbound", async (req, res) => {
