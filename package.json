@@ -1,0 +1,15 @@
+{
+  "name": "eva-core",
+  "version": "1.0.0",
+  "description": "EVA Core Microservice - API-first conversational engine",
+  "main": "src/server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "dotenv": "^16.4.0",
+    "pg": "^8.11.3"
+  }
+}
