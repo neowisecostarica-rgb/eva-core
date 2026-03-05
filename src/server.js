@@ -1,4 +1,4 @@
-// server.js (EVA Core - Fixed + Human Control)
+// server.js (EVA Core - Fixed + Human Control + Agent Support)
 
 import express from "express";
 import dotenv from "dotenv";
@@ -48,12 +48,28 @@ async function getOrgByApiKey(apiKey){
 
 }
 
+/* ----------------------------- DEFAULT AGENT ----------------------------- */
+
+async function getDefaultAgent(orgId){
+
+  const r = await pool.query(
+    `SELECT id FROM agents
+     WHERE organization_id=$1
+     ORDER BY created_at ASC
+     LIMIT 1`,
+    [orgId]
+  );
+
+  return r.rows[0]?.id || null;
+
+}
+
 /* ----------------------------- HEALTH ----------------------------- */
 
 app.get("/", (req,res)=>{
   res.json({
     status:"EVA Core running 🚀",
-    version:"5.0"
+    version:"6.0"
   });
 });
 
@@ -93,12 +109,14 @@ app.post("/v1/messages/inbound", async (req,res)=>{
 
     if(conv.rows.length === 0){
 
+      const agentId = await getDefaultAgent(org.id);
+
       const newConv = await pool.query(
         `INSERT INTO conversations
-        (organization_id, external_user_id, channel)
-        VALUES ($1,$2,$3)
+        (organization_id, agent_id, external_user_id, channel)
+        VALUES ($1,$2,$3,$4)
         RETURNING *`,
-        [org.id, phone, channel || "unknown"]
+        [org.id, agentId, phone, channel || "unknown"]
       );
 
       conversationId = newConv.rows[0].id;
