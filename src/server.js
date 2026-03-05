@@ -861,7 +861,7 @@ app.get("/v1/conversations", async (req, res) => {
         ) AS last_message
       FROM conversations c
       LEFT JOIN leads l 
-        ON l.external_user_id = c.external_user_id
+ON l.phone = c.external_user_id
       WHERE c.organization_id = $1
       ORDER BY c.created_at DESC
     `, [org.id]);
