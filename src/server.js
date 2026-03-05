@@ -1,4 +1,4 @@
-// server.js (EVA Core - Fixed + Human Control + Agent Support)
+// server.js (EVA Core v7 — Human Control + Multi-Agent + Sales Brain + Memory + Catalog)
 
 import express from "express";
 import dotenv from "dotenv";
@@ -6,12 +6,14 @@ import OpenAI from "openai";
 import pkg from "pg";
 import crypto from "crypto";
 
+import { handleInbound } from "./salesBrain.js";
+
 dotenv.config();
 
 const { Pool } = pkg;
 
 const app = express();
-app.use(express.json({ limit: "2mb" }));
+app.use(express.json({ limit: "5mb" }));
 
 const PORT = process.env.PORT || 3000;
 
@@ -37,21 +39,17 @@ function makeApiKey(){
 /* ----------------------------- ORG AUTH ----------------------------- */
 
 async function getOrgByApiKey(apiKey){
-
   const r = await pool.query(
     `SELECT * FROM organizations
      WHERE api_key=$1 AND status='ACTIVE'`,
     [apiKey]
   );
-
   return r.rows[0] || null;
-
 }
 
 /* ----------------------------- DEFAULT AGENT ----------------------------- */
 
 async function getDefaultAgent(orgId){
-
   const r = await pool.query(
     `SELECT id FROM agents
      WHERE organization_id=$1
@@ -59,9 +57,7 @@ async function getDefaultAgent(orgId){
      LIMIT 1`,
     [orgId]
   );
-
   return r.rows[0]?.id || null;
-
 }
 
 /* ----------------------------- HEALTH ----------------------------- */
@@ -69,139 +65,120 @@ async function getDefaultAgent(orgId){
 app.get("/", (req,res)=>{
   res.json({
     status:"EVA Core running 🚀",
-    version:"6.0"
+    version:"7.0"
   });
 });
 
 /* ----------------------------- EVA INBOUND ----------------------------- */
 
 app.post("/v1/messages/inbound", async (req,res)=>{
-
   try{
-
     const { api_key, external_user_id, text, channel } = req.body;
 
     if(!api_key || !external_user_id || !text){
-      return res.status(400).json({
-        error:"Missing fields"
-      });
+      return res.status(400).json({ error:"Missing fields" });
     }
 
     const org = await getOrgByApiKey(api_key);
-
     if(!org){
-      return res.status(401).json({
-        error:"Invalid API key"
-      });
+      return res.status(401).json({ error:"Invalid API key" });
     }
 
     const phone = normalizePhone(external_user_id);
+    const ch = channel || "unknown";
 
-    let conv = await pool.query(
+    // buscar conversación
+    const conv = await pool.query(
       `SELECT * FROM conversations
-       WHERE organization_id=$1
-       AND external_user_id=$2`,
+       WHERE organization_id=$1 AND external_user_id=$2`,
       [org.id, phone]
     );
 
     let conversationId;
     let controlMode = "AI_ACTIVE";
+    let agentId = null;
 
     if(conv.rows.length === 0){
-
-      const agentId = await getDefaultAgent(org.id);
+      agentId = await getDefaultAgent(org.id);
 
       const newConv = await pool.query(
         `INSERT INTO conversations
-        (organization_id, agent_id, external_user_id, channel)
-        VALUES ($1,$2,$3,$4)
-        RETURNING *`,
-        [org.id, agentId, phone, channel || "unknown"]
+         (organization_id, agent_id, external_user_id, channel)
+         VALUES ($1,$2,$3,$4)
+         RETURNING *`,
+        [org.id, agentId, phone, ch]
       );
 
       conversationId = newConv.rows[0].id;
+      controlMode = newConv.rows[0].control_mode || "AI_ACTIVE";
+      agentId = newConv.rows[0].agent_id || agentId;
 
     }else{
-
       conversationId = conv.rows[0].id;
       controlMode = conv.rows[0].control_mode || "AI_ACTIVE";
-
+      agentId = conv.rows[0].agent_id || (await getDefaultAgent(org.id));
     }
 
-    /* ---------------- HUMAN CONTROL ---------------- */
-
+    // HUMAN CONTROL
     if(controlMode === "HUMAN_ACTIVE"){
+      // guardamos el mensaje del usuario igual (para que el humano vea todo)
+      await pool.query(
+        `INSERT INTO messages
+         (organization_id,conversation_id,role,content)
+         VALUES ($1,$2,$3,$4)`,
+        [org.id, conversationId, "user", text]
+      );
 
-      return res.json({
-        paused:true,
-        reason:"Human takeover active"
-      });
-
+      return res.json({ paused:true, reason:"Human takeover active", conversation_id: conversationId });
     }
 
-    /* ---------------- SAVE USER MESSAGE ---------------- */
-
+    // Guardar mensaje del usuario
     await pool.query(
       `INSERT INTO messages
-      (organization_id,conversation_id,role,content)
-      VALUES ($1,$2,$3,$4)`,
-      [org.id,conversationId,"user",text]
+       (organization_id,conversation_id,role,content)
+       VALUES ($1,$2,$3,$4)`,
+      [org.id, conversationId, "user", text]
     );
 
-    /* ---------------- AI RESPONSE ---------------- */
-
-    const ai = await openai.chat.completions.create({
-      model:"gpt-4o-mini",
-      messages:[
-        {
-          role:"system",
-          content:"You are EVA, a professional sales assistant."
-        },
-        {
-          role:"user",
-          content:text
-        }
-      ]
+    // Sales Brain (rules + memory + catalog + AI fallback)
+    const result = await handleInbound({
+      pool,
+      openai,
+      org,
+      agentId,
+      conversationId,
+      externalUserId: phone,
+      text,
+      channel: ch
     });
 
-    const reply = ai.choices[0].message.content;
-
-    /* ---------------- SAVE AI MESSAGE ---------------- */
-
+    // Guardar respuesta (assistant)
     await pool.query(
       `INSERT INTO messages
-      (organization_id,conversation_id,role,content)
-      VALUES ($1,$2,$3,$4)`,
-      [org.id,conversationId,"assistant",reply]
+       (organization_id,conversation_id,role,content)
+       VALUES ($1,$2,$3,$4)`,
+      [org.id, conversationId, "assistant", result.reply]
     );
 
-    res.json({
-      reply,
-      conversation_id:conversationId
+    return res.json({
+      reply: result.reply,
+      conversation_id: conversationId,
+      intent: result.intent,
+      lead_score: result.leadScore
     });
 
   }catch(err){
-
     console.error(err);
-
-    res.status(500).json({
-      error:"Server error"
-    });
-
+    res.status(500).json({ error:"Server error" });
   }
-
 });
 
 /* ----------------------------- HUMAN TAKEOVER ----------------------------- */
 
 app.post("/v1/conversations/:id/takeover", async (req,res)=>{
-
   try{
-
     const apiKey = req.headers.authorization?.replace("Bearer ","");
-
     const org = await getOrgByApiKey(apiKey);
-
     if(!org){
       return res.status(401).json({error:"Invalid key"});
     }
@@ -215,30 +192,19 @@ app.post("/v1/conversations/:id/takeover", async (req,res)=>{
       [id,org.id]
     );
 
-    res.json({
-      status:"HUMAN_ACTIVE"
-    });
+    res.json({ status:"HUMAN_ACTIVE" });
 
   }catch(e){
-
-    res.status(500).json({
-      error:"Server error"
-    });
-
+    res.status(500).json({ error:"Server error" });
   }
-
 });
 
 /* ----------------------------- RETURN TO EVA ----------------------------- */
 
 app.post("/v1/conversations/:id/ai", async (req,res)=>{
-
   try{
-
     const apiKey = req.headers.authorization?.replace("Bearer ","");
-
     const org = await getOrgByApiKey(apiKey);
-
     if(!org){
       return res.status(401).json({error:"Invalid key"});
     }
@@ -252,30 +218,20 @@ app.post("/v1/conversations/:id/ai", async (req,res)=>{
       [id,org.id]
     );
 
-    res.json({
-      status:"AI_ACTIVE"
-    });
+    res.json({ status:"AI_ACTIVE" });
 
   }catch(e){
-
-    res.status(500).json({
-      error:"Server error"
-    });
-
+    res.status(500).json({ error:"Server error" });
   }
-
 });
 
 /* ----------------------------- WHATSAPP WEBHOOK ----------------------------- */
 
 app.post("/v1/webhooks/whatsapp", async (req,res)=>{
-
   try{
-
     const entry = req.body.entry?.[0];
     const changes = entry?.changes?.[0];
     const value = changes?.value;
-
     const message = value?.messages?.[0];
 
     if(!message){
@@ -289,9 +245,7 @@ app.post("/v1/webhooks/whatsapp", async (req,res)=>{
       `${process.env.EVA_BASE_URL}/v1/messages/inbound`,
       {
         method:"POST",
-        headers:{
-          "Content-Type":"application/json"
-        },
+        headers:{ "Content-Type":"application/json" },
         body:JSON.stringify({
           api_key:process.env.EVA_DEFAULT_API_KEY,
           external_user_id:from,
@@ -326,12 +280,9 @@ app.post("/v1/webhooks/whatsapp", async (req,res)=>{
     res.sendStatus(200);
 
   }catch(err){
-
     console.error(err);
     res.sendStatus(500);
-
   }
-
 });
 
 /* ----------------------------- START ----------------------------- */
