@@ -241,6 +241,104 @@ app.get("/", (req, res) => {
   });
 });
 
+/* ----------------------------- WHATSAPP WEBHOOK ----------------------------- */
+
+// Verification endpoint (Meta requires this)
+app.get("/v1/webhooks/whatsapp", (req, res) => {
+
+  const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN;
+
+  const mode = req.query["hub.mode"];
+  const token = req.query["hub.verify_token"];
+  const challenge = req.query["hub.challenge"];
+
+  if (mode === "subscribe" && token === verifyToken) {
+    console.log("WhatsApp webhook verified");
+    return res.status(200).send(challenge);
+  }
+
+  res.sendStatus(403);
+});
+
+
+// Incoming messages from WhatsApp
+app.post("/v1/webhooks/whatsapp", async (req, res) => {
+
+  try {
+
+    const entry = req.body.entry?.[0];
+    const changes = entry?.changes?.[0];
+    const value = changes?.value;
+
+    const message = value?.messages?.[0];
+
+    if (!message) {
+      return res.sendStatus(200);
+    }
+
+    const from = message.from;
+
+    let text = null;
+    let audioUrl = null;
+
+    if (message.text) {
+      text = message.text.body;
+    }
+
+    if (message.audio) {
+      audioUrl = message.audio.id; // later we fetch media
+    }
+
+    // Send message to EVA engine
+    const response = await fetch(`${process.env.EVA_BASE_URL}/v1/messages/inbound`, {
+
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+
+      body: JSON.stringify({
+        api_key: process.env.EVA_DEFAULT_API_KEY,
+        external_user_id: from,
+        text: text,
+        audio_url: audioUrl,
+        channel: "whatsapp"
+      })
+
+    });
+
+    const eva = await response.json();
+
+    // Send reply back to WhatsApp
+    await fetch(`https://graph.facebook.com/v18.0/${process.env.WHATSAPP_PHONE_ID}/messages`, {
+
+      method: "POST",
+
+      headers: {
+        "Authorization": `Bearer ${process.env.WHATSAPP_TOKEN}`,
+        "Content-Type": "application/json"
+      },
+
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        to: from,
+        text: {
+          body: eva.reply
+        }
+      })
+
+    });
+
+    res.sendStatus(200);
+
+  } catch (err) {
+
+    console.error("WhatsApp webhook error", err);
+    res.sendStatus(500);
+
+  }
+
+});
 /* ----------------------------- ADMIN ----------------------------- */
 
 function requireAdmin(req, res, next) {
