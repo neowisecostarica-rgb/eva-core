@@ -853,11 +853,11 @@ app.get("/v1/conversations", async (req, res) => {
         l.stage,
         l.interest_level,
         (
-          SELECT text
-          FROM messages
-          WHERE conversation_id = c.id
-          ORDER BY created_at DESC
-          LIMIT 1
+          SELECT content
+FROM messages
+WHERE conversation_id = c.id
+ORDER BY created_at DESC
+LIMIT 1
         ) AS last_message
       FROM conversations c
       LEFT JOIN leads l 
