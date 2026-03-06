@@ -7,6 +7,7 @@ import pkg from "pg";
 import crypto from "crypto";
 
 import { handleInbound } from "./salesBrain.js";
+import { registerConversationRoutes } from "./api/conversations.js";
 
 dotenv.config();
 
