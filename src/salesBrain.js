@@ -583,3 +583,36 @@ export {
   deriveStage,
   buildReply,
 };
+
+export const handleInbound = async ({
+  pool,
+  openai,
+  org,
+  agentId,
+  conversationId,
+  externalUserId,
+  text,
+  channel
+}) => {
+
+  const brain = await handleSalesBrain(pool, {
+    organization_id: org.id,
+    phone: externalUserId,
+    text,
+    channel,
+    agent_id: agentId
+  });
+
+  return {
+    reply: brain.salesAnalysis.reply,
+    intent: brain.salesAnalysis.intent,
+    confidence: brain.salesAnalysis.score / 100,
+    leadScore: brain.salesAnalysis.score,
+    stage: brain.salesAnalysis.stage,
+    data: {
+      interest_level: brain.salesAnalysis.interest_level,
+      budget: brain.salesAnalysis.budget,
+      use_case: brain.salesAnalysis.use_case
+    }
+  };
+};
