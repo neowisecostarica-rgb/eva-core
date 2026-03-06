@@ -5,6 +5,7 @@ import dotenv from "dotenv";
 import OpenAI from "openai";
 import pkg from "pg";
 import crypto from "crypto";
+import { registerLeadRoutes } from "./api/leads.js";
 
 import { handleInbound } from "./salesBrain.js";
 import { registerConversationRoutes } from "./api/conversations.js";
@@ -487,6 +488,7 @@ app.post("/v1/webhooks/whatsapp", async (req, res) => {
 
 // activar API conversations
 registerConversationRoutes(app, pool);
+registerLeadRoutes(app, pool);
 
 app.listen(PORT, () => {
   console.log("EVA running on port", PORT);
