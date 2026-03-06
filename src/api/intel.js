@@ -8,6 +8,7 @@ export function registerIntelRoutes(app, pool) {
 
       const { id } = req.params;
 
+      // obtener conversación
       const conv = await pool.query(`
         SELECT external_user_id
         FROM conversations
@@ -20,10 +21,12 @@ export function registerIntelRoutes(app, pool) {
 
       const userId = conv.rows[0].external_user_id;
 
+      // obtener perfil cliente
       const profile = await pool.query(`
         SELECT profile_json
         FROM customer_profiles
         WHERE external_user_id=$1
+        LIMIT 1
       `, [userId]);
 
       const p = profile.rows[0]?.profile_json || {};
@@ -39,7 +42,7 @@ export function registerIntelRoutes(app, pool) {
 
     } catch (err) {
 
-      console.error(err);
+      console.error("INTEL ERROR:", err);
       res.status(500).json({ error: "server_error" });
 
     }
