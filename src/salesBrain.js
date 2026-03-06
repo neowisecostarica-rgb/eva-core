@@ -1,331 +1,585 @@
-// salesBrain.js — EVA Sales Brain v11
-// Fully compatible with current EVA database
+// src/salesBrain.js
+// EVA Sales Brain v1 - estable, conservador y adaptado a tu DB real
 
-// ===============================
-// INTENT DETECTION
-// ===============================
+function normalizeText(input = "") {
+  return String(input)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
 
-export function detectIntentRule(text = "") {
+function extractBudget(text = "") {
+  const normalized = normalizeText(text);
 
-  const t = text.toLowerCase()
+  // Busca montos como:
+  // 70000
+  // 70,000
+  // 70.000
+  // ₡70000
+  // 100 mil
+  const moneyMatch =
+    normalized.match(/(?:₡|\bcrc\b|\bcolon(?:es)?\b)?\s*(\d{2,3}(?:[.,]\d{3})+|\d{4,7})/) ||
+    normalized.match(/(\d{2,3})\s*mil\b/);
 
-  const hasAny = (...arr) => arr.some(w => t.includes(w))
+  if (!moneyMatch) return null;
 
-  if (hasAny("hola","buenas","buen día","buenos días","buenas tardes","buenas noches","hey","saludos")) {
-    return { intent: "GREETING", confidence: 0.95 }
+  if (moneyMatch[0].includes("mil")) {
+    const n = Number(moneyMatch[1]);
+    return Number.isFinite(n) ? n * 1000 : null;
   }
 
-  if (hasAny("no funciona","daño","problema","error","pantalla","teclado","batería","garantía","reparar","soporte","servicio técnico")) {
-    return { intent: "SUPPORT", confidence: 0.85 }
+  const raw = moneyMatch[1].replace(/[.,]/g, "");
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : null;
+}
+
+function extractUseCase(text = "") {
+  const t = normalizeText(text);
+
+  if (/(escuela|colegio|estudio|estudiar|universidad|u|clases|tareas)/.test(t)) {
+    return "study";
+  }
+  if (/(trabajo|oficina|office|empresa|empresarial|excel|administrativo)/.test(t)) {
+    return "work";
+  }
+  if (/(diseno|editar|edicion|photoshop|illustrator|autocad|arquitectura)/.test(t)) {
+    return "creative";
+  }
+  if (/(juego|gaming|gamer|fortnite|warzone|valorant)/.test(t)) {
+    return "gaming";
   }
 
-  if (hasAny(
-    "precio","cuánto cuesta","cuanto cuesta","vale","costo",
-    "disponible","tiene","tienen","tienes",
-    "me interesa","quiero","comprar","apartarlo","apartar",
-    "envío","envio","entrega","fotos","modelo","ram","ssd"
-  )) {
-    return { intent: "BUY", confidence: 0.75 }
+  return null;
+}
+
+function detectIntent(text = "") {
+  const t = normalizeText(text);
+
+  if (!t) return "INFO";
+
+  if (/(hola|buenas|buenos dias|buenas tardes|buenas noches|pura vida|hello|hi)\b/.test(t)) {
+    return "GREETING";
   }
 
-  return { intent: "INFO", confidence: 0.55 }
+  if (/(soporte|garantia|falla|malo|servicio tecnico|reparacion|mantenimiento|ayuda tecnica)/.test(t)) {
+    return "SUPPORT";
+  }
 
+  if (/(precio|cuanto cuesta|cuanto vale|valor|en cuanto|cuanto)/.test(t)) {
+    return "PRICE";
+  }
+
+  if (/(quiero comprar|me interesa|disponible|tiene[n]?|tienes?|hay|quiero esa|apartar|reservar|comprar)/.test(t)) {
+    return "BUY";
+  }
+
+  return "INFO";
 }
 
+function computeScore(text = "", intent = "INFO") {
+  const t = normalizeText(text);
+  let score = 0;
 
-// ===============================
-// LEAD SCORING
-// ===============================
+  if (intent === "GREETING") score += 10;
+  if (intent === "INFO") score += 20;
+  if (intent === "PRICE") score += 35;
+  if (intent === "BUY") score += 55;
+  if (intent === "SUPPORT") score += 15;
 
-export function scoreLead({ intent, text = "" }) {
+  if (/(precio|cuanto cuesta|disponible|tiene|hay)/.test(t)) score += 15;
+  if (/(quiero comprar|me interesa|apartar|reservar|ultima|ultimo|hoy mismo)/.test(t)) score += 25;
+  if (/(ubicacion|donde estan|envio|entrega|garantia|fotos reales)/.test(t)) score += 10;
+  if (/(universidad|trabajo|estudio|excel|oficina)/.test(t)) score += 10;
 
-  const t = text.toLowerCase()
-  let score = 0
-
-  if (intent === "GREETING") score += 10
-  if (intent === "INFO") score += 20
-  if (intent === "SUPPORT") score += 30
-  if (intent === "BUY") score += 45
-
-  if (t.includes("precio")) score += 10
-  if (t.includes("fotos")) score += 15
-  if (t.includes("envio") || t.includes("entrega")) score += 10
-  if (t.includes("apart") || t.includes("sinpe")) score += 20
-  if (t.includes("lo quiero") || t.includes("me lo llevo")) score += 25
-
-  if (score > 100) score = 100
-
-  return score
-
+  return Math.min(score, 100);
 }
 
-
-// ===============================
-// SALES SIGNAL
-// ===============================
-
-export function detectSaleSignal(text = "") {
-
-  const t = text.toLowerCase()
-
-  const signals = [
-    "lo quiero",
-    "me lo llevo",
-    "apartarlo",
-    "apartar",
-    "reservar",
-    "reservo",
-    "donde pago",
-    "dónde pago",
-    "sinpe",
-    "pago",
-    "lo compro",
-    "comprar ya"
-  ]
-
-  return signals.some(s => t.includes(s))
-
+function deriveInterestLevel(score) {
+  if (score >= 85) return "HIGH";
+  if (score >= 45) return "MEDIUM";
+  return "LOW";
 }
 
-
-// ===============================
-// DATA EXTRACTION
-// ===============================
-
-export function extractBudgetCRC(text="") {
-
-  const t = text.toLowerCase().replace(/\./g,"").replace(/,/g,"")
-
-  const m1 = t.match(/₡\s?(\d+)/)
-  if (m1) return parseInt(m1[1])
-
-  const m2 = t.match(/(\d+)\s?mil/)
-  if (m2) return parseInt(m2[1]) * 1000
-
-  return null
-
+function deriveLeadStatus(score, intent) {
+  if (score >= 85 || intent === "BUY") return "HOT";
+  if (score >= 45 || intent === "PRICE") return "WARM";
+  return "NEW";
 }
 
-export function extractUseCase(text="") {
+function deriveStage(score, intent, currentStage = null) {
+  const stage = currentStage || "DISCOVERY";
 
-  const t = text.toLowerCase()
+  if (intent === "SUPPORT") return "FOLLOW_UP";
+  if (score >= 85) return "CLOSING";
+  if (score >= 65) return "OFFER";
+  if (score >= 45) return "QUALIFYING";
+  if (stage) return stage;
 
-  if (t.includes("universidad") || t.includes("colegio") || t.includes("estudio")) return "study"
-  if (t.includes("trabajo") || t.includes("oficina")) return "work"
-  if (t.includes("gaming") || t.includes("juegos")) return "gaming"
-
-  return null
-
+  return "DISCOVERY";
 }
 
-export function extractUrgency(text="", leadScore=0) {
+function buildReply({ intent, score, useCase }) {
+  if (intent === "GREETING") {
+    return "¡Hola! 👋 Gracias por escribirnos. Con gusto te ayudo. ¿Lo ocupas para estudio, trabajo o algo más específico?";
+  }
 
-  const t = text.toLowerCase()
-
-  if (t.includes("hoy") || t.includes("ya") || t.includes("urgente")) return "high"
-
-  if (leadScore >= 80) return "high"
-  if (leadScore >= 50) return "medium"
-
-  return "low"
-
-}
-
-
-// ===============================
-// PROFILE MEMORY
-// ===============================
-
-export async function getOrCreateProfile(pool,{orgId,externalUserId,agentId}) {
-
-  const r = await pool.query(
-    `SELECT * FROM customer_profiles
-     WHERE organization_id=$1 AND external_user_id=$2
-     LIMIT 1`,
-    [orgId,externalUserId]
-  )
-
-  if (r.rows.length) return r.rows[0]
-
-  const created = await pool.query(
-    `INSERT INTO customer_profiles
-     (organization_id,external_user_id,agent_id,profile_json)
-     VALUES($1,$2,$3,'{}'::jsonb)
-     RETURNING *`,
-    [orgId,externalUserId,agentId || null]
-  )
-
-  return created.rows[0]
-
-}
-
-
-export async function updateProfile(pool,{profileId,patch}) {
-
-  await pool.query(
-    `UPDATE customer_profiles
-     SET profile_json = profile_json || $2::jsonb,
-         updated_at = now()
-     WHERE id=$1`,
-    [profileId, JSON.stringify(patch)]
-  )
-
-}
-
-
-// ===============================
-// FOLLOWUPS
-// ===============================
-
-async function createPendingFollowup(pool,{orgId,conversationId,leadScore,externalUserId}) {
-
-  if (leadScore < 40) return
-
-  await pool.query(
-    `INSERT INTO followups
-     (organization_id,conversation_id,status,scheduled_for,lead_phone,reason)
-     VALUES($1,$2,'pending',now()+interval '2 hours',$3,'AI_FOLLOWUP')`,
-    [orgId,conversationId,externalUserId]
-  )
-
-}
-
-
-// ===============================
-// MAIN INBOUND HANDLER
-// ===============================
-
-export async function handleInbound({
-
-  pool,
-  openai,
-  org,
-  agentId,
-  conversationId,
-  externalUserId,
-  text,
-  channel
-
-}) {
-
-  const {intent,confidence} = detectIntentRule(text)
-
-  const leadScore = scoreLead({intent,text})
-
-  const saleSignal = detectSaleSignal(text)
-
-  const profile = await getOrCreateProfile(pool,{
-    orgId:org.id,
-    externalUserId,
-    agentId
-  })
-
-  const budget = extractBudgetCRC(text)
-  const useCase = extractUseCase(text)
-  const urgency = extractUrgency(text,leadScore)
-
-  const patch = {}
-
-  if (budget) patch.budget_crc = budget
-  if (useCase) patch.use_case = useCase
+  if (intent === "PRICE") {
+    return "Con gusto te ayudo con eso 🙌 Para recomendarte una opción correcta, cuéntame: ¿la necesitas para estudio o trabajo? y si tienes un presupuesto aproximado, mejor aún.";
+  }
 
   if (intent === "BUY") {
-
-    patch.stage =
-      leadScore >= 85 ? "CLOSING" :
-      leadScore >= 60 ? "OFFER" :
-      "DISCOVERY"
-
+    return "¡Perfecto! 🙌 Para recomendarte la opción ideal, dime por favor: ¿la ocupas para estudio o trabajo? y ¿qué presupuesto aproximado manejas?";
   }
 
-  if (Object.keys(patch).length) {
-
-    await updateProfile(pool,{
-      profileId:profile.id,
-      patch
-    })
-
+  if (intent === "SUPPORT") {
+    return "Claro, con gusto te ayudo. Cuéntame un poco más sobre el problema que estás presentando para orientarte mejor.";
   }
 
-  const fromStage = profile.profile_json?.stage || "DISCOVERY"
-  const toStage = patch.stage || fromStage
+  if (useCase === "study") {
+    return "¡Perfecto! Si es para estudio, te puedo orientar con una opción equilibrada y confiable. ¿Qué presupuesto aproximado manejas?";
+  }
 
-  // ===============================
-  // PIPELINE EVENT
-  // ===============================
+  if (useCase === "work") {
+    return "Excelente. Si es para trabajo, lo ideal es buscarte una opción estable y cómoda para productividad. ¿Qué presupuesto aproximado tienes pensado?";
+  }
 
-  await pool.query(
-    `INSERT INTO pipeline_events
-     (organization_id,conversation_id,from_stage,to_stage,reason,lead_phone)
-     VALUES($1,$2,$3,$4,$5,$6)`,
-    [
-      org.id,
-      conversationId,
-      fromStage,
-      toStage,
+  return "Con mucho gusto te asesoro 🙌 Cuéntame un poco más sobre lo que necesitas y el presupuesto aproximado que tienes en mente.";
+}
+
+async function getLeadByPhone(db, organizationId, phone) {
+  const query = `
+    SELECT *
+    FROM leads
+    WHERE organization_id = $1
+      AND phone = $2
+    ORDER BY updated_at DESC
+    LIMIT 1
+  `;
+  const { rows } = await db.query(query, [organizationId, phone]);
+  return rows[0] || null;
+}
+
+async function createLead(db, data) {
+  const query = `
+    INSERT INTO leads (
+      organization_id,
+      phone,
+      email,
+      instagram,
+      source,
+      status,
+      stage,
+      budget,
+      use_case,
+      interest_level,
       intent,
-      externalUserId
-    ]
-  )
-
-  // ===============================
-  // SALES DETECTION
-  // ===============================
-
-  if (saleSignal) {
-
-    await pool.query(
-      `INSERT INTO sales
-       (organization_id,conversation_id,external_user_id,status)
-       VALUES($1,$2,$3,'detected')`,
-      [org.id,conversationId,externalUserId]
+      score,
+      last_contact_at,
+      created_at,
+      updated_at
     )
+    VALUES (
+      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW(), NOW()
+    )
+    RETURNING *
+  `;
 
+  const values = [
+    data.organization_id,
+    data.phone,
+    data.email || null,
+    data.instagram || null,
+    data.source || "unknown",
+    data.status,
+    data.stage,
+    data.budget,
+    data.use_case,
+    data.interest_level,
+    data.intent,
+    data.score,
+  ];
+
+  const { rows } = await db.query(query, values);
+  return rows[0];
+}
+
+async function updateLead(db, leadId, patch) {
+  const query = `
+    UPDATE leads
+    SET
+      email = COALESCE($2, email),
+      instagram = COALESCE($3, instagram),
+      source = COALESCE($4, source),
+      status = $5,
+      stage = $6,
+      budget = COALESCE($7, budget),
+      use_case = COALESCE($8, use_case),
+      interest_level = $9,
+      intent = $10,
+      score = $11,
+      last_contact_at = NOW(),
+      updated_at = NOW()
+    WHERE id = $1
+    RETURNING *
+  `;
+
+  const values = [
+    leadId,
+    patch.email || null,
+    patch.instagram || null,
+    patch.source || null,
+    patch.status,
+    patch.stage,
+    patch.budget ?? null,
+    patch.use_case ?? null,
+    patch.interest_level,
+    patch.intent,
+    patch.score,
+  ];
+
+  const { rows } = await db.query(query, values);
+  return rows[0];
+}
+
+async function getLatestConversation(db, organizationId, externalUserId, channel) {
+  const query = `
+    SELECT *
+    FROM conversations
+    WHERE organization_id = $1
+      AND external_user_id = $2
+      AND channel = $3
+    ORDER BY updated_at DESC
+    LIMIT 1
+  `;
+  const { rows } = await db.query(query, [organizationId, externalUserId, channel]);
+  return rows[0] || null;
+}
+
+async function createConversation(db, data) {
+  const query = `
+    INSERT INTO conversations (
+      organization_id,
+      external_user_id,
+      channel,
+      summary,
+      stage,
+      created_at,
+      updated_at,
+      control_mode,
+      agent_id
+    )
+    VALUES (
+      $1, $2, $3, $4, $5, NOW(), NOW(), $6, $7
+    )
+    RETURNING *
+  `;
+
+  const values = [
+    data.organization_id,
+    data.external_user_id,
+    data.channel,
+    data.summary || null,
+    data.stage || "DISCOVERY",
+    data.control_mode || "HYBRID",
+    data.agent_id || null,
+  ];
+
+  const { rows } = await db.query(query, values);
+  return rows[0];
+}
+
+async function updateConversation(db, conversationId, patch) {
+  const query = `
+    UPDATE conversations
+    SET
+      summary = COALESCE($2, summary),
+      stage = COALESCE($3, stage),
+      updated_at = NOW(),
+      control_mode = COALESCE($4, control_mode),
+      agent_id = COALESCE($5, agent_id)
+    WHERE id = $1
+    RETURNING *
+  `;
+
+  const values = [
+    conversationId,
+    patch.summary || null,
+    patch.stage || null,
+    patch.control_mode || null,
+    patch.agent_id || null,
+  ];
+
+  const { rows } = await db.query(query, values);
+  return rows[0];
+}
+
+async function createPipelineEvent({
+  db,
+  organizationId,
+  conversationId,
+  leadPhone,
+  fromStage,
+  toStage,
+  reason,
+}) {
+  if (!toStage || fromStage === toStage) return null;
+
+  const query = `
+    INSERT INTO pipeline_events (
+      organization_id,
+      created_at,
+      conversation_id,
+      to_stage,
+      reason,
+      lead_phone,
+      from_stage
+    )
+    VALUES (
+      $1, NOW(), $2, $3, $4, $5, $6
+    )
+    RETURNING *
+  `;
+
+  const values = [
+    organizationId,
+    conversationId,
+    toStage,
+    reason || "stage_changed",
+    leadPhone,
+    fromStage || null,
+  ];
+
+  const { rows } = await db.query(query, values);
+  return rows[0] || null;
+}
+
+export async function createPendingFollowup({
+  db,
+  organizationId,
+  conversationId,
+  leadPhone,
+  reason,
+  payload,
+  minutes = 1440,
+}) {
+  const scheduledFor = new Date(Date.now() + minutes * 60 * 1000);
+
+  const query = `
+    INSERT INTO followups (
+      organization_id,
+      lead_phone,
+      conversation_id,
+      scheduled_for,
+      status,
+      reason,
+      payload,
+      created_at,
+      updated_at
+    )
+    VALUES (
+      $1, $2, $3, $4, 'PENDING', $5, $6, NOW(), NOW()
+    )
+    RETURNING *
+  `;
+
+  const values = [
+    organizationId,
+    leadPhone,
+    conversationId,
+    scheduledFor,
+    reason || "general_followup",
+    payload ? JSON.stringify(payload) : JSON.stringify({}),
+  ];
+
+  const { rows } = await db.query(query, values);
+  return rows[0];
+}
+
+function shouldCreateFollowup({ intent, score }) {
+  return intent === "BUY" || intent === "PRICE" || score >= 60;
+}
+
+function followupDelayMinutes({ intent, score }) {
+  if (score >= 85) return 60 * 4;      // 4 horas
+  if (intent === "BUY") return 60 * 24; // 24 horas
+  if (intent === "PRICE") return 60 * 24;
+  return 60 * 48; // 48 horas
+}
+
+function buildSummary({ text, intent, useCase, budget }) {
+  const parts = [];
+
+  if (intent) parts.push(`Intent: ${intent}`);
+  if (useCase) parts.push(`Use case: ${useCase}`);
+  if (budget) parts.push(`Budget: ${budget}`);
+  if (text) parts.push(`Last: ${String(text).slice(0, 180)}`);
+
+  return parts.join(" | ");
+}
+
+/**
+ * Maneja la parte comercial del inbound y actualiza las tablas reales
+ * que ya confirmaste en tu DB.
+ *
+ * Retorna:
+ * {
+ *   lead,
+ *   conversation,
+ *   pipelineEvent,
+ *   followup,
+ *   salesAnalysis: { intent, score, status, stage, interest_level, budget, use_case, reply }
+ * }
+ */
+export async function handleSalesBrain(db, input) {
+  const organizationId = input.organization_id;
+  const phone = String(input.phone || "").trim();
+  const channel = input.channel || "whatsapp";
+  const text = String(input.text || "");
+  const source = input.source || "api";
+  const email = input.email || null;
+  const instagram = input.instagram || null;
+  const agentId = input.agent_id || null;
+  const controlMode = input.control_mode || "HYBRID";
+
+  if (!organizationId) {
+    throw new Error("organization_id is required in handleSalesBrain()");
   }
 
-  // ===============================
-  // FOLLOWUP
-  // ===============================
+  if (!phone) {
+    throw new Error("phone is required in handleSalesBrain()");
+  }
 
-  await createPendingFollowup(pool,{
-    orgId:org.id,
-    conversationId,
-    leadScore,
-    externalUserId
-  })
+  const intent = detectIntent(text);
+  const score = computeScore(text, intent);
+  const interestLevel = deriveInterestLevel(score);
+  const leadStatus = deriveLeadStatus(score, intent);
+  const budget = extractBudget(text);
+  const useCase = extractUseCase(text);
+  const reply = buildReply({ intent, score, useCase });
 
-  // ===============================
-  // AI RESPONSE
-  // ===============================
+  // 1) Lead
+  const existingLead = await getLeadByPhone(db, organizationId, phone);
+  const nextLeadStage = deriveStage(score, intent, existingLead?.stage || null);
 
-  const ai = await openai.chat.completions.create({
+  let lead;
+  if (!existingLead) {
+    lead = await createLead(db, {
+      organization_id: organizationId,
+      phone,
+      email,
+      instagram,
+      source,
+      status: leadStatus,
+      stage: nextLeadStage,
+      budget,
+      use_case: useCase,
+      interest_level: interestLevel,
+      intent,
+      score,
+    });
+  } else {
+    const mergedScore = Math.max(Number(existingLead.score || 0), score);
+    const mergedStatus = deriveLeadStatus(mergedScore, intent);
+    const mergedInterest = deriveInterestLevel(mergedScore);
+    const mergedStage = deriveStage(mergedScore, intent, existingLead.stage);
 
-    model:"gpt-4o-mini",
+    lead = await updateLead(db, existingLead.id, {
+      email,
+      instagram,
+      source,
+      status: mergedStatus,
+      stage: mergedStage,
+      budget: budget ?? existingLead.budget ?? null,
+      use_case: useCase ?? existingLead.use_case ?? null,
+      interest_level: mergedInterest,
+      intent,
+      score: mergedScore,
+    });
+  }
 
-    messages:[
-      {
-        role:"system",
-        content:"Eres EVA, una asistente de ventas inteligente. Responde corto y ayuda a cerrar ventas."
+  // 2) Conversation
+  const existingConversation = await getLatestConversation(db, organizationId, phone, channel);
+  const previousConversationStage = existingConversation?.stage || null;
+
+  let conversation;
+  if (!existingConversation) {
+    conversation = await createConversation(db, {
+      organization_id: organizationId,
+      external_user_id: phone,
+      channel,
+      summary: buildSummary({ text, intent, useCase, budget }),
+      stage: lead.stage || "DISCOVERY",
+      control_mode: controlMode,
+      agent_id: agentId,
+    });
+  } else {
+    conversation = await updateConversation(db, existingConversation.id, {
+      summary: buildSummary({ text, intent, useCase, budget }),
+      stage: lead.stage || existingConversation.stage,
+      control_mode: controlMode,
+      agent_id: agentId,
+    });
+  }
+
+  // 3) Pipeline event
+  const pipelineEvent = await createPipelineEvent({
+    db,
+    organizationId,
+    conversationId: conversation.id,
+    leadPhone: phone,
+    fromStage: previousConversationStage || existingLead?.stage || null,
+    toStage: conversation.stage,
+    reason: `intent:${intent}|score:${lead.score}`,
+  });
+
+  // 4) Followup
+  let followup = null;
+  if (shouldCreateFollowup({ intent, score: lead.score })) {
+    followup = await createPendingFollowup({
+      db,
+      organizationId,
+      conversationId: conversation.id,
+      leadPhone: phone,
+      reason: `sales_followup_${intent.toLowerCase()}`,
+      payload: {
+        intent,
+        score: lead.score,
+        suggested_reply:
+          intent === "BUY"
+            ? "Hola 👋 solo te doy seguimiento para saber si aún te interesa y ayudarte a avanzar con la opción ideal."
+            : "Hola 👋 te doy seguimiento por si aún buscas una opción y con gusto te asesoro.",
       },
-      {role:"user",content:text}
-    ]
-
-  })
-
-  const reply = ai.choices?.[0]?.message?.content?.trim()
+      minutes: followupDelayMinutes({ intent, score: lead.score }),
+    });
+  }
 
   return {
-
-    reply,
-    intent,
-    confidence,
-    leadScore,
-    data:{
-      budget_crc:budget,
-      use_case:useCase,
-      urgency
-    }
-
-  }
-
+    lead,
+    conversation,
+    pipelineEvent,
+    followup,
+    salesAnalysis: {
+      intent,
+      score: lead.score,
+      status: lead.status,
+      stage: lead.stage,
+      interest_level: lead.interest_level,
+      budget: lead.budget,
+      use_case: lead.use_case,
+      reply,
+    },
+  };
 }
+
+export {
+  normalizeText,
+  detectIntent,
+  computeScore,
+  extractBudget,
+  extractUseCase,
+  deriveInterestLevel,
+  deriveLeadStatus,
+  deriveStage,
+  buildReply,
+};
