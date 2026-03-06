@@ -370,6 +370,7 @@ export async function createPendingFollowup({
       organization_id,
       lead_phone,
       conversation_id,
+      due_at,
       scheduled_for,
       status,
       reason,
