@@ -366,32 +366,31 @@ export async function createPendingFollowup({
   const scheduledFor = new Date(Date.now() + minutes * 60 * 1000);
 
   const query = `
-    INSERT INTO followups (
-      organization_id,
-      lead_phone,
-      conversation_id,
-      due_at,
-      scheduled_for,
-      status,
-      reason,
-      payload,
-      created_at,
-      updated_at
-    )
-    VALUES (
-      $1, $2, $3, $4, 'PENDING', $5, $6, NOW(), NOW()
-    )
-    RETURNING *
-  `;
-
+  INSERT INTO followups (
+    organization_id,
+    lead_phone,
+    conversation_id,
+    due_at,
+    scheduled_for,
+    status,
+    reason,
+    payload,
+    created_at,
+    updated_at
+  )
+  VALUES (
+    $1, $2, $3, $4, $4, 'PENDING', $5, $6, NOW(), NOW()
+  )
+  RETURNING *
+`;
   const values = [
-    organizationId,
-    leadPhone,
-    conversationId,
-    scheduledFor,
-    reason || "general_followup",
-    payload ? JSON.stringify(payload) : JSON.stringify({}),
-  ];
+  organizationId,
+  leadPhone,
+  conversationId,
+  scheduledFor,
+  reason || "general_followup",
+  payload ? JSON.stringify(payload) : JSON.stringify({})
+];
 
   const { rows } = await db.query(query, values);
   return rows[0];
