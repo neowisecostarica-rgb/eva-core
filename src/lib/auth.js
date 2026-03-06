@@ -1,6 +1,7 @@
 import { pool } from "../db.js";
 
 export async function resolveOrganization(req) {
+
   const header = req.headers.authorization;
 
   if (!header) {
@@ -10,10 +11,13 @@ export async function resolveOrganization(req) {
   const token = header.replace("Bearer ", "").trim();
 
   const result = await pool.query(
-    `SELECT id
-     FROM organizations
-     WHERE api_key = $1
-     LIMIT 1`,
+    `
+    SELECT id
+    FROM organizations
+    WHERE api_key = $1
+    AND status = 'ACTIVE'
+    LIMIT 1
+    `,
     [token]
   );
 
@@ -22,4 +26,5 @@ export async function resolveOrganization(req) {
   }
 
   return result.rows[0].id;
+
 }
