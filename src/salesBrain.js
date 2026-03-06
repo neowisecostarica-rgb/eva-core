@@ -73,25 +73,11 @@ function buildReply({ intent, catalogMatches = [] }) {
 
   let baseReply = "";
 
-  if (intent === "GREETING") {
-    baseReply = "¡Hola! 👋 Gracias por escribirnos.";
-  }
-
-  else if (intent === "PRICE") {
-    baseReply = "Con gusto te ayudo 🙌";
-  }
-
-  else if (intent === "BUY") {
-    baseReply = "¡Perfecto! 🙌";
-  }
-
-  else if (intent === "SUPPORT") {
-    baseReply = "Claro, con gusto te ayudo con eso.";
-  }
-
-  else {
-    baseReply = "Con gusto te ayudo.";
-  }
+  if (intent === "GREETING") baseReply = "¡Hola! 👋 Gracias por escribirnos.";
+  else if (intent === "PRICE") baseReply = "Con gusto te ayudo 🙌";
+  else if (intent === "BUY") baseReply = "¡Perfecto! 🙌";
+  else if (intent === "SUPPORT") baseReply = "Claro, con gusto te ayudo con eso.";
+  else baseReply = "Con gusto te ayudo.";
 
   let productsText = "";
 
@@ -120,8 +106,9 @@ function buildReply({ intent, catalogMatches = [] }) {
 /* -------------------- PRODUCT SEARCH -------------------- */
 
 async function searchCatalog(db, organizationId) {
+
   const query = `
-   SELECT id,name,price_crc AS price,'CRC' AS currency
+    SELECT id,name,price_crc AS price,'CRC' AS currency
     FROM product_catalog
     WHERE organization_id=$1
     LIMIT 3
@@ -132,9 +119,26 @@ async function searchCatalog(db, organizationId) {
   return rows || [];
 }
 
+async function getProductImages(db, productIds) {
+
+  if (!productIds.length) return [];
+
+  const query = `
+    SELECT product_id,url
+    FROM product_assets
+    WHERE product_id = ANY($1)
+    ORDER BY sort_order ASC
+  `;
+
+  const { rows } = await db.query(query, [productIds]);
+
+  return rows || [];
+}
+
 /* -------------------- LEAD -------------------- */
 
 async function getLead(db, orgId, phone) {
+
   const r = await db.query(
     `SELECT * FROM leads
      WHERE organization_id=$1 AND phone=$2
@@ -146,6 +150,7 @@ async function getLead(db, orgId, phone) {
 }
 
 async function createLead(db, data) {
+
   const r = await db.query(
     `INSERT INTO leads
      (organization_id,phone,status,stage,interest_level,intent,score,created_at,updated_at,last_contact_at)
@@ -158,7 +163,7 @@ async function createLead(db, data) {
       data.stage,
       data.interest_level,
       data.intent,
-      data.score,
+      data.score
     ]
   );
 
@@ -166,6 +171,7 @@ async function createLead(db, data) {
 }
 
 async function updateLead(db, id, patch) {
+
   const r = await db.query(
     `UPDATE leads
      SET status=$2,
@@ -183,7 +189,7 @@ async function updateLead(db, id, patch) {
       patch.stage,
       patch.interest_level,
       patch.intent,
-      patch.score,
+      patch.score
     ]
   );
 
@@ -193,6 +199,7 @@ async function updateLead(db, id, patch) {
 /* -------------------- CONVERSATION -------------------- */
 
 async function getConversation(db, orgId, phone, channel) {
+
   const r = await db.query(
     `SELECT * FROM conversations
      WHERE organization_id=$1
@@ -206,6 +213,7 @@ async function getConversation(db, orgId, phone, channel) {
 }
 
 async function createConversation(db, data) {
+
   const r = await db.query(
     `INSERT INTO conversations
      (organization_id,external_user_id,channel,stage,created_at,updated_at,control_mode,agent_id)
@@ -216,7 +224,7 @@ async function createConversation(db, data) {
       data.external_user_id,
       data.channel,
       data.stage,
-      data.agent_id,
+      data.agent_id
     ]
   );
 
@@ -225,13 +233,8 @@ async function createConversation(db, data) {
 
 /* -------------------- FOLLOWUP -------------------- */
 
-async function createFollowup({
-  db,
-  organizationId,
-  conversationId,
-  phone,
-  reason,
-}) {
+async function createFollowup({ db, organizationId, conversationId, phone, reason }) {
+
   const scheduled = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
   const r = await db.query(
@@ -245,7 +248,7 @@ async function createFollowup({
       conversationId,
       scheduled,
       reason,
-      JSON.stringify({}),
+      JSON.stringify({})
     ]
   );
 
@@ -269,16 +272,24 @@ export async function handleSalesBrain(db, input) {
   const status = deriveLeadStatus(score, intent);
   const stage = deriveStage(score);
 
-  const reply = buildReply({ intent, catalogMatches });
-
   const catalogMatches =
     intent === "PRICE" || intent === "BUY"
       ? await searchCatalog(db, orgId)
       : [];
 
+  let productImages = [];
+
+  if (catalogMatches.length > 0) {
+    const productIds = catalogMatches.map(p => p.id);
+    productImages = await getProductImages(db, productIds);
+  }
+
+  const reply = buildReply({ intent, catalogMatches });
+
   let lead = await getLead(db, orgId, phone);
 
   if (!lead) {
+
     lead = await createLead(db, {
       organization_id: orgId,
       phone,
@@ -286,40 +297,47 @@ export async function handleSalesBrain(db, input) {
       stage,
       interest_level: interest,
       intent,
-      score,
+      score
     });
+
   } else {
+
     lead = await updateLead(db, lead.id, {
       status,
       stage,
       interest_level: interest,
       intent,
-      score,
+      score
     });
+
   }
 
   let conversation = await getConversation(db, orgId, phone, channel);
 
   if (!conversation) {
+
     conversation = await createConversation(db, {
       organization_id: orgId,
       external_user_id: phone,
       channel,
       stage,
-      agent_id: agentId,
+      agent_id: agentId
     });
+
   }
 
   let followup = null;
 
   if (score >= 60) {
+
     followup = await createFollowup({
       db,
       organizationId: orgId,
       conversationId: conversation.id,
       phone,
-      reason: `intent_${intent}`,
+      reason: `intent_${intent}`
     });
+
   }
 
   return {
@@ -327,14 +345,15 @@ export async function handleSalesBrain(db, input) {
     conversation,
     followup,
     catalogMatches,
+    productImages,
     salesAnalysis: {
       intent,
       score,
       status,
       stage,
       interest_level: interest,
-      reply,
-    },
+      reply
+    }
   };
 }
 
@@ -346,7 +365,7 @@ export const handleInbound = async ({
   agentId,
   externalUserId,
   text,
-  channel,
+  channel
 }) => {
 
   const brain = await handleSalesBrain(pool, {
@@ -354,7 +373,7 @@ export const handleInbound = async ({
     phone: externalUserId,
     text,
     channel,
-    agent_id: agentId,
+    agent_id: agentId
   });
 
   return {
@@ -364,8 +383,9 @@ export const handleInbound = async ({
     leadScore: brain.salesAnalysis.score,
     stage: brain.salesAnalysis.stage,
     data: {
-      interest_level: brain.salesAnalysis.interest_level,
+      interest_level: brain.salesAnalysis.interest_level
     },
     catalogMatches: brain.catalogMatches || [],
+    productImages: brain.productImages || []
   };
 };
