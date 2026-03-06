@@ -1,5 +1,5 @@
-// salesBrain.js — EVA Sales Brain v10
-// Compatible con estructura real de DB
+// salesBrain.js — EVA Sales Brain v11
+// Fully compatible with current EVA database
 
 // ===============================
 // INTENT DETECTION
@@ -179,7 +179,7 @@ export async function updateProfile(pool,{profileId,patch}) {
 
 async function createPendingFollowup(pool,{orgId,conversationId,leadScore,externalUserId}) {
 
-  if(leadScore < 40) return
+  if (leadScore < 40) return
 
   await pool.query(
     `INSERT INTO followups
@@ -230,9 +230,12 @@ export async function handleInbound({
   if (useCase) patch.use_case = useCase
 
   if (intent === "BUY") {
-    patch.stage = leadScore >= 85 ? "CLOSING"
-                 : leadScore >= 60 ? "OFFER"
-                 : "DISCOVERY"
+
+    patch.stage =
+      leadScore >= 85 ? "CLOSING" :
+      leadScore >= 60 ? "OFFER" :
+      "DISCOVERY"
+
   }
 
   if (Object.keys(patch).length) {
@@ -244,8 +247,11 @@ export async function handleInbound({
 
   }
 
+  const fromStage = profile.profile_json?.stage || "DISCOVERY"
+  const toStage = patch.stage || fromStage
+
   // ===============================
-  // PIPELINE EVENT (FIXED)
+  // PIPELINE EVENT
   // ===============================
 
   await pool.query(
@@ -255,8 +261,8 @@ export async function handleInbound({
     [
       org.id,
       conversationId,
-      profile.profile_json?.stage || "DISCOVERY",
-      patch.stage || profile.profile_json?.stage || "DISCOVERY",
+      fromStage,
+      toStage,
       intent,
       externalUserId
     ]
@@ -277,10 +283,15 @@ export async function handleInbound({
 
   }
 
+  // ===============================
+  // FOLLOWUP
+  // ===============================
+
   await createPendingFollowup(pool,{
     orgId:org.id,
     conversationId,
-    leadScore
+    leadScore,
+    externalUserId
   })
 
   // ===============================
@@ -294,7 +305,7 @@ export async function handleInbound({
     messages:[
       {
         role:"system",
-        content:"Eres EVA, una asistente de ventas que ayuda a cerrar ventas rápidamente."
+        content:"Eres EVA, una asistente de ventas inteligente. Responde corto y ayuda a cerrar ventas."
       },
       {role:"user",content:text}
     ]
