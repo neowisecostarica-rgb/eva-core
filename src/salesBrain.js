@@ -177,15 +177,15 @@ export async function updateProfile(pool,{profileId,patch}) {
 // FOLLOWUPS
 // ===============================
 
-async function createPendingFollowup(pool,{orgId,conversationId,leadScore}) {
+async function createPendingFollowup(pool,{orgId,conversationId,leadScore,externalUserId}) {
 
-  if (leadScore < 40) return
+  if(leadScore < 40) return
 
   await pool.query(
     `INSERT INTO followups
-     (organization_id,conversation_id,status,scheduled_for)
-     VALUES($1,$2,'pending',now()+interval '2 hours')`,
-    [orgId,conversationId]
+     (organization_id,conversation_id,status,scheduled_for,lead_phone,reason)
+     VALUES($1,$2,'pending',now()+interval '2 hours',$3,'AI_FOLLOWUP')`,
+    [orgId,conversationId,externalUserId]
   )
 
 }
