@@ -1,30 +1,20 @@
 // src/api/metrics.js
 
+import { resolveOrganization } from "../lib/auth.js";
+
 export function registerMetricsRoutes(app, pool) {
 
   app.get("/v1/metrics/summary", async (req, res) => {
 
     try {
 
-      const apiKey = req.headers.authorization?.replace("Bearer ", "");
+      let orgId;
 
-      if (!apiKey) {
-        return res.status(401).json({ error: "missing_api_key" });
+      try {
+        orgId = await resolveOrganization(req);
+      } catch (err) {
+        return res.status(401).json({ error: "unauthorized" });
       }
-
-      const orgResult = await pool.query(
-        `SELECT id 
-         FROM organizations 
-         WHERE api_key=$1 AND status='ACTIVE'
-         LIMIT 1`,
-        [apiKey]
-      );
-
-      if (!orgResult.rows.length) {
-        return res.status(401).json({ error: "invalid_api_key" });
-      }
-
-      const orgId = orgResult.rows[0].id;
 
       const conversationsToday = await pool.query(
         `SELECT COUNT(*) 
