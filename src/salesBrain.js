@@ -1,5 +1,5 @@
 // src/salesBrain.js
-// EVA Sales Brain - Stable Core
+// EVA Sales Brain - Stable Core (Refactor P0/P1)
 
 function normalizeText(input) {
   return String(input || "")
@@ -34,6 +34,7 @@ function detectIntent(text = "") {
 /* -------------------- SCORE -------------------- */
 
 function computeScore(text = "", intent = "INFO") {
+
   const t = normalizeText(text);
   let score = 0;
 
@@ -49,22 +50,28 @@ function computeScore(text = "", intent = "INFO") {
 }
 
 function deriveInterestLevel(score) {
+
   if (score >= 85) return "HIGH";
   if (score >= 45) return "MEDIUM";
   return "LOW";
+
 }
 
 function deriveLeadStatus(score, intent) {
+
   if (score >= 85 || intent === "BUY") return "HOT";
   if (score >= 45) return "WARM";
   return "NEW";
+
 }
 
 function deriveStage(score) {
+
   if (score >= 85) return "CLOSING";
   if (score >= 65) return "OFFER";
   if (score >= 45) return "QUALIFYING";
   return "DISCOVERY";
+
 }
 
 /* -------------------- REPLY -------------------- */
@@ -101,141 +108,45 @@ function buildReply({ intent, catalogMatches = [] }) {
     "\n\n¿La necesitas para estudio o trabajo? Si tienes un presupuesto aproximado también puedo recomendarte la mejor opción.";
 
   return baseReply + productsText + closing;
+
 }
 
 /* -------------------- PRODUCT SEARCH -------------------- */
 
 async function searchCatalog(db, organizationId) {
 
-  const query = `
-    SELECT id,name,price_crc AS price,'CRC' AS currency
-    FROM product_catalog
-    WHERE organization_id=$1
-    LIMIT 3
-  `;
-
-  const { rows } = await db.query(query, [organizationId]);
+  const { rows } = await db.query(
+    `SELECT id,name,price_crc AS price,'CRC' AS currency
+     FROM product_catalog
+     WHERE organization_id=$1
+     LIMIT 3`,
+    [organizationId]
+  );
 
   return rows || [];
+
 }
 
 async function getProductImages(db, productIds) {
 
   if (!productIds.length) return [];
 
-  const query = `
-    SELECT product_id,url
-    FROM product_assets
-    WHERE product_id = ANY($1)
-    ORDER BY sort_order ASC
-  `;
-
-  const { rows } = await db.query(query, [productIds]);
+  const { rows } = await db.query(
+    `SELECT product_id,url
+     FROM product_assets
+     WHERE product_id = ANY($1)
+     ORDER BY sort_order ASC`,
+    [productIds]
+  );
 
   return rows || [];
-}
 
-/* -------------------- LEAD -------------------- */
-
-async function getLead(db, orgId, phone) {
-
-  const r = await db.query(
-    `SELECT * FROM leads
-     WHERE organization_id=$1 AND phone=$2
-     LIMIT 1`,
-    [orgId, phone]
-  );
-
-  return r.rows[0] || null;
-}
-
-async function createLead(db, data) {
-
-  const r = await db.query(
-    `INSERT INTO leads
-     (organization_id,phone,status,stage,interest_level,intent,score,created_at,updated_at,last_contact_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,NOW(),NOW(),NOW())
-     RETURNING *`,
-    [
-      data.organization_id,
-      data.phone,
-      data.status,
-      data.stage,
-      data.interest_level,
-      data.intent,
-      data.score
-    ]
-  );
-
-  return r.rows[0];
-}
-
-async function updateLead(db, id, patch) {
-
-  const r = await db.query(
-    `UPDATE leads
-     SET status=$2,
-         stage=$3,
-         interest_level=$4,
-         intent=$5,
-         score=$6,
-         last_contact_at=NOW(),
-         updated_at=NOW()
-     WHERE id=$1
-     RETURNING *`,
-    [
-      id,
-      patch.status,
-      patch.stage,
-      patch.interest_level,
-      patch.intent,
-      patch.score
-    ]
-  );
-
-  return r.rows[0];
-}
-
-/* -------------------- CONVERSATION -------------------- */
-
-async function getConversation(db, orgId, phone, channel) {
-
-  const r = await db.query(
-    `SELECT * FROM conversations
-     WHERE organization_id=$1
-     AND external_user_id=$2
-     AND channel=$3
-     LIMIT 1`,
-    [orgId, phone, channel]
-  );
-
-  return r.rows[0] || null;
-}
-
-async function createConversation(db, data) {
-
-  const r = await db.query(
-    `INSERT INTO conversations
-     (organization_id,external_user_id,channel,stage,created_at,updated_at,control_mode,agent_id)
-     VALUES ($1,$2,$3,$4,NOW(),NOW(),'HYBRID',$5)
-     RETURNING *`,
-    [
-      data.organization_id,
-      data.external_user_id,
-      data.channel,
-      data.stage,
-      data.agent_id
-    ]
-  );
-
-  return r.rows[0];
 }
 
 /* -------------------- FOLLOWUP -------------------- */
 
 async function createFollowup({ db, organizationId, conversationId, phone, reason }) {
 
-  // 1️⃣ verificar si ya existe followup pendiente
   const existing = await db.query(
     `SELECT id
      FROM followups
@@ -250,13 +161,11 @@ async function createFollowup({ db, organizationId, conversationId, phone, reaso
     return existing.rows[0];
   }
 
-  // 2️⃣ calcular fecha (24h)
   const scheduled = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
-  // 3️⃣ crear followup
   const r = await db.query(
     `INSERT INTO followups
-     (organization_id, lead_phone, conversation_id, scheduled_for, status, reason, payload, created_at, updated_at)
+     (organization_id,lead_phone,conversation_id,scheduled_for,status,reason,payload,created_at,updated_at)
      VALUES ($1,$2,$3,$4,'pending',$5,$6,NOW(),NOW())
      RETURNING *`,
     [
@@ -270,9 +179,10 @@ async function createFollowup({ db, organizationId, conversationId, phone, reaso
   );
 
   return r.rows[0];
+
 }
 
-/* -------------------- CORE -------------------- */
+/* -------------------- SALES BRAIN -------------------- */
 
 export async function handleSalesBrain(db, input) {
 
@@ -294,52 +204,35 @@ export async function handleSalesBrain(db, input) {
       ? await searchCatalog(db, orgId)
       : [];
 
-  let productImages = [];
-
-  if (catalogMatches.length > 0) {
-    const productIds = catalogMatches.map(p => p.id);
-    productImages = await getProductImages(db, productIds);
-  }
-
   const reply = buildReply({ intent, catalogMatches });
 
-  let lead = await getLead(db, orgId, phone);
+  let conversationId = null;
 
-  if (!lead) {
+  const conv = await db.query(
+    `SELECT id
+     FROM conversations
+     WHERE organization_id=$1
+     AND external_user_id=$2
+     AND channel=$3
+     LIMIT 1`,
+    [orgId, phone, channel]
+  );
 
-    lead = await createLead(db, {
-      organization_id: orgId,
-      phone,
-      status,
-      stage,
-      interest_level: interest,
-      intent,
-      score
-    });
+  if (conv.rows.length === 0) {
+
+    const newConv = await db.query(
+      `INSERT INTO conversations
+       (organization_id,external_user_id,channel,stage,created_at,updated_at,control_mode,agent_id)
+       VALUES ($1,$2,$3,$4,NOW(),NOW(),'HYBRID',$5)
+       RETURNING *`,
+      [orgId, phone, channel, stage, agentId]
+    );
+
+    conversationId = newConv.rows[0].id;
 
   } else {
 
-    lead = await updateLead(db, lead.id, {
-      status,
-      stage,
-      interest_level: interest,
-      intent,
-      score
-    });
-
-  }
-
-  let conversation = await getConversation(db, orgId, phone, channel);
-
-  if (!conversation) {
-
-    conversation = await createConversation(db, {
-      organization_id: orgId,
-      external_user_id: phone,
-      channel,
-      stage,
-      agent_id: agentId
-    });
+    conversationId = conv.rows[0].id;
 
   }
 
@@ -350,7 +243,7 @@ export async function handleSalesBrain(db, input) {
     followup = await createFollowup({
       db,
       organizationId: orgId,
-      conversationId: conversation.id,
+      conversationId,
       phone,
       reason: `intent_${intent}`
     });
@@ -358,20 +251,16 @@ export async function handleSalesBrain(db, input) {
   }
 
   return {
-    lead,
-    conversation,
-    followup,
+    reply,
     catalogMatches,
-    productImages,
     salesAnalysis: {
       intent,
       score,
-      status,
       stage,
-      interest_level: interest,
-      reply
+      interest_level: interest
     }
   };
+
 }
 
 /* -------------------- API BRIDGE -------------------- */
@@ -389,106 +278,53 @@ export async function handleInbound({
 
   let intent = "UNKNOWN";
   let confidence = 0.5;
-  let leadScore = 10;
   let stage = "DISCOVERY";
+  let leadScore = 0;
   let reply = null;
-  let data = {};
-  let catalogMatches = [];
 
   try {
 
-    /* ---------------- IA INTENT DETECTION ---------------- */
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      temperature: 0.6,
+      messages: [
+        { role: "system", content: "You are EVA, a friendly AI sales assistant." },
+        { role: "user", content: text }
+      ]
+    });
 
-    try {
+    reply = completion.choices?.[0]?.message?.content || null;
 
-      const completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        temperature: 0.3,
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are a sales intent classifier. Return JSON only."
-          },
-          {
-            role: "user",
-            content: text
-          }
-        ]
-      });
+  } catch (err) {
 
-      const raw = completion.choices?.[0]?.message?.content;
-
-      if (raw) {
-        const parsed = JSON.parse(raw);
-
-        intent = parsed.intent || intent;
-        confidence = parsed.confidence || confidence;
-        leadScore = parsed.leadScore || leadScore;
-        stage = parsed.stage || stage;
-        data = parsed.data || {};
-
-      }
-
-    } catch (aiError) {
-
-      console.error("AI intent detection failed:", aiError);
-
-    }
-
-    /* ---------------- RESPUESTA IA ---------------- */
-
-    try {
-
-      const completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        temperature: 0.6,
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are EVA, a friendly AI sales assistant helping the user."
-          },
-          {
-            role: "user",
-            content: text
-          }
-        ]
-      });
-
-      reply =
-        completion.choices?.[0]?.message?.content ||
-        null;
-
-    } catch (aiReplyError) {
-
-      console.error("AI reply generation failed:", aiReplyError);
-
-    }
-
-  } catch (fatalError) {
-
-    console.error("handleInbound fatal error:", fatalError);
+    console.error("AI error:", err);
 
   }
-// ejecutar Sales Brain para actualizar CRM
-try {
 
-  await handleSalesBrain(pool, {
-    organization_id: org.id,
-    phone: externalUserId,
-    text,
-    channel,
-    agent_id: agentId
-  });
+  let sales = null;
 
-} catch (salesError) {
+  try {
 
-  console.error("SalesBrain execution failed:", salesError);
+    sales = await handleSalesBrain(pool, {
+      organization_id: org.id,
+      phone: externalUserId,
+      text,
+      channel,
+      agent_id: agentId
+    });
 
-}
-  
-  /* ---------------- FALLBACK FINAL ---------------- */
+    if (sales?.salesAnalysis) {
+
+      leadScore = sales.salesAnalysis.score || 0;
+      stage = sales.salesAnalysis.stage || stage;
+
+    }
+
+  } catch (salesError) {
+
+    console.error("SalesBrain failed:", salesError);
+
+  }
 
   if (!reply) {
 
@@ -497,11 +333,9 @@ try {
 
   }
 
-  /* ---------------- CREAR FOLLOWUP ---------------- */
+  if (leadScore >= 40) {
 
-  try {
-
-    if (leadScore >= 40) {
+    try {
 
       await createFollowup({
         db: pool,
@@ -511,11 +345,11 @@ try {
         reason: "lead_engaged"
       });
 
+    } catch (err) {
+
+      console.error("Followup failed:", err);
+
     }
-
-  } catch (followupError) {
-
-    console.error("Followup creation failed:", followupError);
 
   }
 
@@ -525,7 +359,7 @@ try {
     confidence,
     leadScore,
     stage,
-    data,
-    catalogMatches
+    catalogMatches: sales?.catalogMatches || []
   };
+
 }
