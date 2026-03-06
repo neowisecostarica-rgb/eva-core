@@ -124,6 +124,19 @@ function buildReply({ intent, score, useCase }) {
     return "¡Hola! 👋 Gracias por escribirnos. Con gusto te ayudo. ¿Lo ocupas para estudio, trabajo o algo más específico?";
   }
 
+  async function searchCatalog(db, organizationId, text) {
+
+  const query = `
+    SELECT id, name, price, currency
+    FROM product_catalog
+    WHERE organization_id = $1
+    LIMIT 3
+  `;
+
+  const { rows } = await db.query(query, [organizationId]);
+
+  return rows || [];
+}
   if (intent === "PRICE") {
     return "Con gusto te ayudo con eso 🙌 Para recomendarte una opción correcta, cuéntame: ¿la necesitas para estudio o trabajo? y si tienes un presupuesto aproximado, mejor aún.";
   }
@@ -457,6 +470,11 @@ export async function handleSalesBrain(db, input) {
   const budget = extractBudget(text);
   const useCase = extractUseCase(text);
   const reply = buildReply({ intent, score, useCase });
+  let catalogMatches = [];
+
+if (intent === "PRICE" || intent === "BUY") {
+  catalogMatches = await searchCatalog(db, organizationId, text);
+}
 
   // 1) Lead
   const existingLead = await getLeadByPhone(db, organizationId, phone);
@@ -603,16 +621,20 @@ export const handleInbound = async ({
     agent_id: agentId
   });
 
-  return {
-    reply: brain.salesAnalysis.reply,
-    intent: brain.salesAnalysis.intent,
-    confidence: brain.salesAnalysis.score / 100,
-    leadScore: brain.salesAnalysis.score,
-    stage: brain.salesAnalysis.stage,
-    data: {
-      interest_level: brain.salesAnalysis.interest_level,
-      budget: brain.salesAnalysis.budget,
-      use_case: brain.salesAnalysis.use_case
-    }
-  };
+ return {
+  lead,
+  conversation,
+  pipelineEvent,
+  followup,
+  catalogMatches,
+  salesAnalysis: {
+    intent,
+    score: lead.score,
+    status: lead.status,
+    stage: lead.stage,
+    interest_level: lead.interest_level,
+    budget: lead.budget,
+    use_case: lead.use_case,
+    reply,
+  },
 };
