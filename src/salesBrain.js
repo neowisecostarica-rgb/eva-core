@@ -1,35 +1,37 @@
-// salesBrain.js — EVA Sales Brain v9
-// Rules + Memory + Catalog + AI fallback + Confidence + Stage + CRM Data + Followups + Sales Detection
+// salesBrain.js — EVA Sales Brain v10
+// Compatible con estructura real de DB
 
 // ===============================
 // INTENT DETECTION
 // ===============================
 
 export function detectIntentRule(text = "") {
-  const t = text.toLowerCase();
-  const hasAny = (...arr) => arr.some(w => t.includes(w));
 
-  if (hasAny("hola", "buenas", "buen día", "buenos días", "buenas tardes", "buenas noches", "hey", "saludos")) {
-    return { intent: "GREETING", confidence: 0.95 };
+  const t = text.toLowerCase()
+
+  const hasAny = (...arr) => arr.some(w => t.includes(w))
+
+  if (hasAny("hola","buenas","buen día","buenos días","buenas tardes","buenas noches","hey","saludos")) {
+    return { intent: "GREETING", confidence: 0.95 }
   }
 
-  if (hasAny("no funciona", "daño", "problema", "error", "pantalla", "teclado", "batería", "garantía", "reparar", "soporte", "servicio técnico")) {
-    return { intent: "SUPPORT", confidence: 0.85 };
+  if (hasAny("no funciona","daño","problema","error","pantalla","teclado","batería","garantía","reparar","soporte","servicio técnico")) {
+    return { intent: "SUPPORT", confidence: 0.85 }
   }
 
-  if (
-    hasAny(
-      "precio","cuánto cuesta","cuanto cuesta","vale","costo",
-      "disponible","tiene","tienen","tienes","me interesa",
-      "quiero","comprar","apartarlo","apartar","envío","envio",
-      "entrega","fotos","modelo","ram","ssd"
-    )
-  ) {
-    return { intent: "BUY", confidence: 0.75 };
+  if (hasAny(
+    "precio","cuánto cuesta","cuanto cuesta","vale","costo",
+    "disponible","tiene","tienen","tienes",
+    "me interesa","quiero","comprar","apartarlo","apartar",
+    "envío","envio","entrega","fotos","modelo","ram","ssd"
+  )) {
+    return { intent: "BUY", confidence: 0.75 }
   }
 
-  return { intent: "INFO", confidence: 0.55 };
+  return { intent: "INFO", confidence: 0.55 }
+
 }
+
 
 // ===============================
 // LEAD SCORING
@@ -37,29 +39,29 @@ export function detectIntentRule(text = "") {
 
 export function scoreLead({ intent, text = "" }) {
 
-  const t = text.toLowerCase();
-  let score = 0;
+  const t = text.toLowerCase()
+  let score = 0
 
-  if (intent === "GREETING") score += 10;
-  if (intent === "INFO") score += 20;
-  if (intent === "SUPPORT") score += 30;
-  if (intent === "BUY") score += 45;
+  if (intent === "GREETING") score += 10
+  if (intent === "INFO") score += 20
+  if (intent === "SUPPORT") score += 30
+  if (intent === "BUY") score += 45
 
-  const bump = (cond, pts) => { if (cond) score += pts };
+  if (t.includes("precio")) score += 10
+  if (t.includes("fotos")) score += 15
+  if (t.includes("envio") || t.includes("entrega")) score += 10
+  if (t.includes("apart") || t.includes("sinpe")) score += 20
+  if (t.includes("lo quiero") || t.includes("me lo llevo")) score += 25
 
-  bump(t.includes("precio"),10)
-  bump(t.includes("fotos"),15)
-  bump(t.includes("envio") || t.includes("entrega"),10)
-  bump(t.includes("apart") || t.includes("sinpe"),20)
-  bump(t.includes("lo quiero") || t.includes("me lo llevo"),25)
-
-  if (score > 100) score = 100;
+  if (score > 100) score = 100
 
   return score
+
 }
 
+
 // ===============================
-// SALES SIGNAL DETECTION
+// SALES SIGNAL
 // ===============================
 
 export function detectSaleSignal(text = "") {
@@ -78,98 +80,106 @@ export function detectSaleSignal(text = "") {
     "sinpe",
     "pago",
     "lo compro",
-    "comprarlo",
     "comprar ya"
   ]
 
   return signals.some(s => t.includes(s))
+
 }
+
 
 // ===============================
 // DATA EXTRACTION
 // ===============================
 
-export function extractBudgetCRC(text=""){
+export function extractBudgetCRC(text="") {
 
-  const t=text.toLowerCase().replace(/\./g,"").replace(/,/g,"")
+  const t = text.toLowerCase().replace(/\./g,"").replace(/,/g,"")
 
-  const m1=t.match(/₡\s?(\d+)/)
-  if(m1) return parseInt(m1[1])
+  const m1 = t.match(/₡\s?(\d+)/)
+  if (m1) return parseInt(m1[1])
 
-  const m2=t.match(/(\d+)\s?mil/)
-  if(m2) return parseInt(m2[1])*1000
-
-  return null
-}
-
-export function extractUseCase(text=""){
-
-  const t=text.toLowerCase()
-
-  if(t.includes("universidad")||t.includes("colegio")||t.includes("estudio")) return "study"
-  if(t.includes("trabajo")||t.includes("oficina")) return "work"
-  if(t.includes("gaming")||t.includes("juegos")) return "gaming"
+  const m2 = t.match(/(\d+)\s?mil/)
+  if (m2) return parseInt(m2[1]) * 1000
 
   return null
+
 }
 
-export function extractUrgency(text="",leadScore=0){
+export function extractUseCase(text="") {
 
-  const t=text.toLowerCase()
+  const t = text.toLowerCase()
 
-  if(t.includes("hoy")||t.includes("ya")||t.includes("urgente")) return "high"
+  if (t.includes("universidad") || t.includes("colegio") || t.includes("estudio")) return "study"
+  if (t.includes("trabajo") || t.includes("oficina")) return "work"
+  if (t.includes("gaming") || t.includes("juegos")) return "gaming"
 
-  if(leadScore>=80) return "high"
-  if(leadScore>=50) return "medium"
+  return null
+
+}
+
+export function extractUrgency(text="", leadScore=0) {
+
+  const t = text.toLowerCase()
+
+  if (t.includes("hoy") || t.includes("ya") || t.includes("urgente")) return "high"
+
+  if (leadScore >= 80) return "high"
+  if (leadScore >= 50) return "medium"
 
   return "low"
+
 }
+
 
 // ===============================
 // PROFILE MEMORY
 // ===============================
 
-export async function getOrCreateProfile(pool,{orgId,externalUserId,agentId}){
+export async function getOrCreateProfile(pool,{orgId,externalUserId,agentId}) {
 
-  const r=await pool.query(
+  const r = await pool.query(
     `SELECT * FROM customer_profiles
      WHERE organization_id=$1 AND external_user_id=$2
      LIMIT 1`,
     [orgId,externalUserId]
   )
 
-  if(r.rows.length) return r.rows[0]
+  if (r.rows.length) return r.rows[0]
 
-  const created=await pool.query(
+  const created = await pool.query(
     `INSERT INTO customer_profiles
      (organization_id,external_user_id,agent_id,profile_json)
      VALUES($1,$2,$3,'{}'::jsonb)
      RETURNING *`,
-    [orgId,externalUserId,agentId||null]
+    [orgId,externalUserId,agentId || null]
   )
 
   return created.rows[0]
+
 }
 
-export async function updateProfile(pool,{profileId,patch}){
+
+export async function updateProfile(pool,{profileId,patch}) {
 
   await pool.query(
     `UPDATE customer_profiles
      SET profile_json = profile_json || $2::jsonb,
          updated_at = now()
      WHERE id=$1`,
-    [profileId,JSON.stringify(patch)]
+    [profileId, JSON.stringify(patch)]
   )
 
 }
+
 
 // ===============================
 // FOLLOWUPS
 // ===============================
 
-async function createPendingFollowup(pool,{orgId,conversationId,leadScore}){
+async function createPendingFollowup(pool,{orgId,conversationId,leadScore}) {
 
-  if(leadScore<40) return
+  if (leadScore < 40) return
 
   await pool.query(
     `INSERT INTO followups
@@ -179,6 +189,7 @@ async function createPendingFollowup(pool,{orgId,conversationId,leadScore}){
   )
 
 }
+
 
 // ===============================
 // MAIN INBOUND HANDLER
@@ -195,34 +206,36 @@ export async function handleInbound({
   text,
   channel
 
-}){
+}) {
 
-  const {intent,confidence}=detectIntentRule(text)
+  const {intent,confidence} = detectIntentRule(text)
 
-  const leadScore=scoreLead({intent,text})
+  const leadScore = scoreLead({intent,text})
 
-  const saleSignal=detectSaleSignal(text)
+  const saleSignal = detectSaleSignal(text)
 
-  const profile=await getOrCreateProfile(pool,{
+  const profile = await getOrCreateProfile(pool,{
     orgId:org.id,
     externalUserId,
     agentId
   })
 
-  const budget=extractBudgetCRC(text)
-  const useCase=extractUseCase(text)
-  const urgency=extractUrgency(text,leadScore)
+  const budget = extractBudgetCRC(text)
+  const useCase = extractUseCase(text)
+  const urgency = extractUrgency(text,leadScore)
 
-  const patch={}
+  const patch = {}
 
-  if(budget) patch.budget_crc=budget
-  if(useCase) patch.use_case=useCase
+  if (budget) patch.budget_crc = budget
+  if (useCase) patch.use_case = useCase
 
-  if(intent==="BUY"){
-    patch.stage=leadScore>=85?"CLOSING":leadScore>=60?"OFFER":"DISCOVERY"
+  if (intent === "BUY") {
+    patch.stage = leadScore >= 85 ? "CLOSING"
+                 : leadScore >= 60 ? "OFFER"
+                 : "DISCOVERY"
   }
 
-  if(Object.keys(patch).length){
+  if (Object.keys(patch).length) {
 
     await updateProfile(pool,{
       profileId:profile.id,
@@ -232,21 +245,28 @@ export async function handleInbound({
   }
 
   // ===============================
-  // PIPELINE EVENT
+  // PIPELINE EVENT (FIXED)
   // ===============================
 
   await pool.query(
     `INSERT INTO pipeline_events
-     (organization_id,conversation_id,event_type,payload)
-     VALUES($1,$2,'INBOUND_INTEL',$3)`,
-    [org.id,conversationId,JSON.stringify({intent,leadScore})]
+     (organization_id,conversation_id,from_stage,to_stage,reason,lead_phone)
+     VALUES($1,$2,$3,$4,$5,$6)`,
+    [
+      org.id,
+      conversationId,
+      profile.profile_json?.stage || "DISCOVERY",
+      patch.stage || profile.profile_json?.stage || "DISCOVERY",
+      intent,
+      externalUserId
+    ]
   )
 
   // ===============================
   // SALES DETECTION
   // ===============================
 
-  if(saleSignal){
+  if (saleSignal) {
 
     await pool.query(
       `INSERT INTO sales
@@ -267,21 +287,21 @@ export async function handleInbound({
   // AI RESPONSE
   // ===============================
 
-  const ai=await openai.chat.completions.create({
+  const ai = await openai.chat.completions.create({
 
     model:"gpt-4o-mini",
 
     messages:[
       {
         role:"system",
-        content:"Eres EVA, una asistente de ventas inteligente. Responde corto y orientado a cerrar ventas."
+        content:"Eres EVA, una asistente de ventas que ayuda a cerrar ventas rápidamente."
       },
       {role:"user",content:text}
     ]
 
   })
 
-  const reply=ai.choices?.[0]?.message?.content?.trim()
+  const reply = ai.choices?.[0]?.message?.content?.trim()
 
   return {
 
