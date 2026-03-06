@@ -113,7 +113,7 @@ app.post("/v1/messages/outbound", async (req, res) => {
     const phone = normalizePhone(external_user_id);
     const ch = channel || "unknown";
 
-    const conv = await pool.query(
+ const conv = await pool.query(
   `SELECT * FROM conversations
    WHERE organization_id=$1
    AND external_user_id=$2
