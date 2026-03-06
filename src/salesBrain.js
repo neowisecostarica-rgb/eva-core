@@ -199,6 +199,30 @@ export async function handleSalesBrain(db, input) {
   const status = deriveLeadStatus(score, intent);
   const stage = deriveStage(score);
 
+/* -------------------- CUSTOMER MEMORY -------------------- */
+
+await db.query(
+  `INSERT INTO customer_profiles
+   (organization_id, phone, lead_score, interest_level, stage, last_message, last_seen, updated_at)
+   VALUES ($1,$2,$3,$4,$5,$6,NOW(),NOW())
+   ON CONFLICT (organization_id, phone)
+   DO UPDATE SET
+     lead_score = EXCLUDED.lead_score,
+     interest_level = EXCLUDED.interest_level,
+     stage = EXCLUDED.stage,
+     last_message = EXCLUDED.last_message,
+     last_seen = NOW(),
+     updated_at = NOW()`,
+  [
+    orgId,
+    phone,
+    score,
+    interest,
+    stage,
+    text
+  ]
+);
+  
   const catalogMatches =
     intent === "PRICE" || intent === "BUY"
       ? await searchCatalog(db, orgId)
