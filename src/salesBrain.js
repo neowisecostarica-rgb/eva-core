@@ -69,20 +69,52 @@ function deriveStage(score) {
 
 /* -------------------- REPLY -------------------- */
 
-function buildReply({ intent }) {
-  if (intent === "GREETING")
-    return "¡Hola! 👋 Gracias por escribirnos. ¿La laptop la ocupas para estudio o trabajo?";
+function buildReply({ intent, catalogMatches = [] }) {
 
-  if (intent === "PRICE")
-    return "Con gusto te ayudo 🙌 ¿La necesitas para estudio o trabajo? y si tienes un presupuesto aproximado mejor aún.";
+  let baseReply = "";
 
-  if (intent === "BUY")
-    return "¡Perfecto! 🙌 ¿La ocupas para estudio o trabajo? y ¿qué presupuesto aproximado manejas?";
+  if (intent === "GREETING") {
+    baseReply = "¡Hola! 👋 Gracias por escribirnos.";
+  }
 
-  if (intent === "SUPPORT")
-    return "Claro, con gusto te ayudo. Cuéntame qué problema estás presentando.";
+  else if (intent === "PRICE") {
+    baseReply = "Con gusto te ayudo 🙌";
+  }
 
-  return "Con gusto te ayudo. Cuéntame un poco más de lo que buscas.";
+  else if (intent === "BUY") {
+    baseReply = "¡Perfecto! 🙌";
+  }
+
+  else if (intent === "SUPPORT") {
+    baseReply = "Claro, con gusto te ayudo con eso.";
+  }
+
+  else {
+    baseReply = "Con gusto te ayudo.";
+  }
+
+  let productsText = "";
+
+  if (catalogMatches.length > 0) {
+
+    productsText = "\n\nTenemos estas opciones disponibles:\n\n";
+
+    for (const p of catalogMatches) {
+
+      const priceFormatted =
+        p.currency === "CRC"
+          ? `₡${Number(p.price).toLocaleString("es-CR")}`
+          : `${p.price} ${p.currency}`;
+
+      productsText += `💻 ${p.name} — ${priceFormatted}\n`;
+    }
+
+  }
+
+  const closing =
+    "\n\n¿La necesitas para estudio o trabajo? Si tienes un presupuesto aproximado también puedo recomendarte la mejor opción.";
+
+  return baseReply + productsText + closing;
 }
 
 /* -------------------- PRODUCT SEARCH -------------------- */
@@ -237,7 +269,7 @@ export async function handleSalesBrain(db, input) {
   const status = deriveLeadStatus(score, intent);
   const stage = deriveStage(score);
 
-  const reply = buildReply({ intent });
+  const reply = buildReply({ intent, catalogMatches });
 
   const catalogMatches =
     intent === "PRICE" || intent === "BUY"
