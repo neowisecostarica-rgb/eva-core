@@ -471,7 +471,23 @@ export async function handleInbound({
     console.error("handleInbound fatal error:", fatalError);
 
   }
+// ejecutar Sales Brain para actualizar CRM
+try {
 
+  await handleSalesBrain(pool, {
+    organization_id: org.id,
+    phone: externalUserId,
+    text,
+    channel,
+    agent_id: agentId
+  });
+
+} catch (salesError) {
+
+  console.error("SalesBrain execution failed:", salesError);
+
+}
+  
   /* ---------------- FALLBACK FINAL ---------------- */
 
   if (!reply) {
