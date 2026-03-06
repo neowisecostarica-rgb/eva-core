@@ -485,6 +485,8 @@ app.post("/v1/webhooks/whatsapp", async (req, res) => {
 
 /* ----------------------------- START ----------------------------- */
 
+registerConversationRoutes(app, pool);
+
 app.listen(PORT, () => {
   console.log("EVA running on port", PORT);
 });
