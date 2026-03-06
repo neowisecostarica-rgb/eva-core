@@ -7,6 +7,7 @@ import pkg from "pg";
 import crypto from "crypto";
 import { registerLeadRoutes } from "./api/leads.js";
 import { registerMetricsRoutes } from "./api/metrics.js";
+import { registerIntelRoutes } from "./api/intel.js";
 
 import { handleInbound } from "./salesBrain.js";
 import { registerConversationRoutes } from "./api/conversations.js";
@@ -491,6 +492,7 @@ app.post("/v1/webhooks/whatsapp", async (req, res) => {
 registerConversationRoutes(app, pool);
 registerLeadRoutes(app, pool);
 registerMetricsRoutes(app, pool);
+registerIntelRoutes(app, pool);
 
 app.listen(PORT, () => {
   console.log("EVA running on port", PORT);
