@@ -41,7 +41,18 @@ function makeApiKey() {
 }
 
 function getBearerToken(req) {
-  return req.headers.authorization?.replace("Bearer ", "") || null;
+
+  const header = req.headers.authorization;
+
+  if (!header) return null;
+
+  if (header.startsWith("Bearer ")) {
+    return header.replace("Bearer ", "");
+  }
+
+  // fallback si mandan solo la API key
+  return header;
+
 }
 
 /* ----------------------------- ORG AUTH ----------------------------- */
