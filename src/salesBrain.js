@@ -89,7 +89,7 @@ function buildReply({ intent }) {
 
 async function searchCatalog(db, organizationId) {
   const query = `
-    SELECT id,name,price,currency
+   SELECT id,name,price_crc AS price,'CRC' AS currency
     FROM product_catalog
     WHERE organization_id=$1
     LIMIT 3
