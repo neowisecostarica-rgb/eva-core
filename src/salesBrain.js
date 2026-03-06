@@ -239,8 +239,8 @@ async function createFollowup({ db, organizationId, conversationId, phone, reaso
 
   const r = await db.query(
     `INSERT INTO followups
-     (organization_id,lead_phone,conversation_id,due_at,scheduled_for,status,reason,payload,created_at,updated_at)
-     VALUES ($1,$2,$3,$4,$4,'PENDING',$5,$6,NOW(),NOW())
+     (organization_id, lead_phone, conversation_id, scheduled_for, status, reason, payload, created_at, updated_at)
+     VALUES ($1,$2,$3,$4,'pending',$5,$6,NOW(),NOW())
      RETURNING *`,
     [
       organizationId,
