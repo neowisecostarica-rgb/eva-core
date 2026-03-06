@@ -1,26 +1,47 @@
-// salesBrain.js — EVA Sales Brain (Rules + Memory + Catalog + AI fallback)
+// salesBrain.js — EVA Sales Brain v8
+// Rules + Memory + Catalog + AI fallback + Confidence + Stage + CRM Data + Followups
 
 export function detectIntentRule(text = "") {
   const t = text.toLowerCase();
 
   const hasAny = (...arr) => arr.some(w => t.includes(w));
 
-  // GREETING
   if (hasAny("hola", "buenas", "buen día", "buenos días", "buenas tardes", "buenas noches", "hey", "saludos")) {
     return { intent: "GREETING", confidence: 0.95 };
   }
 
-  // SUPPORT
   if (hasAny("no funciona", "daño", "dañada", "problema", "error", "pantalla", "teclado", "batería", "garantía", "reparar", "soporte", "servicio técnico")) {
     return { intent: "SUPPORT", confidence: 0.85 };
   }
 
-  // BUY
-  if (hasAny("precio", "cuánto cuesta", "cuanto cuesta", "vale", "costo", "disponible", "tiene(n)", "tienes", "me interesa", "quiero", "comprar", "apartarlo", "apartar", "envío", "entrega", "fotos", "modelo", "ram", "ssd")) {
+  if (
+    hasAny(
+      "precio",
+      "cuánto cuesta",
+      "cuanto cuesta",
+      "vale",
+      "costo",
+      "disponible",
+      "tiene",
+      "tienen",
+      "tienes",
+      "me interesa",
+      "quiero",
+      "comprar",
+      "apartarlo",
+      "apartar",
+      "envío",
+      "envio",
+      "entrega",
+      "fotos",
+      "modelo",
+      "ram",
+      "ssd"
+    )
+  ) {
     return { intent: "BUY", confidence: 0.75 };
   }
 
-  // INFO (default)
   return { intent: "INFO", confidence: 0.55 };
 }
 
@@ -33,7 +54,9 @@ export function scoreLead({ intent, text = "" }) {
   if (intent === "SUPPORT") score += 30;
   if (intent === "BUY") score += 45;
 
-  const bump = (cond, pts) => { if (cond) score += pts; };
+  const bump = (cond, pts) => {
+    if (cond) score += pts;
+  };
 
   bump(t.includes("precio") || t.includes("cuanto cuesta") || t.includes("cuánto cuesta"), 10);
   bump(t.includes("fotos") || t.includes("foto real") || t.includes("imágenes") || t.includes("imagenes"), 15);
@@ -46,8 +69,8 @@ export function scoreLead({ intent, text = "" }) {
 }
 
 export function extractBudgetCRC(text = "") {
-  // extrae ₡200.000 / 200000 / 200 mil / 200k
   const t = text.toLowerCase().replace(/\./g, "").replace(/,/g, "");
+
   const m1 = t.match(/₡\s?(\d{2,9})/);
   if (m1) return parseInt(m1[1], 10);
 
@@ -63,22 +86,67 @@ export function extractBudgetCRC(text = "") {
   return null;
 }
 
+export function extractUseCase(text = "") {
+  const t = text.toLowerCase();
+
+  if (t.includes("universidad") || t.includes("universitario") || t.includes("estudio") || t.includes("colegio") || t.includes("escuela")) {
+    return "study";
+  }
+
+  if (t.includes("trabajo") || t.includes("oficina") || t.includes("empresa") || t.includes("excel")) {
+    return "work";
+  }
+
+  if (t.includes("gaming") || t.includes("juegos") || t.includes("jugar")) {
+    return "gaming";
+  }
+
+  if (t.includes("diseño") || t.includes("diseno") || t.includes("edición") || t.includes("edicion") || t.includes("arquitectura")) {
+    return "creative";
+  }
+
+  return null;
+}
+
+export function extractUrgency(text = "", leadScore = 0) {
+  const t = text.toLowerCase();
+
+  if (
+    t.includes("hoy") ||
+    t.includes("ya") ||
+    t.includes("urgente") ||
+    t.includes("de una") ||
+    t.includes("lo quiero") ||
+    t.includes("me lo llevo")
+  ) {
+    return "high";
+  }
+
+  if (leadScore >= 80) return "high";
+  if (leadScore >= 50) return "medium";
+  return "low";
+}
+
 export async function findCatalogMatches(pool, orgId, text) {
-  // Búsqueda simple: top 5 productos activos que matcheen por nombre o categoría.
-  // Mejora futura: embeddings + fuzzy. Por ahora ILIKE + trigram index si lo activaste.
   const q = `%${(text || "").trim()}%`;
+
   const r = await pool.query(
     `SELECT id, name, category, description, price_crc, stock
      FROM product_catalog
      WHERE organization_id=$1
        AND is_active=true
-       AND (name ILIKE $2 OR COALESCE(category,'') ILIKE $2)
+       AND (
+         name ILIKE $2
+         OR COALESCE(category,'') ILIKE $2
+         OR COALESCE(description,'') ILIKE $2
+       )
      ORDER BY
        CASE WHEN stock IS NULL THEN 0 WHEN stock > 0 THEN 1 ELSE 0 END DESC,
        updated_at DESC
      LIMIT 5`,
     [orgId, q]
   );
+
   return r.rows || [];
 }
 
@@ -91,6 +159,7 @@ export async function getProductImages(pool, orgId, productId) {
      LIMIT 6`,
     [orgId, productId]
   );
+
   return r.rows || [];
 }
 
@@ -104,7 +173,6 @@ export async function loadShortHistory(pool, conversationId, limit = 12) {
     [conversationId, limit]
   );
 
-  // devolver en orden cronológico
   return (r.rows || []).reverse().map(m => ({
     role: m.role === "assistant" ? "assistant" : "user",
     content: m.content
@@ -114,7 +182,8 @@ export async function loadShortHistory(pool, conversationId, limit = 12) {
 export async function getOrCreateProfile(pool, { orgId, externalUserId, agentId }) {
   const r = await pool.query(
     `SELECT * FROM customer_profiles
-     WHERE organization_id=$1 AND external_user_id=$2`,
+     WHERE organization_id=$1 AND external_user_id=$2
+     LIMIT 1`,
     [orgId, externalUserId]
   );
 
@@ -132,7 +201,6 @@ export async function getOrCreateProfile(pool, { orgId, externalUserId, agentId 
 }
 
 export async function updateProfile(pool, { profileId, patch }) {
-  // merge jsonb: profile_json || patch
   await pool.query(
     `UPDATE customer_profiles
      SET profile_json = profile_json || $2::jsonb,
@@ -142,10 +210,9 @@ export async function updateProfile(pool, { profileId, patch }) {
   );
 }
 
-export function buildRuleBasedReply({ intent, text, catalogMatches }) {
+export function buildRuleBasedReply({ intent, text, catalogMatches, leadScore }) {
   const t = (text || "").toLowerCase();
 
-  // Respuestas rápidas (sin IA) para alta conversión en WhatsApp
   if (intent === "GREETING") {
     return "¡Hola! 👋 Soy EVA. ¿Qué estás buscando hoy: laptop, reparación o información?";
   }
@@ -154,15 +221,17 @@ export function buildRuleBasedReply({ intent, text, catalogMatches }) {
     return "Entiendo 🙌 ¿Me contás qué equipo es y qué falla presenta? (modelo + qué está pasando). Si tenés foto o video, mejor.";
   }
 
-  // BUY: si hay matches, responder con catálogo real
   if (intent === "BUY" && catalogMatches?.length) {
     const lines = catalogMatches.map(p => {
       const price = p.price_crc ? `₡${p.price_crc.toLocaleString("es-CR")}` : "Precio: consultar";
-      const stock = (p.stock === 0) ? " (Agotado)" : "";
+      const stock = p.stock === 0 ? " (Agotado)" : "";
       return `• ${p.name}${p.category ? ` (${p.category})` : ""} — ${price}${stock}`;
     });
 
-    // Si el usuario pide fotos, activamos CTA de fotos
+    if (leadScore >= 85) {
+      return `¡Perfecto! 🙌 Tengo estas opciones disponibles:\n${lines.join("\n")}\n\nSi querés, te ayudo a apartar una de una vez o te envío fotos reales del modelo que más te interese.`;
+    }
+
     if (t.includes("foto") || t.includes("fotos") || t.includes("imágenes") || t.includes("imagenes")) {
       return `¡De una! 📸\n\nEstas son opciones disponibles:\n${lines.join("\n")}\n\nDecime cuál te interesa y te envío *fotos reales* de ese modelo.`;
     }
@@ -170,25 +239,21 @@ export function buildRuleBasedReply({ intent, text, catalogMatches }) {
     return `Sí 😊 En este momento tengo estas opciones:\n${lines.join("\n")}\n\n¿La necesitás para *estudio* o *trabajo*? Así te recomiendo la mejor.`;
   }
 
-  // BUY pero sin matches: pregunta de calificación
   if (intent === "BUY") {
+    if (leadScore >= 85) {
+      return "¡Claro! 🙌 Tengo opciones disponibles. Para avanzar de una vez: ¿la ocupás para estudio o trabajo y cuál rango de presupuesto manejás?";
+    }
+
     return "¡Claro! Para recomendarte bien: ¿la necesitás para *estudio* o *trabajo*? ¿Preferís 8GB o 16GB de RAM?";
   }
 
-  // INFO default
-  return null; // null => usar IA fallback si se requiere
+  return null;
 }
 
 export function shouldUseAI({ intent, confidence, ruleReply }) {
-  // Si ya hay reply por reglas, no usar IA.
   if (ruleReply) return false;
-
-  // Si la confianza es baja, IA puede ayudar.
   if (confidence < 0.65) return true;
-
-  // INFO suele requerir IA si no hay reply
   if (intent === "INFO") return true;
-
   return true;
 }
 
@@ -197,12 +262,14 @@ export function buildSystemPrompt({ orgName, profile, intent, leadScore }) {
   const parts = [];
 
   parts.push("You are EVA, an intelligent sales assistant.");
-  parts.push("Your goal is to convert conversations into sales while being friendly and concise.");
-  parts.push("Always ask 1 focused question at a time to move the sale forward.");
+  parts.push("Your goal is to convert conversations into sales while being friendly, concise, and commercially smart.");
+  parts.push("Always ask only 1 focused question at a time to move the sale forward.");
+  parts.push("Do not invent products, prices, availability, or discounts.");
+  parts.push("If information is uncertain, ask for clarification instead of inventing.");
+  parts.push("Keep replies short, WhatsApp-friendly, and natural in Spanish.");
 
   if (orgName) parts.push(`You work for organization: ${orgName}.`);
 
-  // Long-term memory summary (short!)
   const mem = [];
   if (p.use_case) mem.push(`use_case: ${p.use_case}`);
   if (p.product_interest) mem.push(`product_interest: ${p.product_interest}`);
@@ -216,10 +283,42 @@ export function buildSystemPrompt({ orgName, profile, intent, leadScore }) {
   }
 
   parts.push(`Detected intent: ${intent} (lead_score=${leadScore}).`);
-  parts.push("If the user is high intent (lead_score>=85), try to close with a simple next step (deposit/reserve/appointment).");
-  parts.push("Do not invent products or prices. If unknown, ask a question.");
+  parts.push("If lead_score >= 85, try to move toward a simple close: reserve, photos, appointment, or delivery coordination.");
+  parts.push("Return only the final text reply. Do not add explanations.");
 
   return parts.join("\n");
+}
+
+async function createPendingFollowup(pool, { orgId, conversationId, leadScore }) {
+  if (leadScore < 40) return;
+
+  try {
+    const existing = await pool.query(
+      `SELECT id
+       FROM followups
+       WHERE organization_id=$1
+         AND conversation_id=$2
+         AND status='pending'
+       ORDER BY scheduled_for DESC
+       LIMIT 1`,
+      [orgId, conversationId]
+    );
+
+    if (existing.rows.length) return;
+
+    let intervalSql = "2 hours";
+    if (leadScore >= 85) intervalSql = "1 hour";
+    else if (leadScore >= 60) intervalSql = "90 minutes";
+
+    await pool.query(
+      `INSERT INTO followups
+       (organization_id, conversation_id, status, scheduled_for)
+       VALUES ($1,$2,'pending', now() + interval '${intervalSql}')`,
+      [orgId, conversationId]
+    );
+  } catch {
+    // Si el schema no coincide, no rompemos el flujo principal.
+  }
 }
 
 export async function handleInbound({
@@ -235,32 +334,32 @@ export async function handleInbound({
   const { intent, confidence } = detectIntentRule(text);
   const leadScore = scoreLead({ intent, text });
 
-  // Perfil (long-term)
   const profile = await getOrCreateProfile(pool, {
     orgId: org.id,
     externalUserId,
     agentId
   });
 
-  // Catalog matches
   const catalogMatches = await findCatalogMatches(pool, org.id, text);
-
-  // Respuesta por reglas (si aplica)
-  const ruleReply = buildRuleBasedReply({ intent, text, catalogMatches });
-
-  // Actualizar memoria con señales simples
   const budget = extractBudgetCRC(text);
+  const useCase = extractUseCase(text);
+  const urgency = extractUrgency(text, leadScore);
+
   const patch = {};
   if (budget) patch.budget_crc = budget;
+  if (useCase) patch.use_case = useCase;
+  if (catalogMatches?.length) patch.product_interest = catalogMatches[0].name;
 
-  // stage simple
   if (intent === "BUY") {
-    patch.stage = leadScore >= 85 ? "closing" : leadScore >= 60 ? "interest" : "discovery";
+    patch.stage = leadScore >= 85 ? "CLOSING" : leadScore >= 60 ? "OFFER" : "DISCOVERY";
   } else if (intent === "SUPPORT") {
-    patch.stage = "support";
+    patch.stage = "SUPPORT";
+  } else if (intent === "GREETING") {
+    patch.stage = profile.profile_json?.stage || "DISCOVERY";
+  } else {
+    patch.stage = profile.profile_json?.stage || "QUALIFYING";
   }
 
-  // guardar últimos productos mostrados (solo nombres para empezar)
   if (catalogMatches?.length) {
     patch.last_products_shown = catalogMatches.slice(0, 3).map(p => p.name);
   }
@@ -269,30 +368,69 @@ export async function handleInbound({
     await updateProfile(pool, { profileId: profile.id, patch });
   }
 
-  // pipeline event (simple)
+  const mergedProfile = {
+    ...profile,
+    profile_json: {
+      ...(profile.profile_json || {}),
+      ...(patch || {})
+    }
+  };
+
+  const stage = patch.stage || mergedProfile.profile_json?.stage || "DISCOVERY";
+
+  const data = {
+    budget_crc: budget || mergedProfile.profile_json?.budget_crc || null,
+    product_interest:
+      patch.product_interest ||
+      mergedProfile.profile_json?.product_interest ||
+      catalogMatches?.[0]?.name ||
+      null,
+    use_case: useCase || mergedProfile.profile_json?.use_case || null,
+    urgency
+  };
+
   try {
     await pool.query(
       `INSERT INTO pipeline_events (organization_id, conversation_id, event_type, payload)
        VALUES ($1,$2,$3,$4::jsonb)`,
-      [org.id, conversationId, "INBOUND_INTEL", JSON.stringify({ intent, confidence, leadScore })]
+      [org.id, conversationId, "INBOUND_INTEL", JSON.stringify({ intent, confidence, leadScore, stage, data })]
     );
   } catch {
-    // si tu tabla pipeline_events no tiene estas columnas exactas, lo ignoramos sin romper.
+    // no romper
   }
 
-  // Si no usar IA, retornar regla
+  await createPendingFollowup(pool, {
+    orgId: org.id,
+    conversationId,
+    leadScore
+  });
+
+  const ruleReply = buildRuleBasedReply({
+    intent,
+    text,
+    catalogMatches,
+    leadScore
+  });
+
   const useAI = shouldUseAI({ intent, confidence, ruleReply });
+
   if (!useAI && ruleReply) {
-    return { reply: ruleReply, intent, confidence, leadScore, catalogMatches };
+    return {
+      reply: ruleReply,
+      intent,
+      confidence,
+      leadScore,
+      stage,
+      data,
+      catalogMatches
+    };
   }
 
-  // Short history
   const history = await loadShortHistory(pool, conversationId, 12);
 
-  // Construir prompt con memoria
   const systemPrompt = buildSystemPrompt({
     orgName: org.name || null,
-    profile: { ...profile, profile_json: { ...(profile.profile_json || {}), ...(patch || {}) } },
+    profile: mergedProfile,
     intent,
     leadScore
   });
@@ -306,9 +444,10 @@ export async function handleInbound({
     ]
   });
 
-  const reply = ai.choices?.[0]?.message?.content || "Perfecto. ¿Me confirmás un poquito más para ayudarte mejor?";
+  const reply =
+    ai.choices?.[0]?.message?.content?.trim() ||
+    "Perfecto. ¿Me confirmás un poquito más para ayudarte mejor?";
 
-  // eva_usage simple (si existe)
   try {
     const usage = ai.usage || {};
     await pool.query(
@@ -324,8 +463,16 @@ export async function handleInbound({
       ]
     );
   } catch {
-    // si no existe o no calza schema, ignorar sin romper.
+    // no romper
   }
 
-  return { reply, intent, confidence, leadScore, catalogMatches };
+  return {
+    reply,
+    intent,
+    confidence,
+    leadScore,
+    stage,
+    data,
+    catalogMatches
+  };
 }
