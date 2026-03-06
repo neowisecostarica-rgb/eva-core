@@ -587,6 +587,8 @@ if (intent === "PRICE" || intent === "BUY") {
       use_case: lead.use_case,
       reply,
     },
+    catalogMatches: brain.catalogMatches || []
+};
   };
 }
 
