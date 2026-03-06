@@ -485,6 +485,7 @@ app.post("/v1/webhooks/whatsapp", async (req, res) => {
 
 /* ----------------------------- START ----------------------------- */
 
+// activar API conversations
 registerConversationRoutes(app, pool);
 
 app.listen(PORT, () => {
