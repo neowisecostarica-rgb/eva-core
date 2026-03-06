@@ -199,6 +199,29 @@ export async function handleSalesBrain(db, input) {
   const status = deriveLeadStatus(score, intent);
   const stage = deriveStage(score);
 
+/* -------------------- CUSTOMER PROFILE UPDATE -------------------- */
+
+await db.query(
+  `UPDATE customer_profiles
+   SET
+     lead_score = $3,
+     interest_level = $4,
+     stage = $5,
+     last_message = $6,
+     last_seen = NOW(),
+     updated_at = NOW()
+   WHERE organization_id = $1
+   AND phone = $2`,
+  [
+    orgId,
+    phone,
+    score,
+    interest,
+    stage,
+    text
+  ]
+);
+
 /* -------------------- CUSTOMER MEMORY -------------------- */
 
 await db.query(
