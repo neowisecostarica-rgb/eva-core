@@ -376,33 +376,140 @@ export async function handleSalesBrain(db, input) {
 
 /* -------------------- API BRIDGE -------------------- */
 
-export const handleInbound = async ({
+export async function handleInbound({
   pool,
+  openai,
   org,
   agentId,
+  conversationId,
   externalUserId,
   text,
   channel
-}) => {
+}) {
 
-  const brain = await handleSalesBrain(pool, {
-    organization_id: org.id,
-    phone: externalUserId,
-    text,
-    channel,
-    agent_id: agentId
-  });
+  let intent = "UNKNOWN";
+  let confidence = 0.5;
+  let leadScore = 10;
+  let stage = "DISCOVERY";
+  let reply = null;
+  let data = {};
+  let catalogMatches = [];
+
+  try {
+
+    /* ---------------- IA INTENT DETECTION ---------------- */
+
+    try {
+
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        temperature: 0.3,
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are a sales intent classifier. Return JSON only."
+          },
+          {
+            role: "user",
+            content: text
+          }
+        ]
+      });
+
+      const raw = completion.choices?.[0]?.message?.content;
+
+      if (raw) {
+        const parsed = JSON.parse(raw);
+
+        intent = parsed.intent || intent;
+        confidence = parsed.confidence || confidence;
+        leadScore = parsed.leadScore || leadScore;
+        stage = parsed.stage || stage;
+        data = parsed.data || {};
+
+      }
+
+    } catch (aiError) {
+
+      console.error("AI intent detection failed:", aiError);
+
+    }
+
+    /* ---------------- RESPUESTA IA ---------------- */
+
+    try {
+
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        temperature: 0.6,
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are EVA, a friendly AI sales assistant helping the user."
+          },
+          {
+            role: "user",
+            content: text
+          }
+        ]
+      });
+
+      reply =
+        completion.choices?.[0]?.message?.content ||
+        null;
+
+    } catch (aiReplyError) {
+
+      console.error("AI reply generation failed:", aiReplyError);
+
+    }
+
+  } catch (fatalError) {
+
+    console.error("handleInbound fatal error:", fatalError);
+
+  }
+
+  /* ---------------- FALLBACK FINAL ---------------- */
+
+  if (!reply) {
+
+    reply =
+      "¡Hola! 😊 Estoy aquí para ayudarte. ¿Podrías contarme un poco más de lo que necesitas?";
+
+  }
+
+  /* ---------------- CREAR FOLLOWUP ---------------- */
+
+  try {
+
+    if (leadScore >= 40) {
+
+      await createFollowup({
+        db: pool,
+        organizationId: org.id,
+        conversationId,
+        phone: externalUserId,
+        reason: "lead_engaged"
+      });
+
+    }
+
+  } catch (followupError) {
+
+    console.error("Followup creation failed:", followupError);
+
+  }
 
   return {
-    reply: brain.salesAnalysis.reply,
-    intent: brain.salesAnalysis.intent,
-    confidence: brain.salesAnalysis.score / 100,
-    leadScore: brain.salesAnalysis.score,
-    stage: brain.salesAnalysis.stage,
-    data: {
-      interest_level: brain.salesAnalysis.interest_level
-    },
-    catalogMatches: brain.catalogMatches || [],
-    productImages: brain.productImages || []
+    reply,
+    intent,
+    confidence,
+    leadScore,
+    stage,
+    data,
+    catalogMatches
   };
-};
+}
