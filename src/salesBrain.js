@@ -235,8 +235,25 @@ async function createConversation(db, data) {
 
 async function createFollowup({ db, organizationId, conversationId, phone, reason }) {
 
+  // 1️⃣ verificar si ya existe followup pendiente
+  const existing = await db.query(
+    `SELECT id
+     FROM followups
+     WHERE organization_id=$1
+     AND conversation_id=$2
+     AND status='pending'
+     LIMIT 1`,
+    [organizationId, conversationId]
+  );
+
+  if (existing.rows.length > 0) {
+    return existing.rows[0];
+  }
+
+  // 2️⃣ calcular fecha (24h)
   const scheduled = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
+  // 3️⃣ crear followup
   const r = await db.query(
     `INSERT INTO followups
      (organization_id, lead_phone, conversation_id, scheduled_for, status, reason, payload, created_at, updated_at)
