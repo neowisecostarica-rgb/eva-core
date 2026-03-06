@@ -1,8 +1,8 @@
 // src/salesBrain.js
 // EVA Sales Brain - Stable Core
 
-function normalizeText(input = "") {
-  return String(input)
+function normalizeText(input) {
+  return String(input || "")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
