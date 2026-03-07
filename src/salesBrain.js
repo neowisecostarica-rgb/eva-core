@@ -60,8 +60,8 @@ function detectIntent(text = "") {
   if (/(precio|cuanto cuesta|cuanto vale|valor|en cuanto|cuanto)/.test(t))
     return "PRICE";
 
-  if (/(quiero comprar|me interesa|disponible|tiene|hay|apartar|reservar)/.test(t))
-    return "BUY";
+ if (/(quiero comprar|me interesa|disponible|tiene|hay|apartar|reservar|busco|necesito|para estudiar|para trabajo)/.test(t))
+  return "BUY";
 
   if (/(soporte|garantia|falla|reparacion|mantenimiento)/.test(t))
     return "SUPPORT";
