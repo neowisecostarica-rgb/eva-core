@@ -260,7 +260,7 @@ if (
   intent === "DISCOVERY" ||
   /laptop|computadora|pc|portatil/.test(t)
 ) {
-  catalogMatches = await searchCatalog(pool, orgId);
+  catalogMatches = await searchCatalog(db, orgId);
 }
 
   /* -------------------- CONVERSATION -------------------- */
@@ -435,11 +435,18 @@ Friendly, natural and conversational.
 
   }
 
-  return {
-    reply,
-    stage: sales?.salesAnalysis?.stage || "DISCOVERY",
-    leadScore: sales?.salesAnalysis?.score || 0,
-    catalogMatches: []
-  };
+ const reply = buildReply({
+  intent,
+  catalogMatches
+});
 
-}
+return {
+  reply,
+  catalogMatches,
+  salesAnalysis: {
+    intent,
+    score,
+    stage,
+    interest_level: interest
+  }
+};
