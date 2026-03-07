@@ -256,7 +256,7 @@ const catalogMatches =
   intent === "PRICE" ||
   intent === "BUY" ||
   /laptop|computadora|pc|portatil/.test(t)
-    ? await searchCatalog(db, orgId)
+  await searchCatalog(pool, orgId)
     : [];
   const reply = buildReply({ intent, catalogMatches });
 
