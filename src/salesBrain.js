@@ -317,22 +317,21 @@ export async function handleSalesBrain(db, input) {
   /* -------------------- BUILD REPLY -------------------- */
 
   const reply = buildReply({
-    intent,
-    catalogMatches
-  });
+  intent,
+  catalogMatches
+});
 
-  return {
-    reply,
-    catalogMatches,
-    salesAnalysis: {
-      intent,
-      score,
-      stage,
-      interest_level: interest
-    }
-  };
-
-}
+return {
+  reply,
+  intent,
+  confidence: score / 100,
+  leadScore: score,
+  stage,
+  data: {
+    interest_level: interest
+  },
+  catalogMatches
+};
 
 /* -------------------- API BRIDGE -------------------- */
 
