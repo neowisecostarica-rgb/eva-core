@@ -162,45 +162,6 @@ async function searchCatalog(db, organizationId) {
 
 }
 
-/* -------------------- FOLLOWUP -------------------- */
-
-async function createFollowup({ db, organizationId, conversationId, phone, reason }) {
-
-  const existing = await db.query(
-    `SELECT id
-     FROM followups
-     WHERE organization_id=$1
-     AND conversation_id=$2
-     AND status='pending'
-     LIMIT 1`,
-    [organizationId, conversationId]
-  );
-
-  if (existing.rows.length > 0) {
-    return existing.rows[0];
-  }
-
-  const scheduled = new Date(Date.now() + 24 * 60 * 60 * 1000);
-
-  const r = await db.query(
-    `INSERT INTO followups
-     (organization_id,lead_phone,conversation_id,scheduled_for,status,reason,payload,created_at,updated_at)
-     VALUES ($1,$2,$3,$4,'pending',$5,$6,NOW(),NOW())
-     RETURNING *`,
-    [
-      organizationId,
-      phone,
-      conversationId,
-      scheduled,
-      reason,
-      JSON.stringify({})
-    ]
-  );
-
-  return r.rows[0];
-
-}
-
 /* -------------------- SALES BRAIN -------------------- */
 
 export async function handleSalesBrain(db, input) {
@@ -217,32 +178,6 @@ export async function handleSalesBrain(db, input) {
   const interest = deriveInterestLevel(score);
   const stage = deriveStage(score);
 
-  /* CUSTOMER MEMORY */
-
-  await db.query(
-    `INSERT INTO customer_profiles
-     (organization_id, phone, lead_score, interest_level, stage, last_message, last_seen, updated_at)
-     VALUES ($1,$2,$3,$4,$5,$6,NOW(),NOW())
-     ON CONFLICT (organization_id, phone)
-     DO UPDATE SET
-       lead_score = EXCLUDED.lead_score,
-       interest_level = EXCLUDED.interest_level,
-       stage = EXCLUDED.stage,
-       last_message = EXCLUDED.last_message,
-       last_seen = NOW(),
-       updated_at = NOW()`,
-    [
-      orgId,
-      phone,
-      score,
-      interest,
-      stage,
-      text
-    ]
-  );
-
-  /* -------------------- CATALOG -------------------- */
-
   const t = normalizeText(text);
 
   let catalogMatches = [];
@@ -250,88 +185,29 @@ export async function handleSalesBrain(db, input) {
   if (
     intent === "PRICE" ||
     intent === "BUY" ||
-   /laptop|laptops|computadora|computadoras|pc|portatil|portatiles/
+    /laptop|laptops|computadora|computadoras|pc|portatil|portatiles/.test(t)
   ) {
     catalogMatches = await searchCatalog(db, orgId);
   }
 
-  /* -------------------- CONVERSATION -------------------- */
-
-  let conversationId = null;
-
-  const conv = await db.query(
-    `SELECT id
-     FROM conversations
-     WHERE organization_id=$1
-     AND external_user_id=$2
-     AND channel=$3
-     LIMIT 1`,
-    [orgId, phone, channel]
-  );
-
-  if (conv.rows.length === 0) {
-
-    const newConv = await db.query(
-      `INSERT INTO conversations
-       (organization_id,external_user_id,channel,stage,created_at,updated_at,control_mode,agent_id)
-       VALUES ($1,$2,$3,$4,NOW(),NOW(),'HYBRID',$5)
-       RETURNING *`,
-      [orgId, phone, channel, stage, agentId]
-    );
-
-    conversationId = newConv.rows[0].id;
-
-  } else {
-
-    conversationId = conv.rows[0].id;
-
-  }
-
-  /* -------------------- PIPELINE EVENT -------------------- */
-
-  await logPipelineEvent({
-    db,
-    organizationId: orgId,
-    conversationId,
-    phone,
-    fromStage: null,
-    toStage: stage,
-    eventType: "STAGE_UPDATED",
-    reason: `intent_${intent}`
+  const reply = buildReply({
+    intent,
+    catalogMatches
   });
 
-  /* -------------------- FOLLOWUP -------------------- */
+  return {
+    reply,
+    intent,
+    confidence: score / 100,
+    leadScore: score,
+    stage,
+    data: {
+      interest_level: interest
+    },
+    catalogMatches
+  };
 
-  if (score >= 60) {
-
-    await createFollowup({
-      db,
-      organizationId: orgId,
-      conversationId,
-      phone,
-      reason: `intent_${intent}`
-    });
-
-  }
-
-  /* -------------------- BUILD REPLY -------------------- */
-
-  const reply = buildReply({
-  intent,
-  catalogMatches
-});
-
-return {
-  reply,
-  intent,
-  confidence: score / 100,
-  leadScore: score,
-  stage,
-  data: {
-    interest_level: interest
-  },
-  catalogMatches
-};
+}
 
 /* -------------------- API BRIDGE -------------------- */
 
@@ -366,17 +242,17 @@ export async function handleInbound({
 
   if (sales?.catalogMatches && sales.catalogMatches.length > 0) {
 
-  return {
-    reply: sales.reply,
-    intent: sales.intent,
-    confidence: sales.confidence,
-    leadScore: sales.leadScore,
-    stage: sales.stage,
-    data: sales.data || {},
-    catalogMatches: sales.catalogMatches
-  };
+    return {
+      reply: sales.reply,
+      intent: sales.intent,
+      confidence: sales.confidence,
+      leadScore: sales.leadScore,
+      stage: sales.stage,
+      data: sales.data || {},
+      catalogMatches: sales.catalogMatches
+    };
 
-}
+  }
 
   let reply = null;
 
@@ -410,13 +286,13 @@ export async function handleInbound({
   }
 
   return {
-  reply,
-  intent: sales?.intent || "INFO",
-  confidence: sales?.confidence || 0.5,
-  leadScore: sales?.leadScore || 0,
-  stage: sales?.stage || "DISCOVERY",
-  data: sales?.data || {},
-  catalogMatches: []
-};
+    reply,
+    intent: sales?.intent || "INFO",
+    confidence: sales?.confidence || 0.5,
+    leadScore: sales?.leadScore || 0,
+    stage: sales?.stage || "DISCOVERY",
+    data: sales?.data || {},
+    catalogMatches: []
+  };
 
 }
