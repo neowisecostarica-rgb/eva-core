@@ -397,17 +397,29 @@ export async function handleInbound({
   try {
 
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      temperature: 0.6,
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are EVA, a sales assistant for a business. Prefer offering products from the business instead of generic advice."
-        },
-        { role: "user", content: text }
-      ]
-    });
+  model: "gpt-4o-mini",
+  temperature: 0.4,
+  messages: [
+    {
+      role: "system",
+      content: `
+You are EVA, a WhatsApp sales assistant for a business.
+
+Rules:
+- Speak like a human chatting on WhatsApp
+- Keep responses SHORT
+- Maximum 2 sentences
+- Never write long paragraphs
+- Ask questions to guide the customer
+- Prefer offering products from the business catalog instead of generic advice
+
+Tone:
+Friendly, natural and conversational.
+`
+    },
+    { role: "user", content: text }
+  ]
+});
 
     reply = completion.choices?.[0]?.message?.content || null;
 
