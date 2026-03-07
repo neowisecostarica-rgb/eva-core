@@ -248,17 +248,21 @@ export async function handleSalesBrain(db, input) {
     ]
   );
 
-  /* -------------------- CATALOG -------------------- */
+ /* -------------------- CATALOG -------------------- */
 
- const t = normalizeText(text);
+const t = normalizeText(text);
 
-const catalogMatches =
+let catalogMatches = [];
+
+if (
   intent === "PRICE" ||
   intent === "BUY" ||
   /laptop|computadora|pc|portatil/.test(t)
-  await searchCatalog(pool, orgId)
-    : [];
-  const reply = buildReply({ intent, catalogMatches });
+) {
+  catalogMatches = await searchCatalog(pool, orgId);
+}
+
+const reply = buildReply({ intent, catalogMatches });
 
   /* -------------------- CONVERSATION -------------------- */
 
