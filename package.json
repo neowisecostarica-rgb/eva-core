@@ -4,6 +4,9 @@
   "description": "EVA Core Microservice - API-first conversational engine",
   "main": "src/server.js",
   "type": "module",
+  "engines": {
+    "node": "20"
+  },
   "scripts": {
     "start": "node src/server.js"
   },
