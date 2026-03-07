@@ -257,12 +257,11 @@ let catalogMatches = [];
 if (
   intent === "PRICE" ||
   intent === "BUY" ||
+  intent === "DISCOVERY" ||
   /laptop|computadora|pc|portatil/.test(t)
 ) {
   catalogMatches = await searchCatalog(pool, orgId);
 }
-
-const reply = buildReply({ intent, catalogMatches });
 
   /* -------------------- CONVERSATION -------------------- */
 
