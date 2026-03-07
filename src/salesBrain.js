@@ -23,9 +23,7 @@ async function logPipelineEvent({
   eventType,
   reason = null
 }) {
-
   try {
-
     await db.query(
       `INSERT INTO pipeline_events
        (organization_id,conversation_id,lead_phone,from_stage,to_stage,event_type,reason,created_at)
@@ -40,13 +38,9 @@ async function logPipelineEvent({
         reason
       ]
     );
-
   } catch (err) {
-
     console.error("Pipeline event error:", err);
-
   }
-
 }
 
 /* -------------------- INTENT -------------------- */
@@ -60,8 +54,8 @@ function detectIntent(text = "") {
   if (/(precio|cuanto cuesta|cuanto vale|valor|en cuanto|cuanto)/.test(t))
     return "PRICE";
 
- if (/(quiero comprar|me interesa|disponible|tiene|hay|apartar|reservar|busco|necesito|para estudiar|para trabajo)/.test(t))
-  return "BUY";
+  if (/(quiero comprar|me interesa|disponible|tiene|hay|apartar|reservar|busco|necesito|para estudiar|para trabajo)/.test(t))
+    return "BUY";
 
   if (/(soporte|garantia|falla|reparacion|mantenimiento)/.test(t))
     return "SUPPORT";
@@ -98,14 +92,6 @@ function deriveInterestLevel(score) {
 
 }
 
-function deriveLeadStatus(score, intent) {
-
-  if (score >= 85 || intent === "BUY") return "HOT";
-  if (score >= 45) return "WARM";
-  return "NEW";
-
-}
-
 function deriveStage(score) {
 
   if (score >= 85) return "CLOSING";
@@ -121,11 +107,16 @@ function buildReply({ intent, catalogMatches = [] }) {
 
   let baseReply = "";
 
-  if (intent === "GREETING") baseReply = "¡Hola! 👋 Gracias por escribirnos.";
-  else if (intent === "PRICE") baseReply = "Con gusto te ayudo 🙌";
-  else if (intent === "BUY") baseReply = "¡Perfecto! 🙌";
-  else if (intent === "SUPPORT") baseReply = "Claro, con gusto te ayudo con eso.";
-  else baseReply = "Con gusto te ayudo.";
+  if (intent === "GREETING")
+    baseReply = "¡Hola! 👋 Gracias por escribirnos.";
+  else if (intent === "PRICE")
+    baseReply = "Con gusto te ayudo 🙌";
+  else if (intent === "BUY")
+    baseReply = "¡Perfecto! 🙌";
+  else if (intent === "SUPPORT")
+    baseReply = "Claro, con gusto te ayudo con eso.";
+  else
+    baseReply = "Con gusto te ayudo.";
 
   let productsText = "";
 
@@ -147,7 +138,7 @@ function buildReply({ intent, catalogMatches = [] }) {
   }
 
   const closing =
-    "\n\n¿La necesitas para estudio o trabajo? Si tienes un presupuesto aproximado también puedo recomendarte la mejor opción.";
+    "\n\n¿La necesitas para estudio o trabajo?";
 
   return baseReply + productsText + closing;
 
@@ -161,6 +152,8 @@ async function searchCatalog(db, organizationId) {
     `SELECT id,name,price_crc AS price,'CRC' AS currency
      FROM product_catalog
      WHERE organization_id=$1
+     AND is_active=true
+     AND stock > 0
      LIMIT 3`,
     [organizationId]
   );
@@ -224,7 +217,7 @@ export async function handleSalesBrain(db, input) {
   const interest = deriveInterestLevel(score);
   const stage = deriveStage(score);
 
-  /* -------------------- CUSTOMER MEMORY -------------------- */
+  /* CUSTOMER MEMORY */
 
   await db.query(
     `INSERT INTO customer_profiles
@@ -248,20 +241,19 @@ export async function handleSalesBrain(db, input) {
     ]
   );
 
- /* -------------------- CATALOG -------------------- */
+  /* -------------------- CATALOG -------------------- */
 
-const t = normalizeText(text);
+  const t = normalizeText(text);
 
-let catalogMatches = [];
+  let catalogMatches = [];
 
-if (
-  intent === "PRICE" ||
-  intent === "BUY" ||
-  intent === "DISCOVERY" ||
-  /laptop|computadora|pc|portatil/.test(t)
-) {
-  catalogMatches = await searchCatalog(db, orgId);
-}
+  if (
+    intent === "PRICE" ||
+    intent === "BUY" ||
+    /laptop|computadora|pc|portatil/.test(t)
+  ) {
+    catalogMatches = await searchCatalog(db, orgId);
+  }
 
   /* -------------------- CONVERSATION -------------------- */
 
@@ -310,11 +302,9 @@ if (
 
   /* -------------------- FOLLOWUP -------------------- */
 
-  let followup = null;
-
   if (score >= 60) {
 
-    followup = await createFollowup({
+    await createFollowup({
       db,
       organizationId: orgId,
       conversationId,
@@ -323,6 +313,13 @@ if (
     });
 
   }
+
+  /* -------------------- BUILD REPLY -------------------- */
+
+  const reply = buildReply({
+    intent,
+    catalogMatches
+  });
 
   return {
     reply,
@@ -368,20 +365,10 @@ export async function handleInbound({
 
   }
 
-  /* ---------- SI HAY PRODUCTOS DEL CATALOGO ---------- */
-
   if (sales?.catalogMatches && sales.catalogMatches.length > 0) {
 
-    let reply = "¡Claro! Tenemos estas opciones disponibles:\n\n";
-
-    sales.catalogMatches.forEach(p => {
-      reply += `💻 ${p.name} — ₡${p.price_crc}\n`;
-    });
-
-    reply += "\n¿La necesitas para estudio o trabajo?";
-
     return {
-      reply,
+      reply: sales.reply,
       stage: sales?.salesAnalysis?.stage || "DISCOVERY",
       leadScore: sales?.salesAnalysis?.score || 40,
       catalogMatches: sales.catalogMatches
@@ -389,36 +376,21 @@ export async function handleInbound({
 
   }
 
-  /* ---------- SI NO HAY PRODUCTO, USAR IA ---------- */
-
   let reply = null;
 
   try {
 
     const completion = await openai.chat.completions.create({
-  model: "gpt-4o-mini",
-  temperature: 0.4,
-  messages: [
-    {
-      role: "system",
-      content: `
-You are EVA, a WhatsApp sales assistant for a business.
-
-Rules:
-- Speak like a human chatting on WhatsApp
-- Keep responses SHORT
-- Maximum 2 sentences
-- Never write long paragraphs
-- Ask questions to guide the customer
-- Prefer offering products from the business catalog instead of generic advice
-
-Tone:
-Friendly, natural and conversational.
-`
-    },
-    { role: "user", content: text }
-  ]
-});
+      model: "gpt-4o-mini",
+      temperature: 0.4,
+      messages: [
+        {
+          role: "system",
+          content: `You are EVA, a WhatsApp sales assistant. Keep replies short and natural.`
+        },
+        { role: "user", content: text }
+      ]
+    });
 
     reply = completion.choices?.[0]?.message?.content || null;
 
@@ -431,22 +403,15 @@ Friendly, natural and conversational.
   if (!reply) {
 
     reply =
-      "¡Hola! 😊 Estoy aquí para ayudarte. ¿Podrías contarme un poco más de lo que necesitas?";
+      "¡Hola! 😊 Estoy aquí para ayudarte. ¿Qué tipo de computadora estás buscando?";
 
   }
 
- const reply = buildReply({
-  intent,
-  catalogMatches
-});
+  return {
+    reply,
+    stage: sales?.salesAnalysis?.stage || "DISCOVERY",
+    leadScore: sales?.salesAnalysis?.score || 0,
+    catalogMatches: []
+  };
 
-return {
-  reply,
-  catalogMatches,
-  salesAnalysis: {
-    intent,
-    score,
-    stage,
-    interest_level: interest
-  }
-};
+}
