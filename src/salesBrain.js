@@ -258,6 +258,7 @@ const catalogMatches =
   /laptop|computadora|pc|portatil/.test(t)
     ? await searchCatalog(db, orgId)
     : [];
+  const reply = buildReply({ intent, catalogMatches });
 
   /* -------------------- CONVERSATION -------------------- */
 
