@@ -1,6 +1,8 @@
 // src/salesBrain.js
 // EVA Sales Brain - Stable Core (Refactor P0/P1)
 
+/* -------------------- TEXT UTILS -------------------- */
+
 function normalizeText(input) {
   return String(input || "")
     .normalize("NFD")
@@ -9,9 +11,48 @@ function normalizeText(input) {
     .trim();
 }
 
+/* -------------------- PIPELINE EVENTS -------------------- */
+
+async function logPipelineEvent({
+  db,
+  organizationId,
+  conversationId,
+  phone,
+  fromStage,
+  toStage,
+  eventType,
+  reason = null
+}) {
+
+  try {
+
+    await db.query(
+      `INSERT INTO pipeline_events
+       (organization_id,conversation_id,lead_phone,from_stage,to_stage,event_type,reason,created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,NOW())`,
+      [
+        organizationId,
+        conversationId,
+        phone,
+        fromStage,
+        toStage,
+        eventType,
+        reason
+      ]
+    );
+
+  } catch (err) {
+
+    console.error("Pipeline event error:", err);
+
+  }
+
+}
+
 /* -------------------- INTENT -------------------- */
 
 function detectIntent(text = "") {
+
   const t = normalizeText(text);
 
   if (!t) return "INFO";
@@ -74,7 +115,7 @@ function deriveStage(score) {
 
 }
 
-/* -------------------- REPLY -------------------- */
+/* -------------------- REPLY BUILDER -------------------- */
 
 function buildReply({ intent, catalogMatches = [] }) {
 
@@ -100,6 +141,7 @@ function buildReply({ intent, catalogMatches = [] }) {
           : `${p.price} ${p.currency}`;
 
       productsText += `💻 ${p.name} — ${priceFormatted}\n`;
+
     }
 
   }
@@ -121,22 +163,6 @@ async function searchCatalog(db, organizationId) {
      WHERE organization_id=$1
      LIMIT 3`,
     [organizationId]
-  );
-
-  return rows || [];
-
-}
-
-async function getProductImages(db, productIds) {
-
-  if (!productIds.length) return [];
-
-  const { rows } = await db.query(
-    `SELECT product_id,url
-     FROM product_assets
-     WHERE product_id = ANY($1)
-     ORDER BY sort_order ASC`,
-    [productIds]
   );
 
   return rows || [];
@@ -196,41 +222,42 @@ export async function handleSalesBrain(db, input) {
   const score = computeScore(text, intent);
 
   const interest = deriveInterestLevel(score);
-  const status = deriveLeadStatus(score, intent);
   const stage = deriveStage(score);
 
+  /* -------------------- CUSTOMER MEMORY -------------------- */
 
+  await db.query(
+    `INSERT INTO customer_profiles
+     (organization_id, phone, lead_score, interest_level, stage, last_message, last_seen, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,NOW(),NOW())
+     ON CONFLICT (organization_id, phone)
+     DO UPDATE SET
+       lead_score = EXCLUDED.lead_score,
+       interest_level = EXCLUDED.interest_level,
+       stage = EXCLUDED.stage,
+       last_message = EXCLUDED.last_message,
+       last_seen = NOW(),
+       updated_at = NOW()`,
+    [
+      orgId,
+      phone,
+      score,
+      interest,
+      stage,
+      text
+    ]
+  );
 
-/* -------------------- CUSTOMER MEMORY -------------------- */
+  /* -------------------- CATALOG -------------------- */
 
-await db.query(
-  `INSERT INTO customer_profiles
-   (organization_id, phone, lead_score, interest_level, stage, last_message, last_seen, updated_at)
-   VALUES ($1,$2,$3,$4,$5,$6,NOW(),NOW())
-   ON CONFLICT (organization_id, phone)
-   DO UPDATE SET
-     lead_score = EXCLUDED.lead_score,
-     interest_level = EXCLUDED.interest_level,
-     stage = EXCLUDED.stage,
-     last_message = EXCLUDED.last_message,
-     last_seen = NOW(),
-     updated_at = NOW()`,
-  [
-    orgId,
-    phone,
-    score,
-    interest,
-    stage,
-    text
-  ]
-);
-  
   const catalogMatches =
     intent === "PRICE" || intent === "BUY"
       ? await searchCatalog(db, orgId)
       : [];
 
   const reply = buildReply({ intent, catalogMatches });
+
+  /* -------------------- CONVERSATION -------------------- */
 
   let conversationId = null;
 
@@ -261,6 +288,21 @@ await db.query(
     conversationId = conv.rows[0].id;
 
   }
+
+  /* -------------------- PIPELINE EVENT -------------------- */
+
+  await logPipelineEvent({
+    db,
+    organizationId: orgId,
+    conversationId,
+    phone,
+    fromStage: null,
+    toStage: stage,
+    eventType: "STAGE_UPDATED",
+    reason: `intent_${intent}`
+  });
+
+  /* -------------------- FOLLOWUP -------------------- */
 
   let followup = null;
 
@@ -302,10 +344,6 @@ export async function handleInbound({
   channel
 }) {
 
-  let intent = "UNKNOWN";
-  let confidence = 0.5;
-  let stage = "DISCOVERY";
-  let leadScore = 0;
   let reply = null;
 
   try {
@@ -339,13 +377,6 @@ export async function handleInbound({
       agent_id: agentId
     });
 
-    if (sales?.salesAnalysis) {
-
-      leadScore = sales.salesAnalysis.score || 0;
-      stage = sales.salesAnalysis.stage || stage;
-
-    }
-
   } catch (salesError) {
 
     console.error("SalesBrain failed:", salesError);
@@ -359,32 +390,10 @@ export async function handleInbound({
 
   }
 
-  if (leadScore >= 40) {
-
-    try {
-
-      await createFollowup({
-        db: pool,
-        organizationId: org.id,
-        conversationId,
-        phone: externalUserId,
-        reason: "lead_engaged"
-      });
-
-    } catch (err) {
-
-      console.error("Followup failed:", err);
-
-    }
-
-  }
-
   return {
     reply,
-    intent,
-    confidence,
-    leadScore,
-    stage,
+    stage: sales?.salesAnalysis?.stage || "DISCOVERY",
+    leadScore: sales?.salesAnalysis?.score || 0,
     catalogMatches: sales?.catalogMatches || []
   };
 
