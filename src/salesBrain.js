@@ -250,7 +250,7 @@ export async function handleSalesBrain(db, input) {
   if (
     intent === "PRICE" ||
     intent === "BUY" ||
-    /laptop|computadora|pc|portatil/.test(t)
+   /laptop|laptops|computadora|computadoras|pc|portatil|portatiles/
   ) {
     catalogMatches = await searchCatalog(db, orgId);
   }
