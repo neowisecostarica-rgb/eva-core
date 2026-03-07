@@ -366,14 +366,17 @@ export async function handleInbound({
 
   if (sales?.catalogMatches && sales.catalogMatches.length > 0) {
 
-    return {
-      reply: sales.reply,
-      stage: sales?.salesAnalysis?.stage || "DISCOVERY",
-      leadScore: sales?.salesAnalysis?.score || 40,
-      catalogMatches: sales.catalogMatches
-    };
+  return {
+    reply: sales.reply,
+    intent: sales.intent,
+    confidence: sales.confidence,
+    leadScore: sales.leadScore,
+    stage: sales.stage,
+    data: sales.data || {},
+    catalogMatches: sales.catalogMatches
+  };
 
-  }
+}
 
   let reply = null;
 
@@ -407,10 +410,13 @@ export async function handleInbound({
   }
 
   return {
-    reply,
-    stage: sales?.salesAnalysis?.stage || "DISCOVERY",
-    leadScore: sales?.salesAnalysis?.score || 0,
-    catalogMatches: []
-  };
+  reply,
+  intent: sales?.intent || "INFO",
+  confidence: sales?.confidence || 0.5,
+  leadScore: sales?.leadScore || 0,
+  stage: sales?.stage || "DISCOVERY",
+  data: sales?.data || {},
+  catalogMatches: []
+};
 
 }
