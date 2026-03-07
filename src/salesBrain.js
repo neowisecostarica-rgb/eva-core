@@ -344,27 +344,6 @@ export async function handleInbound({
   channel
 }) {
 
-  let reply = null;
-
-  try {
-
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      temperature: 0.6,
-      messages: [
-        { role: "system", content: "You are EVA, a friendly AI sales assistant." },
-        { role: "user", content: text }
-      ]
-    });
-
-    reply = completion.choices?.[0]?.message?.content || null;
-
-  } catch (err) {
-
-    console.error("AI error:", err);
-
-  }
-
   let sales = null;
 
   try {
@@ -383,6 +362,54 @@ export async function handleInbound({
 
   }
 
+  /* ---------- SI HAY PRODUCTOS DEL CATALOGO ---------- */
+
+  if (sales?.catalogMatches && sales.catalogMatches.length > 0) {
+
+    let reply = "¡Claro! Tenemos estas opciones disponibles:\n\n";
+
+    sales.catalogMatches.forEach(p => {
+      reply += `💻 ${p.name} — ₡${p.price_crc}\n`;
+    });
+
+    reply += "\n¿La necesitas para estudio o trabajo?";
+
+    return {
+      reply,
+      stage: sales?.salesAnalysis?.stage || "DISCOVERY",
+      leadScore: sales?.salesAnalysis?.score || 40,
+      catalogMatches: sales.catalogMatches
+    };
+
+  }
+
+  /* ---------- SI NO HAY PRODUCTO, USAR IA ---------- */
+
+  let reply = null;
+
+  try {
+
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      temperature: 0.6,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are EVA, a sales assistant for a business. Prefer offering products from the business instead of generic advice."
+        },
+        { role: "user", content: text }
+      ]
+    });
+
+    reply = completion.choices?.[0]?.message?.content || null;
+
+  } catch (err) {
+
+    console.error("AI error:", err);
+
+  }
+
   if (!reply) {
 
     reply =
@@ -394,7 +421,7 @@ export async function handleInbound({
     reply,
     stage: sales?.salesAnalysis?.stage || "DISCOVERY",
     leadScore: sales?.salesAnalysis?.score || 0,
-    catalogMatches: sales?.catalogMatches || []
+    catalogMatches: []
   };
 
 }
