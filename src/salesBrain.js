@@ -1,6 +1,10 @@
 import pool from "./db.js";
 import { searchCatalog } from "./catalog.js";
 
+/*
+FOLLOWUP CREATION
+*/
+
 async function createFollowup({ organization_id, phone }) {
 
   const existing = await pool.query(
@@ -15,9 +19,7 @@ async function createFollowup({ organization_id, phone }) {
     [organization_id, phone]
   );
 
-  if (existing.rows.length > 0) {
-    return;
-  }
+  if (existing.rows.length > 0) return;
 
   const due = new Date(Date.now() + 30 * 60 * 1000);
 
@@ -31,6 +33,10 @@ async function createFollowup({ organization_id, phone }) {
   );
 
 }
+
+/*
+MAIN ENGINE
+*/
 
 export async function handleInbound({ organization_id, phone, message }) {
 
@@ -49,7 +55,25 @@ export async function handleInbound({ organization_id, phone, message }) {
   }
 
   /*
-  Lead Intelligence
+  OBJECTION DETECTION
+  */
+
+  let objection = null;
+
+  if (text.includes("caro") || text.includes("muy caro")) {
+    objection = "PRICE";
+  }
+
+  if (text.includes("pensarlo") || text.includes("déjame pensarlo")) {
+    objection = "THINK";
+  }
+
+  if (text.includes("no estoy seguro") || text.includes("no sé")) {
+    objection = "UNSURE";
+  }
+
+  /*
+  LEAD INTELLIGENCE
   */
 
   let budget = null;
@@ -86,7 +110,7 @@ export async function handleInbound({ organization_id, phone, message }) {
   }
 
   /*
-  Lead Scoring
+  LEAD SCORING
   */
 
   let score = 40;
@@ -102,7 +126,7 @@ export async function handleInbound({ organization_id, phone, message }) {
   }
 
   /*
-  Catalog search
+  CATALOG SEARCH
   */
 
   let catalog = [];
@@ -117,13 +141,53 @@ export async function handleInbound({ organization_id, phone, message }) {
   }
 
   /*
-  Response generation
+  RESPONSE GENERATION
   */
 
   let reply =
     "¡Genial! Cuéntame un poco más para recomendarte la mejor opción 🙂";
 
-  if (catalog.length > 0) {
+  /*
+  OBJECTION RESPONSES
+  */
+
+  if (objection === "PRICE") {
+
+    reply = `Lo entiendo 👍
+
+Estas laptops son línea corporativa, por eso duran más que una laptop normal.
+
+Además incluyen 1 año de garantía.
+
+Muchos estudiantes las prefieren por eso.
+
+Si quieres puedo apartarte una unidad mientras decides.`;
+
+  }
+
+  if (objection === "THINK") {
+
+    reply = `¡Claro! Tómate tu tiempo 👍
+
+Solo te comento que las unidades que tenemos suelen agotarse rápido.
+
+Si quieres puedo apartarte una mientras decides.`;
+
+  }
+
+  if (objection === "UNSURE") {
+
+    reply = `No hay problema 👍
+
+Si me cuentas para qué la necesitas exactamente puedo ayudarte a elegir la mejor opción.`;
+
+  }
+
+  /*
+  PRODUCT RECOMMENDATION
+  */
+
+  if (catalog.length > 0 && !objection) {
 
     const p = catalog[0];
 
@@ -155,7 +219,7 @@ Tenemos unidades disponibles.
   }
 
   /*
-  Save execution log
+  EXECUTION LOG
   */
 
   await pool.query(
@@ -168,7 +232,7 @@ Tenemos unidades disponibles.
   );
 
   /*
-  Create followup
+  FOLLOWUP CREATION
   */
 
   await createFollowup({
