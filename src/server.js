@@ -1,6 +1,5 @@
 import express from "express";
 import dotenv from "dotenv";
-import pkg from "pg";
 
 import {
   handleInbound,
@@ -12,38 +11,23 @@ import {
 
 dotenv.config();
 
-const { Pool } = pkg;
-
 const app = express();
 app.use(express.json());
 
 /**
- * ============================================================
- * DATABASE
- * ============================================================
+ * =========================================
+ * HEALTH
+ * =========================================
  */
 
-export const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DB_SSL === "true"
-    ? { rejectUnauthorized: false }
-    : false
-});
-
-/**
- * ============================================================
- * BASIC HEALTH
- * ============================================================
- */
-
-app.get("/", async (req, res) => {
+app.get("/", (req, res) => {
   res.json({
     status: "EVA Core running 🚀",
     service: "eva-core"
   });
 });
 
-app.get("/health", async (req, res) => {
+app.get("/health", (req, res) => {
   res.json({
     ok: true,
     uptime: process.uptime(),
@@ -52,12 +36,13 @@ app.get("/health", async (req, res) => {
 });
 
 /**
- * ============================================================
- * INBOUND MESSAGE (CORE ENDPOINT)
- * ============================================================
+ * =========================================
+ * INBOUND MESSAGE
+ * =========================================
  */
 
 app.post("/v1/messages/inbound", async (req, res) => {
+
   try {
 
     const {
@@ -70,21 +55,15 @@ app.post("/v1/messages/inbound", async (req, res) => {
     } = req.body;
 
     if (!api_key) {
-      return res.status(400).json({
-        error: "api_key_required"
-      });
+      return res.status(400).json({ error: "api_key_required" });
     }
 
     if (!from) {
-      return res.status(400).json({
-        error: "from_required"
-      });
+      return res.status(400).json({ error: "from_required" });
     }
 
     if (!message) {
-      return res.status(400).json({
-        error: "message_required"
-      });
+      return res.status(400).json({ error: "message_required" });
     }
 
     const result = await handleInbound({
@@ -100,22 +79,24 @@ app.post("/v1/messages/inbound", async (req, res) => {
 
   } catch (error) {
 
-    console.error("inbound error", error);
+    console.error("Inbound error:", error);
 
     res.status(500).json({
       error: "server_error"
     });
 
   }
+
 });
 
 /**
- * ============================================================
+ * =========================================
  * GET LEAD
- * ============================================================
+ * =========================================
  */
 
 app.get("/v1/leads", async (req, res) => {
+
   try {
 
     const { organization_id, phone } = req.query;
@@ -139,15 +120,17 @@ app.get("/v1/leads", async (req, res) => {
     });
 
   }
+
 });
 
 /**
- * ============================================================
- * GET CONVERSATION MESSAGES
- * ============================================================
+ * =========================================
+ * GET CONVERSATION
+ * =========================================
  */
 
 app.get("/v1/conversations/:id/messages", async (req, res) => {
+
   try {
 
     const conversationId = req.params.id;
@@ -165,15 +148,17 @@ app.get("/v1/conversations/:id/messages", async (req, res) => {
     });
 
   }
+
 });
 
 /**
- * ============================================================
- * METRICS SUMMARY
- * ============================================================
+ * =========================================
+ * METRICS
+ * =========================================
  */
 
 app.get("/v1/metrics/summary", async (req, res) => {
+
   try {
 
     const { organization_id } = req.query;
@@ -197,26 +182,18 @@ app.get("/v1/metrics/summary", async (req, res) => {
     });
 
   }
+
 });
 
 /**
- * ============================================================
+ * =========================================
  * FOLLOWUP WORKER
- * ============================================================
+ * =========================================
  */
 
 async function sendFollowupMessage(payload) {
 
   console.log("FOLLOWUP:", payload);
-
-  /**
-   * Aquí luego conectaremos:
-   *
-   * WhatsApp Cloud API
-   * Twilio
-   * Meta Messaging
-   *
-   */
 
 }
 
@@ -235,9 +212,9 @@ setInterval(async () => {
 }, 60000);
 
 /**
- * ============================================================
+ * =========================================
  * START SERVER
- * ============================================================
+ * =========================================
  */
 
 const PORT = process.env.PORT || 3000;
