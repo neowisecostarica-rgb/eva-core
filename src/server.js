@@ -9,8 +9,6 @@ import {
   getMetricsSummary
 } from "./salesBrain.js";
 
-import { sendWhatsAppMessage } from "./connectors/whatsapp.js";
-
 dotenv.config();
 
 const app = express();
@@ -25,7 +23,7 @@ Health Check
 app.get("/", (req, res) => {
   res.json({
     status: "EVA Core running 🚀",
-    version: "8.0"
+    version: "8.1"
   });
 });
 
@@ -174,88 +172,6 @@ setInterval(async () => {
   }
 
 }, 30000);
-
-/*
-=====================================
-WhatsApp Verification
-=====================================
-*/
-
-app.get("/webhooks/whatsapp", (req, res) => {
-
-  const VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN;
-
-  const mode = req.query["hub.mode"];
-  const token = req.query["hub.verify_token"];
-  const challenge = req.query["hub.challenge"];
-
-  if (mode === "subscribe" && token === VERIFY_TOKEN) {
-    return res.status(200).send(challenge);
-  }
-
-  res.sendStatus(403);
-
-});
-
-/*
-=====================================
-WhatsApp Webhook Receiver
-=====================================
-*/
-
-app.post("/webhooks/whatsapp", async (req, res) => {
-
-  try {
-
-    const entry = req.body.entry?.[0];
-    const change = entry?.changes?.[0];
-    const value = change?.value;
-
-    const message = value?.messages?.[0];
-
-    if (!message) {
-      return res.sendStatus(200);
-    }
-
-    const from = message.from;
-    const text = message.text?.body || "";
-    const messageId = message.id;
-
-    console.log("WhatsApp inbound:", from, text);
-
-    const result = await handleInbound({
-      apiKey: process.env.DEFAULT_ORG_API_KEY,
-      from,
-      text,
-      channel: "whatsapp",
-      external_message_id: messageId,
-      metadata: {
-        source: "whatsapp_cloud"
-      }
-    });
-
-    if (result?.reply) {
-
-      await sendWhatsAppMessage({
-        phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID,
-        token: process.env.WHATSAPP_TOKEN,
-        to: from,
-        text: result.reply
-      });
-
-    }
-
-    res.sendStatus(200);
-
-  } catch (error) {
-
-    console.error("WhatsApp webhook error:", error);
-
-    res.sendStatus(500);
-
-  }
-
-});
 
 /*
 =====================================
