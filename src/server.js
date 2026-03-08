@@ -3,6 +3,7 @@ import dotenv from "dotenv";
 
 import { validateInbound } from "./validators.js";
 import { handleInbound } from "./salesBrain.js";
+import { startFollowupWorker } from "./followupWorker.js";
 
 dotenv.config();
 
@@ -133,5 +134,9 @@ app.use((req, res) => {
 const port = process.env.PORT || 3000;
 
 app.listen(port, () => {
+
   console.log(`EVA Core listening on port ${port}`);
+
+  startFollowupWorker();
+
 });
