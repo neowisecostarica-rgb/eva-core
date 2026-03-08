@@ -16,34 +16,24 @@ dotenv.config();
 const app = express();
 app.use(express.json());
 
-/**
- * =========================================
- * HEALTH
- * =========================================
- */
+/*
+=====================================
+Health Check
+=====================================
+*/
 
 app.get("/", (req, res) => {
   res.json({
     status: "EVA Core running 🚀",
-    service: "eva-core"
+    version: "8.0"
   });
 });
 
-app.get("/health", (req, res) => {
-  res.json({
-    ok: true,
-    uptime: process.uptime(),
-    timestamp: new Date().toISOString()
-  });
-});
-
-/**
- * =========================================
- * INBOUND MESSAGE
- * =========================================
- */
-
-app.post("/v1/messages/inbound", async (req, res) => {
+/*
+=====================================
+Inbound API
+=====================================
+*/
 
 app.post("/v1/messages/inbound", async (req, res) => {
 
@@ -70,15 +60,12 @@ app.post("/v1/messages/inbound", async (req, res) => {
       return res.status(400).json({ error: "message_required" });
     }
 
-    // ⚠️ ID por defecto si no viene del canal
-    const safeExternalId = external_message_id || `local-${Date.now()}-${from}`;
-
     const result = await handleInbound({
       apiKey: api_key,
       from,
       text: message,
       channel: channel || "whatsapp",
-      external_message_id: safeExternalId,
+      external_message_id,
       metadata
     });
 
@@ -88,14 +75,6 @@ app.post("/v1/messages/inbound", async (req, res) => {
 
     console.error("Inbound error:", error);
 
-    // ⚠️ Si el error es duplicado de external_message_id
-    if (error.code === "23505") {
-      return res.json({
-        ok: true,
-        duplicate: true
-      });
-    }
-
     res.status(500).json({
       error: "server_error"
     });
@@ -104,53 +83,17 @@ app.post("/v1/messages/inbound", async (req, res) => {
 
 });
 
-/**
- * =========================================
- * GET LEAD
- * =========================================
- */
-
-app.get("/v1/leads", async (req, res) => {
-
-  try {
-
-    const { organization_id, phone } = req.query;
-
-    if (!organization_id || !phone) {
-      return res.status(400).json({
-        error: "organization_id_and_phone_required"
-      });
-    }
-
-    const data = await getLeadSummary(organization_id, phone);
-
-    res.json(data);
-
-  } catch (error) {
-
-    console.error(error);
-
-    res.status(500).json({
-      error: "server_error"
-    });
-
-  }
-
-});
-
-/**
- * =========================================
- * GET CONVERSATION
- * =========================================
- */
+/*
+=====================================
+Conversations
+=====================================
+*/
 
 app.get("/v1/conversations/:id/messages", async (req, res) => {
 
   try {
 
-    const conversationId = req.params.id;
-
-    const messages = await getConversationMessages(conversationId);
+    const messages = await getConversationMessages(req.params.id);
 
     res.json(messages);
 
@@ -158,33 +101,47 @@ app.get("/v1/conversations/:id/messages", async (req, res) => {
 
     console.error(error);
 
-    res.status(500).json({
-      error: "server_error"
-    });
+    res.status(500).json({ error: "server_error" });
 
   }
 
 });
 
-/**
- * =========================================
- * METRICS
- * =========================================
- */
+/*
+=====================================
+Leads
+=====================================
+*/
+
+app.get("/v1/leads/:phone", async (req, res) => {
+
+  try {
+
+    const lead = await getLeadSummary(req.params.phone);
+
+    res.json(lead);
+
+  } catch (error) {
+
+    console.error(error);
+
+    res.status(500).json({ error: "server_error" });
+
+  }
+
+});
+
+/*
+=====================================
+Metrics
+=====================================
+*/
 
 app.get("/v1/metrics/summary", async (req, res) => {
 
   try {
 
-    const { organization_id } = req.query;
-
-    if (!organization_id) {
-      return res.status(400).json({
-        error: "organization_id_required"
-      });
-    }
-
-    const metrics = await getMetricsSummary(organization_id);
+    const metrics = await getMetricsSummary();
 
     res.json(metrics);
 
@@ -192,50 +149,124 @@ app.get("/v1/metrics/summary", async (req, res) => {
 
     console.error(error);
 
-    res.status(500).json({
-      error: "server_error"
-    });
+    res.status(500).json({ error: "server_error" });
 
   }
 
 });
 
-/**
- * =========================================
- * FOLLOWUP WORKER
- * =========================================
- */
-
-async function sendFollowupMessage(payload) {
-
-  console.log("FOLLOWUP:", payload);
-
-}
+/*
+=====================================
+Followup Worker
+=====================================
+*/
 
 setInterval(async () => {
 
   try {
 
-    await processPendingFollowups(sendFollowupMessage);
+    await processPendingFollowups();
 
   } catch (error) {
 
-    console.error("followup worker error", error);
+    console.error("Followup worker error:", error);
 
   }
 
-}, 60000);
+}, 30000);
 
-/**
- * =========================================
- * START SERVER
- * =========================================
- */
+/*
+=====================================
+WhatsApp Verification
+=====================================
+*/
+
+app.get("/webhooks/whatsapp", (req, res) => {
+
+  const VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN;
+
+  const mode = req.query["hub.mode"];
+  const token = req.query["hub.verify_token"];
+  const challenge = req.query["hub.challenge"];
+
+  if (mode === "subscribe" && token === VERIFY_TOKEN) {
+    return res.status(200).send(challenge);
+  }
+
+  res.sendStatus(403);
+
+});
+
+/*
+=====================================
+WhatsApp Webhook Receiver
+=====================================
+*/
+
+app.post("/webhooks/whatsapp", async (req, res) => {
+
+  try {
+
+    const entry = req.body.entry?.[0];
+    const change = entry?.changes?.[0];
+    const value = change?.value;
+
+    const message = value?.messages?.[0];
+
+    if (!message) {
+      return res.sendStatus(200);
+    }
+
+    const from = message.from;
+    const text = message.text?.body || "";
+    const messageId = message.id;
+
+    console.log("WhatsApp inbound:", from, text);
+
+    const result = await handleInbound({
+      apiKey: process.env.DEFAULT_ORG_API_KEY,
+      from,
+      text,
+      channel: "whatsapp",
+      external_message_id: messageId,
+      metadata: {
+        source: "whatsapp_cloud"
+      }
+    });
+
+    if (result?.reply) {
+
+      await sendWhatsAppMessage({
+        phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID,
+        token: process.env.WHATSAPP_TOKEN,
+        to: from,
+        text: result.reply
+      });
+
+    }
+
+    res.sendStatus(200);
+
+  } catch (error) {
+
+    console.error("WhatsApp webhook error:", error);
+
+    res.sendStatus(500);
+
+  }
+
+});
+
+/*
+=====================================
+Server Start
+=====================================
+*/
 
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
 
-  console.log(`EVA Core listening on port ${PORT}`);
+  console.log(`EVA Core running 🚀 on port ${PORT}`);
 
 });
