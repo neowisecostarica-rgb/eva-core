@@ -1,5 +1,5 @@
 // src/salesBrain.js
-import { pool } from "./db.js";
+import pool from "./db.js";
 
 /**
  * EVA Core - salesBrain.js
