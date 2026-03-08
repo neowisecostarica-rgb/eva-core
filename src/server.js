@@ -52,13 +52,12 @@ app.get("/v1/radar/hot-leads", async (req, res) => {
       SELECT
         phone,
         use_case,
-        budget_crc,
-        urgency_level,
-        lead_score,
+        budget,
+        score,
         updated_at
       FROM leads
-      WHERE lead_score >= 70
-      ORDER BY lead_score DESC
+      WHERE score >= 70
+      ORDER BY score DESC
       LIMIT 20
     `);
 
@@ -72,7 +71,8 @@ app.get("/v1/radar/hot-leads", async (req, res) => {
     console.error("radar error", error);
 
     return res.status(500).json({
-      ok: false
+      ok: false,
+      error: "radar_query_failed"
     });
 
   }
