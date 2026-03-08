@@ -9,6 +9,8 @@ import {
   getMetricsSummary
 } from "./salesBrain.js";
 
+import { sendWhatsAppMessage } from "./connectors/whatsapp.js";
+
 dotenv.config();
 
 const app = express();
