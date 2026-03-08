@@ -80,6 +80,54 @@ app.get("/v1/radar/hot-leads", async (req, res) => {
 });
 
 /*
+METRICS SUMMARY
+*/
+
+app.get("/v1/metrics/summary", async (req, res) => {
+
+  try {
+
+    const hotLeads = await pool.query(`
+      SELECT COUNT(*) 
+      FROM leads
+      WHERE score >= 70
+    `);
+
+    const followups = await pool.query(`
+      SELECT COUNT(*)
+      FROM followups
+      WHERE status = 'pending'
+    `);
+
+    const conversationsToday = await pool.query(`
+      SELECT COUNT(*)
+      FROM conversations
+      WHERE created_at >= NOW() - INTERVAL '1 day'
+    `);
+
+    return res.json({
+      ok: true,
+      metrics: {
+        hot_leads: Number(hotLeads.rows[0].count),
+        followups_pending: Number(followups.rows[0].count),
+        conversations_today: Number(conversationsToday.rows[0].count)
+      }
+    });
+
+  } catch (error) {
+
+    console.error("metrics error", error);
+
+    return res.status(500).json({
+      ok: false,
+      error: "metrics_failed"
+    });
+
+  }
+
+});
+
+/*
 INBOUND MESSAGE
 */
 
