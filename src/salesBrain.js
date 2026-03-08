@@ -1,9 +1,13 @@
 import pool from "./db.js";
 import { searchCatalog } from "./catalog.js";
 
+/* -----------------------
+INTENT
+----------------------- */
+
 function detectIntent(text) {
 
-  const buyWords = [
+  const words = [
     "precio",
     "cuesta",
     "vale",
@@ -16,34 +20,35 @@ function detectIntent(text) {
     "lenovo",
     "busco",
     "necesito",
-    "ocupo",
     "quiero"
   ];
 
-  return buyWords.some(w => text.includes(w)) ? "BUY" : "INFO";
+  return words.some(w => text.includes(w)) ? "BUY" : "INFO";
 }
+
+/* -----------------------
+USE CASE
+----------------------- */
 
 function detectUseCase(text) {
 
   if (
     text.includes("estudio") ||
     text.includes("colegio") ||
-    text.includes("escuela") ||
     text.includes("universidad")
-  ) {
-    return "study";
-  }
+  ) return "study";
 
   if (
     text.includes("trabajo") ||
-    text.includes("oficina") ||
-    text.includes("empresa")
-  ) {
-    return "work";
-  }
+    text.includes("oficina")
+  ) return "work";
 
   return null;
 }
+
+/* -----------------------
+BUDGET
+----------------------- */
 
 function detectBudget(text) {
 
@@ -58,25 +63,29 @@ function detectBudget(text) {
   return value;
 }
 
+/* -----------------------
+URGENCY
+----------------------- */
+
 function detectUrgency(text) {
 
   if (
     text.includes("hoy") ||
     text.includes("urgente") ||
     text.includes("ya")
-  ) {
-    return "high";
-  }
+  ) return "high";
 
   if (
     text.includes("mañana") ||
     text.includes("pronto")
-  ) {
-    return "medium";
-  }
+  ) return "medium";
 
   return null;
 }
+
+/* -----------------------
+LEAD SCORE
+----------------------- */
 
 function calculateLeadScore({ use_case, budget, urgency }) {
 
@@ -95,6 +104,28 @@ function calculateLeadScore({ use_case, budget, urgency }) {
   return score;
 }
 
+/* -----------------------
+FOLLOWUP CREATION
+----------------------- */
+
+async function createFollowup({ organization_id, phone }) {
+
+  const due = new Date(Date.now() + 30 * 60 * 1000); // 30 min
+
+  await pool.query(
+    `
+    INSERT INTO followups
+    (organization_id, lead_phone, due_at, status, reason)
+    VALUES ($1,$2,$3,'pending','no_response')
+    `,
+    [organization_id, phone, due]
+  );
+}
+
+/* -----------------------
+LEAD FETCH
+----------------------- */
+
 async function getLead(organization_id, phone) {
 
   const result = await pool.query(
@@ -110,6 +141,10 @@ async function getLead(organization_id, phone) {
 
   return result.rows[0] || null;
 }
+
+/* -----------------------
+UPDATE LEAD
+----------------------- */
 
 async function updateLead({
   organization_id,
@@ -136,6 +171,10 @@ async function updateLead({
   );
 }
 
+/* -----------------------
+MAIN
+----------------------- */
+
 export async function handleInbound({ organization_id, phone, message }) {
 
   const text = message.toLowerCase().trim();
@@ -145,17 +184,13 @@ export async function handleInbound({ organization_id, phone, message }) {
   let stage = "DISCOVERY";
 
   const use_case = detectUseCase(text);
-
   const budget = detectBudget(text);
-
   const urgency = detectUrgency(text);
 
   const lead = await getLead(organization_id, phone);
 
   const finalUseCase = use_case || lead?.use_case;
-
   const finalBudget = budget || lead?.budget_crc;
-
   const finalUrgency = urgency || lead?.urgency_level;
 
   const leadScore = calculateLeadScore({
@@ -176,10 +211,12 @@ export async function handleInbound({ organization_id, phone, message }) {
   let catalog = [];
 
   if (intent === "BUY" || finalUseCase) {
+
     catalog = await searchCatalog({
       organization_id,
       text
     });
+
   }
 
   let reply = "¡Genial! Cuéntame un poco más para recomendarte la mejor opción 🙂";
@@ -211,13 +248,16 @@ ${list}
 
     stage = "QUALIFYING";
 
-  } else if (finalBudget) {
-
-    reply = `Perfecto 👍 con un presupuesto de aproximadamente ₡${finalBudget} puedo buscarte una buena opción.
-
-¿La necesitas para estudio o trabajo?`;
-
   }
+
+  /* FOLLOWUP */
+
+  await createFollowup({
+    organization_id,
+    phone
+  });
+
+  /* LOG */
 
   await pool.query(
     `
