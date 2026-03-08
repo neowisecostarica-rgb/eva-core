@@ -1,186 +1,44 @@
 import express from "express";
 import dotenv from "dotenv";
-
-import {
-  handleInbound,
-  processPendingFollowups,
-  getConversationMessages,
-  getLeadSummary,
-  getMetricsSummary
-} from "./salesBrain.js";
+import { handleInboundMessage } from "./salesBrain.js";
 
 dotenv.config();
 
 const app = express();
 app.use(express.json());
 
-/*
-=====================================
-Health Check
-=====================================
-*/
-
 app.get("/", (req, res) => {
   res.json({
-    status: "EVA Core running 🚀",
-    version: "8.2"
+    status: "EVA Core running 🚀"
   });
 });
 
-/*
-=====================================
-Inbound API
-=====================================
-*/
-
 app.post("/v1/messages/inbound", async (req, res) => {
-
   try {
 
-    const {
-      api_key,
-      from,
-      message,
-      channel,
-      external_message_id,
-      metadata
-    } = req.body;
+    const payload = req.body;
 
-    if (!api_key) {
-      return res.status(400).json({ error: "api_key_required" });
-    }
+    const result = await handleInboundMessage(payload);
 
-    if (!from) {
-      return res.status(400).json({ error: "from_required" });
-    }
-
-    if (!message) {
-      return res.status(400).json({ error: "message_required" });
-    }
-
-    const result = await handleInbound({
-      apiKey: api_key,
-      from,
-      text: message,
-      channel: channel || "whatsapp",
-      external_message_id,
-      metadata
+    res.json({
+      ok: true,
+      reply: result.reply,
+      intent: result.intent
     });
 
-    res.json(result);
+  } catch (err) {
 
-  } catch (error) {
-
-    console.error("Inbound error:", error);
+    console.error(err);
 
     res.status(500).json({
       error: "server_error"
     });
 
   }
-
 });
-
-/*
-=====================================
-Conversations
-=====================================
-*/
-
-app.get("/v1/conversations/:id/messages", async (req, res) => {
-
-  try {
-
-    const messages = await getConversationMessages(req.params.id);
-
-    res.json(messages);
-
-  } catch (error) {
-
-    console.error(error);
-
-    res.status(500).json({ error: "server_error" });
-
-  }
-
-});
-
-/*
-=====================================
-Leads
-=====================================
-*/
-
-app.get("/v1/leads/:phone", async (req, res) => {
-
-  try {
-
-    const lead = await getLeadSummary(req.params.phone);
-
-    res.json(lead);
-
-  } catch (error) {
-
-    console.error(error);
-
-    res.status(500).json({ error: "server_error" });
-
-  }
-
-});
-
-/*
-=====================================
-Metrics
-=====================================
-*/
-
-app.get("/v1/metrics/summary", async (req, res) => {
-
-  try {
-
-    const metrics = await getMetricsSummary();
-
-    res.json(metrics);
-
-  } catch (error) {
-
-    console.error(error);
-
-    res.status(500).json({ error: "server_error" });
-
-  }
-
-});
-
-/*
-=====================================
-Followup Worker
-=====================================
-*/
-
-setInterval(async () => {
-
-  try {
-
-    await processPendingFollowups();
-
-  } catch (error) {
-
-    console.error("Followup worker error:", error);
-
-  }
-
-}, 30000);
-
-/*
-=====================================
-Server Start
-=====================================
-*/
 
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-  console.log(`EVA Core running 🚀 on port ${PORT}`);
+  console.log(`EVA Core running on port ${PORT}`);
 });
