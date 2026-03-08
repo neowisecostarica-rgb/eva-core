@@ -462,114 +462,33 @@ async function insertMessage(client, payload) {
   return queryOne(
     client,
     `
-      INSERT INTO messages (
-        organization_id,
-        conversation_id,
-        role,
-        content,
-        meta,
-        channel,
-        external_message_id,
-        created_at
-      )
-      VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, NOW())
-      RETURNING *
-    `,
-    [
-      payload.organization_id,
-      payload.conversation_id,
-      payload.role,
-      payload.content,
-      JSON.stringify(payload.meta || {}),
-      payload.channel || DEFAULT_CHANNEL,
-      payload.external_message_id || null,
-    ]
-  );
-}
-
-async function findMessageByExternalId(client, organizationId, externalMessageId) {
-  if (!externalMessageId) return null;
-
-  return queryOne(
-    client,
-    `
-      SELECT *
-      FROM messages
-      WHERE organization_id = $1
-        AND external_message_id = $2
-      LIMIT 1
-    `,
-    [organizationId, externalMessageId]
-  );
-}
-
-async function getRecentMessages(client, conversationId, limit = MAX_CONTEXT_MESSAGES) {
-  const { rows } = await client.query(
-    `
-      SELECT id, role, content, meta, created_at
-      FROM messages
-      WHERE conversation_id = $1
-      ORDER BY created_at DESC
-      LIMIT $2
-    `,
-    [conversationId, limit]
-  );
-
-  return rows.reverse();
-}
-
-async function logExecution(client, payload) {
-  await client.query(
-    `
-      INSERT INTO eva_execution_log (
-        organization_id,
-        conversation_id,
-        message_id_in,
-        mode_used,
-        ai_intent,
-        ai_confidence,
-        ai_reply,
-        actions_executed,
-        created_at
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, NOW())
-    `,
-    [
-      payload.organization_id,
-      payload.conversation_id,
-      payload.message_id_in || null,
-      payload.mode_used || "RULE",
-      payload.ai_intent || null,
-      payload.ai_confidence ?? null,
-      payload.ai_reply || null,
-      JSON.stringify(payload.actions_executed || []),
-    ]
-  );
-}
-
-async function addPipelineEvent(client, payload) {
-  await client.query(
-    `
-      INSERT INTO pipeline_events (
-        organization_id,
-        conversation_id,
-        lead_id,
-        event_type,
-        payload,
-        created_at
-      )
-      VALUES ($1, $2, $3, $4, $5::jsonb, NOW())
-    `,
-    [
-      payload.organization_id,
-      payload.conversation_id || null,
-      payload.lead_id || null,
-      payload.event_type,
-      JSON.stringify(payload.payload || {}),
-    ]
-  );
-}
-
+     await client.query(
+  `
+  INSERT INTO messages (
+    organization_id,
+    conversation_id,
+    role,
+    content,
+    meta,
+    channel,
+    external_message_id,
+    created_at
+  )
+  VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, NOW())
+  ON CONFLICT (organization_id, external_message_id)
+  DO NOTHING
+  RETURNING *
+  `,
+  [
+    payload.organization_id,
+    payload.conversation_id,
+    payload.role,
+    payload.content,
+    JSON.stringify(payload.meta || {}),
+    payload.channel || DEFAULT_CHANNEL,
+    payload.external_message_id || null
+  ]
+);
 // ============================================================
 // Customer Memory Engine
 // ============================================================
