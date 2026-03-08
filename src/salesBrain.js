@@ -1,113 +1,6 @@
 import pool from "./db.js";
 import { searchCatalog } from "./catalog.js";
 
-/* -----------------------
-INTENT
------------------------ */
-
-function detectIntent(text) {
-
-  const words = [
-    "precio",
-    "cuesta",
-    "vale",
-    "laptop",
-    "computadora",
-    "pc",
-    "equipo",
-    "thinkpad",
-    "dell",
-    "lenovo",
-    "busco",
-    "necesito",
-    "quiero"
-  ];
-
-  return words.some(w => text.includes(w)) ? "BUY" : "INFO";
-}
-
-/* -----------------------
-USE CASE
------------------------ */
-
-function detectUseCase(text) {
-
-  if (
-    text.includes("estudio") ||
-    text.includes("colegio") ||
-    text.includes("universidad")
-  ) return "study";
-
-  if (
-    text.includes("trabajo") ||
-    text.includes("oficina")
-  ) return "work";
-
-  return null;
-}
-
-/* -----------------------
-BUDGET
------------------------ */
-
-function detectBudget(text) {
-
-  const match = text.match(/(\d{2,6})/);
-
-  if (!match) return null;
-
-  const value = parseInt(match[1]);
-
-  if (value < 1000) return null;
-
-  return value;
-}
-
-/* -----------------------
-URGENCY
------------------------ */
-
-function detectUrgency(text) {
-
-  if (
-    text.includes("hoy") ||
-    text.includes("urgente") ||
-    text.includes("ya")
-  ) return "high";
-
-  if (
-    text.includes("mañana") ||
-    text.includes("pronto")
-  ) return "medium";
-
-  return null;
-}
-
-/* -----------------------
-LEAD SCORE
------------------------ */
-
-function calculateLeadScore({ use_case, budget, urgency }) {
-
-  let score = 10;
-
-  if (use_case) score += 20;
-
-  if (budget) score += 30;
-
-  if (urgency === "medium") score += 20;
-
-  if (urgency === "high") score += 40;
-
-  if (score > 100) score = 100;
-
-  return score;
-}
-
-/* -----------------------
-FOLLOWUP CREATION
------------------------ */
-
 async function createFollowup({ organization_id, phone }) {
 
   const existing = await pool.query(
@@ -139,95 +32,82 @@ async function createFollowup({ organization_id, phone }) {
 
 }
 
-/* -----------------------
-LEAD FETCH
------------------------ */
-
-async function getLead(organization_id, phone) {
-
-  const result = await pool.query(
-    `
-    SELECT *
-    FROM leads
-    WHERE organization_id = $1
-    AND phone = $2
-    LIMIT 1
-    `,
-    [organization_id, phone]
-  );
-
-  return result.rows[0] || null;
-}
-
-/* -----------------------
-UPDATE LEAD
------------------------ */
-
-async function updateLead({
-  organization_id,
-  phone,
-  use_case,
-  budget,
-  urgency,
-  lead_score
-}) {
-
-  await pool.query(
-    `
-    UPDATE leads
-    SET
-      use_case = COALESCE($1, use_case),
-      budget_crc = COALESCE($2, budget_crc),
-      urgency_level = COALESCE($3, urgency_level),
-      lead_score = $4,
-      updated_at = NOW()
-    WHERE organization_id = $5
-    AND phone = $6
-    `,
-    [use_case, budget, urgency, lead_score, organization_id, phone]
-  );
-}
-
-/* -----------------------
-MAIN
------------------------ */
-
 export async function handleInbound({ organization_id, phone, message }) {
 
-  const text = message.toLowerCase().trim();
+  const text = message.toLowerCase();
 
-  const intent = detectIntent(text);
+  let intent = "INFO";
+
+  if (
+    text.includes("precio") ||
+    text.includes("cuesta") ||
+    text.includes("laptop") ||
+    text.includes("computadora") ||
+    text.includes("thinkpad")
+  ) {
+    intent = "BUY";
+  }
+
+  /*
+  Lead Intelligence
+  */
+
+  let budget = null;
+  let use_case = null;
+  let urgency = false;
+
+  const budgetMatch = text.match(/(\d{3,6})/);
+
+  if (budgetMatch) {
+    budget = parseInt(budgetMatch[1]);
+  }
+
+  if (
+    text.includes("estudio") ||
+    text.includes("universidad") ||
+    text.includes("colegio")
+  ) {
+    use_case = "study";
+  }
+
+  if (
+    text.includes("trabajo") ||
+    text.includes("oficina")
+  ) {
+    use_case = "work";
+  }
+
+  if (
+    text.includes("hoy") ||
+    text.includes("urgente") ||
+    text.includes("ya")
+  ) {
+    urgency = true;
+  }
+
+  /*
+  Lead Scoring
+  */
+
+  let score = 40;
+
+  if (budget) score += 20;
+  if (use_case) score += 20;
+  if (urgency) score += 20;
 
   let stage = "DISCOVERY";
 
-  const use_case = detectUseCase(text);
-  const budget = detectBudget(text);
-  const urgency = detectUrgency(text);
+  if (score >= 80) {
+    stage = "HOT_BUYER";
+  }
 
-  const lead = await getLead(organization_id, phone);
-
-  const finalUseCase = use_case || lead?.use_case;
-  const finalBudget = budget || lead?.budget_crc;
-  const finalUrgency = urgency || lead?.urgency_level;
-
-  const leadScore = calculateLeadScore({
-    use_case: finalUseCase,
-    budget: finalBudget,
-    urgency: finalUrgency
-  });
-
-  await updateLead({
-    organization_id,
-    phone,
-    use_case,
-    budget,
-    urgency,
-    lead_score: leadScore
-  });
+  /*
+  Catalog search
+  */
 
   let catalog = [];
 
-  if (intent === "BUY" || finalUseCase) {
+  if (intent === "BUY") {
 
     catalog = await searchCatalog({
       organization_id,
@@ -236,45 +116,47 @@ export async function handleInbound({ organization_id, phone, message }) {
 
   }
 
-  let reply = "¡Genial! Cuéntame un poco más para recomendarte la mejor opción 🙂";
+  /*
+  Response generation
+  */
 
-  if (catalog.length > 0 && finalUseCase) {
+  let reply =
+    "¡Genial! Cuéntame un poco más para recomendarte la mejor opción 🙂";
+
+  if (catalog.length > 0) {
 
     const p = catalog[0];
 
-    reply = `Perfecto 👍 para ${finalUseCase === "study" ? "estudio" : "trabajo"} te recomiendo esta opción:
+    if (stage === "HOT_BUYER") {
+
+      reply = `Perfecto 👍 con ese presupuesto te puedo recomendar esta opción.
 
 💻 ${p.name}
 💰 ₡${p.price_crc}
 
-¿Tienes algún presupuesto aproximado en mente?`;
+Es una laptop corporativa muy confiable para ${
+        use_case === "study" ? "estudio" : "trabajo"
+      }.
 
-    stage = "QUALIFYING";
+Tenemos unidades disponibles.
+¿Te gustaría apartarla?`;
 
-  } else if (catalog.length > 0) {
+    } else {
 
-    const list = catalog
-      .map(p => `💻 ${p.name}\n💰 ₡${p.price_crc}`)
-      .join("\n\n");
+      reply = `Tengo estas opciones que funcionan muy bien 👇
 
-    reply = `Tengo estas opciones que funcionan muy bien 👇
-
-${list}
+💻 ${p.name}
+💰 ₡${p.price_crc}
 
 ¿La necesitas principalmente para estudio, trabajo o ambas cosas?`;
 
-    stage = "QUALIFYING";
+    }
 
   }
 
-  /* FOLLOWUP */
-
-  await createFollowup({
-    organization_id,
-    phone
-  });
-
-  /* LOG */
+  /*
+  Save execution log
+  */
 
   await pool.query(
     `
@@ -285,11 +167,21 @@ ${list}
     [organization_id, phone, intent, stage, reply]
   );
 
+  /*
+  Create followup
+  */
+
+  await createFollowup({
+    organization_id,
+    phone
+  });
+
   return {
     reply,
     intent,
     stage,
-    lead_score: leadScore,
+    lead_score: score,
     catalog_matches: catalog
   };
+
 }
