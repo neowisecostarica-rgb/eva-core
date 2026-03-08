@@ -1,6 +1,6 @@
 import express from "express";
 import { handleInboundMessage } from "../salesBrain.js";
-import { getOrganizationFromApiKey } from "../auth.js";
+import { getOrganizationFromApiKey } from "../lib/auth.js";
 import { registerUsage } from "../usage.js";
 
 const router = express.Router();
