@@ -2,6 +2,7 @@ import pool from "./db.js";
 import { searchCatalog } from "./catalog.js";
 
 export async function handleInbound({ organization_id, phone, message }) {
+
   let intent = "INFO";
   let stage = "DISCOVERY";
 
@@ -27,8 +28,16 @@ export async function handleInbound({ organization_id, phone, message }) {
   let reply = "¡Genial! Cuéntame un poco más para recomendarte la mejor opción 🙂";
 
   if (catalog.length > 0) {
-    const p = catalog[0];
-    reply = `Te puedo recomendar esta opción 👇\n\n💻 ${p.name}\n💰 ₡${p.price_crc}`;
+
+    const suggestions = catalog
+      .map(p => `💻 ${p.name}\n💰 ₡${p.price_crc}`)
+      .join("\n\n");
+
+    reply = `Tengo estas opciones que funcionan muy bien 👇
+
+${suggestions}
+
+¿La necesitas principalmente para estudio, trabajo o ambas cosas?`;
   }
 
   await pool.query(
