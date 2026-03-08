@@ -110,7 +110,23 @@ FOLLOWUP CREATION
 
 async function createFollowup({ organization_id, phone }) {
 
-  const due = new Date(Date.now() + 30 * 60 * 1000); // 30 min
+  const existing = await pool.query(
+    `
+    SELECT id
+    FROM followups
+    WHERE organization_id = $1
+    AND lead_phone = $2
+    AND status = 'pending'
+    LIMIT 1
+    `,
+    [organization_id, phone]
+  );
+
+  if (existing.rows.length > 0) {
+    return;
+  }
+
+  const due = new Date(Date.now() + 30 * 60 * 1000);
 
   await pool.query(
     `
@@ -120,6 +136,7 @@ async function createFollowup({ organization_id, phone }) {
     `,
     [organization_id, phone, due]
   );
+
 }
 
 /* -----------------------
