@@ -1,35 +1,50 @@
 import fetch from "node-fetch";
 
-const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
-const PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
+const GRAPH_URL = "https://graph.facebook.com/v18.0";
 
-export async function sendWhatsAppMessage(to, text) {
+export async function sendWhatsAppMessage({
+  phoneNumberId,
+  token,
+  to,
+  text
+}) {
 
-  const url = `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`;
+  try {
 
-  const body = {
-    messaging_product: "whatsapp",
-    to,
-    type: "text",
-    text: {
-      body: text
+    const url = `${GRAPH_URL}/${phoneNumberId}/messages`;
+
+    const body = {
+      messaging_product: "whatsapp",
+      to,
+      type: "text",
+      text: {
+        body: text
+      }
+    };
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(body)
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      console.error("WhatsApp send error:", data);
     }
-  };
 
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${WHATSAPP_TOKEN}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify(body)
-  });
+    return data;
 
-  const data = await response.json();
+  } catch (error) {
 
-  if (!response.ok) {
-    console.error("WhatsApp send error:", data);
+    console.error("WhatsApp connector error:", error);
+
+    return null;
+
   }
 
-  return data;
 }
