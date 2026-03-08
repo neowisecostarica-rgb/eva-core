@@ -1,19 +1,27 @@
 import pool from "./db.js";
 
 export async function searchCatalog({ organization_id, text }) {
+
   const keywords = text.toLowerCase();
 
   const result = await pool.query(
     `
-    SELECT p.*, a.url as image
+    SELECT 
+      p.id,
+      p.name,
+      p.category,
+      p.description,
+      p.price_crc,
+      a.url as image
     FROM product_catalog p
     LEFT JOIN product_assets a
       ON a.product_id = p.id
     WHERE p.organization_id = $1
+      AND p.is_active = true
       AND (
         LOWER(p.name) LIKE $2
-        OR LOWER(p.brand) LIKE $2
         OR LOWER(p.category) LIKE $2
+        OR LOWER(p.description) LIKE $2
       )
     LIMIT 3
   `,
