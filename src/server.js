@@ -43,6 +43,8 @@ app.get("/health", (req, res) => {
 
 app.post("/v1/messages/inbound", async (req, res) => {
 
+app.post("/v1/messages/inbound", async (req, res) => {
+
   try {
 
     const {
@@ -66,12 +68,15 @@ app.post("/v1/messages/inbound", async (req, res) => {
       return res.status(400).json({ error: "message_required" });
     }
 
+    // ⚠️ ID por defecto si no viene del canal
+    const safeExternalId = external_message_id || `local-${Date.now()}-${from}`;
+
     const result = await handleInbound({
       apiKey: api_key,
       from,
       text: message,
       channel: channel || "whatsapp",
-      external_message_id,
+      external_message_id: safeExternalId,
       metadata
     });
 
@@ -80,6 +85,14 @@ app.post("/v1/messages/inbound", async (req, res) => {
   } catch (error) {
 
     console.error("Inbound error:", error);
+
+    // ⚠️ Si el error es duplicado de external_message_id
+    if (error.code === "23505") {
+      return res.json({
+        ok: true,
+        duplicate: true
+      });
+    }
 
     res.status(500).json({
       error: "server_error"
