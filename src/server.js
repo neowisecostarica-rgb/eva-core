@@ -1,231 +1,249 @@
 import express from "express";
 import dotenv from "dotenv";
+import pkg from "pg";
 
-import { validateInbound } from "./validators.js";
-import { handleInbound } from "./salesBrain.js";
-import { startFollowupWorker } from "./followupWorker.js";
-
-import pool from "./db.js";
+import {
+  handleInbound,
+  processPendingFollowups,
+  getConversationMessages,
+  getLeadSummary,
+  getMetricsSummary
+} from "./salesBrain.js";
 
 dotenv.config();
 
+const { Pool } = pkg;
+
 const app = express();
+app.use(express.json());
 
-app.use(express.json({ limit: "1mb" }));
+/**
+ * ============================================================
+ * DATABASE
+ * ============================================================
+ */
 
-/*
-ROOT
-*/
+export const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.DB_SSL === "true"
+    ? { rejectUnauthorized: false }
+    : false
+});
 
-app.get("/", (req, res) => {
+/**
+ * ============================================================
+ * BASIC HEALTH
+ * ============================================================
+ */
 
+app.get("/", async (req, res) => {
   res.json({
     status: "EVA Core running 🚀",
     service: "eva-core"
   });
-
 });
 
-/*
-HEALTH
-*/
-
-app.get("/health", (req, res) => {
-
+app.get("/health", async (req, res) => {
   res.json({
     ok: true,
     uptime: process.uptime(),
     timestamp: new Date().toISOString()
   });
-
 });
 
-/*
-HOT LEADS RADAR
-*/
-
-app.get("/v1/radar/hot-leads", async (req, res) => {
-
-  try {
-
-    const result = await pool.query(`
-      SELECT
-        phone,
-        use_case,
-        budget,
-        score,
-        updated_at
-      FROM leads
-      WHERE score >= 70
-      ORDER BY score DESC
-      LIMIT 20
-    `);
-
-    return res.json({
-      ok: true,
-      hot_leads: result.rows
-    });
-
-  } catch (error) {
-
-    console.error("radar error", error);
-
-    return res.status(500).json({
-      ok: false,
-      error: "radar_query_failed"
-    });
-
-  }
-
-});
-
-/*
-METRICS SUMMARY
-*/
-
-app.get("/v1/metrics/summary", async (req, res) => {
-
-  try {
-
-    const hotLeads = await pool.query(`
-      SELECT COUNT(*) 
-      FROM leads
-      WHERE score >= 70
-    `);
-
-    const followups = await pool.query(`
-      SELECT COUNT(*)
-      FROM followups
-      WHERE status = 'pending'
-    `);
-
-    const conversationsToday = await pool.query(`
-      SELECT COUNT(*)
-      FROM conversations
-      WHERE created_at >= NOW() - INTERVAL '1 day'
-    `);
-
-    return res.json({
-      ok: true,
-      metrics: {
-        hot_leads: Number(hotLeads.rows[0].count),
-        followups_pending: Number(followups.rows[0].count),
-        conversations_today: Number(conversationsToday.rows[0].count)
-      }
-    });
-
-  } catch (error) {
-
-    console.error("metrics error", error);
-
-    return res.status(500).json({
-      ok: false,
-      error: "metrics_failed"
-    });
-
-  }
-
-});
-
-/*
-CONVERSATIONS INBOX
-*/
-
-app.get("/v1/conversations", async (req, res) => {
-
-  try {
-
-    const result = await pool.query(`
-      SELECT
-        c.phone,
-        c.created_at,
-        l.stage,
-        l.score,
-        (
-          SELECT message
-          FROM messages
-          WHERE phone = c.phone
-          ORDER BY created_at DESC
-          LIMIT 1
-        ) AS last_message
-      FROM conversations c
-      LEFT JOIN leads l
-      ON l.phone = c.phone
-      ORDER BY c.created_at DESC
-      LIMIT 50
-    `);
-
-    return res.json({
-      ok: true,
-      conversations: result.rows
-    });
-
-  } catch (error) {
-
-    console.error("conversations error", error);
-
-    return res.status(500).json({
-      ok: false,
-      error: "conversations_failed"
-    });
-
-  }
-
-});
-
-/*
-INBOUND MESSAGE
-*/
+/**
+ * ============================================================
+ * INBOUND MESSAGE (CORE ENDPOINT)
+ * ============================================================
+ */
 
 app.post("/v1/messages/inbound", async (req, res) => {
-
   try {
 
-    const payload = validateInbound(req.body);
+    const {
+      api_key,
+      from,
+      message,
+      channel,
+      external_message_id,
+      metadata
+    } = req.body;
 
-    const result = await handleInbound(payload);
+    if (!api_key) {
+      return res.status(400).json({
+        error: "api_key_required"
+      });
+    }
 
-    return res.json({
-      ok: true,
-      reply: result.reply,
-      intent: result.intent,
-      stage: result.stage,
-      lead_score: result.lead_score,
-      catalog_matches: result.catalog_matches
+    if (!from) {
+      return res.status(400).json({
+        error: "from_required"
+      });
+    }
+
+    if (!message) {
+      return res.status(400).json({
+        error: "message_required"
+      });
+    }
+
+    const result = await handleInbound({
+      apiKey: api_key,
+      from,
+      text: message,
+      channel: channel || "whatsapp",
+      external_message_id,
+      metadata
     });
+
+    res.json(result);
+
+  } catch (error) {
+
+    console.error("inbound error", error);
+
+    res.status(500).json({
+      error: "server_error"
+    });
+
+  }
+});
+
+/**
+ * ============================================================
+ * GET LEAD
+ * ============================================================
+ */
+
+app.get("/v1/leads", async (req, res) => {
+  try {
+
+    const { organization_id, phone } = req.query;
+
+    if (!organization_id || !phone) {
+      return res.status(400).json({
+        error: "organization_id_and_phone_required"
+      });
+    }
+
+    const data = await getLeadSummary(organization_id, phone);
+
+    res.json(data);
 
   } catch (error) {
 
     console.error(error);
 
-    return res.status(400).json({
-      ok: false,
-      error: error.message
+    res.status(500).json({
+      error: "server_error"
     });
 
   }
-
 });
 
-/*
-404
-*/
+/**
+ * ============================================================
+ * GET CONVERSATION MESSAGES
+ * ============================================================
+ */
 
-app.use((req, res) => {
+app.get("/v1/conversations/:id/messages", async (req, res) => {
+  try {
 
-  res.status(404).json({
-    ok: false,
-    error: "not_found"
-  });
+    const conversationId = req.params.id;
 
+    const messages = await getConversationMessages(conversationId);
+
+    res.json(messages);
+
+  } catch (error) {
+
+    console.error(error);
+
+    res.status(500).json({
+      error: "server_error"
+    });
+
+  }
 });
 
-const port = process.env.PORT || 3000;
+/**
+ * ============================================================
+ * METRICS SUMMARY
+ * ============================================================
+ */
 
-app.listen(port, () => {
+app.get("/v1/metrics/summary", async (req, res) => {
+  try {
 
-  console.log(`EVA Core listening on port ${port}`);
+    const { organization_id } = req.query;
 
-  startFollowupWorker();
+    if (!organization_id) {
+      return res.status(400).json({
+        error: "organization_id_required"
+      });
+    }
+
+    const metrics = await getMetricsSummary(organization_id);
+
+    res.json(metrics);
+
+  } catch (error) {
+
+    console.error(error);
+
+    res.status(500).json({
+      error: "server_error"
+    });
+
+  }
+});
+
+/**
+ * ============================================================
+ * FOLLOWUP WORKER
+ * ============================================================
+ */
+
+async function sendFollowupMessage(payload) {
+
+  console.log("FOLLOWUP:", payload);
+
+  /**
+   * Aquí luego conectaremos:
+   *
+   * WhatsApp Cloud API
+   * Twilio
+   * Meta Messaging
+   *
+   */
+
+}
+
+setInterval(async () => {
+
+  try {
+
+    await processPendingFollowups(sendFollowupMessage);
+
+  } catch (error) {
+
+    console.error("followup worker error", error);
+
+  }
+
+}, 60000);
+
+/**
+ * ============================================================
+ * START SERVER
+ * ============================================================
+ */
+
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+
+  console.log(`EVA Core listening on port ${PORT}`);
 
 });
