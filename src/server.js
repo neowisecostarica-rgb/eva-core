@@ -23,7 +23,7 @@ Health Check
 app.get("/", (req, res) => {
   res.json({
     status: "EVA Core running 🚀",
-    version: "8.1"
+    version: "8.2"
   });
 });
 
@@ -182,7 +182,5 @@ Server Start
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-
   console.log(`EVA Core running 🚀 on port ${PORT}`);
-
 });
