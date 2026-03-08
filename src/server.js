@@ -128,6 +128,52 @@ app.get("/v1/metrics/summary", async (req, res) => {
 });
 
 /*
+CONVERSATIONS INBOX
+*/
+
+app.get("/v1/conversations", async (req, res) => {
+
+  try {
+
+    const result = await pool.query(`
+      SELECT
+        c.phone,
+        c.created_at,
+        l.stage,
+        l.score,
+        (
+          SELECT message
+          FROM messages
+          WHERE phone = c.phone
+          ORDER BY created_at DESC
+          LIMIT 1
+        ) AS last_message
+      FROM conversations c
+      LEFT JOIN leads l
+      ON l.phone = c.phone
+      ORDER BY c.created_at DESC
+      LIMIT 50
+    `);
+
+    return res.json({
+      ok: true,
+      conversations: result.rows
+    });
+
+  } catch (error) {
+
+    console.error("conversations error", error);
+
+    return res.status(500).json({
+      ok: false,
+      error: "conversations_failed"
+    });
+
+  }
+
+});
+
+/*
 INBOUND MESSAGE
 */
 
