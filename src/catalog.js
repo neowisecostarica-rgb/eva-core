@@ -2,7 +2,13 @@ import pool from "./db.js";
 
 export async function searchCatalog({ organization_id, text }) {
 
-  const keywords = text.toLowerCase();
+  const words = text.toLowerCase().split(" ");
+
+  const keyword = words.find(w =>
+    ["laptop","thinkpad","lenovo","dell","computadora"].includes(w)
+  );
+
+  const search = keyword || text;
 
   const result = await pool.query(
     `
@@ -25,7 +31,7 @@ export async function searchCatalog({ organization_id, text }) {
       )
     LIMIT 3
   `,
-    [organization_id, `%${keywords}%`]
+    [organization_id, `%${search}%`]
   );
 
   return result.rows;
