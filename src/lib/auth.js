@@ -1,9 +1,15 @@
 import pool from "../db.js";
 
 export async function authenticate(req, res, next) {
+
   try {
 
-    const apiKey = req.headers["x-api-key"];
+    // aceptar API key desde header o body
+    const apiKey =
+      req.headers["x-api-key"] ||
+      req.headers["api-key"] ||
+      req.body?.api_key ||
+      req.query?.api_key;
 
     if (!apiKey) {
       return res.status(401).json({
@@ -27,6 +33,7 @@ export async function authenticate(req, res, next) {
       });
     }
 
+    // adjuntar organization al request
     req.organization = result.rows[0];
 
     next();
@@ -40,4 +47,5 @@ export async function authenticate(req, res, next) {
     });
 
   }
+
 }
