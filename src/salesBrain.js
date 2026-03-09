@@ -2,12 +2,16 @@ import pool from "./db.js";
 
 // ============================================================
 // EVA Core - salesBrain.js
-// Bundle Quirúrgico P1.4
-// - Inbound atómico
-// - Idempotencia por external_message_id
-// - Conversaciones por organization_id + channel + external_user_id
-// - Followups sin duplicación fácil
-// - Logs y pipeline dentro de transacción
+// Bundle Quirúrgico Definitivo
+// - Intent Engine PRO
+// - Budget Detection
+// - Smart Catalog Ranking
+// - Closing Engine
+// - Objection Engine
+// - Followup Engine
+// - Pipeline / Memory / Execution Logs
+// - Idempotencia inbound
+// - Transacción atómica
 // - Tolerante a diferencias reales de schema
 // ============================================================
 
@@ -210,7 +214,12 @@ function detectIntent(text) {
   const normalized = normalizeText(text);
 
   if (!normalized) {
-    return { intent: "UNKNOWN", stage: "DISCOVERY", lead_score: 0, objection_type: null };
+    return {
+      intent: "UNKNOWN",
+      stage: "DISCOVERY",
+      lead_score: 0,
+      objection_type: null
+    };
   }
 
   const objectionPatterns = [
@@ -239,7 +248,12 @@ function detectIntent(text) {
     "como la aparto",
     "como lo aparto",
     "apartarla",
-    "apartarlo"
+    "apartarlo",
+    "todavia la tiene",
+    "todavía la tiene",
+    "puedo pasar hoy",
+    "esta disponible",
+    "está disponible"
   ];
 
   const comparePatterns = [
@@ -478,7 +492,9 @@ async function searchCatalogSmart(
     index += 1;
   }
 
-  const budgetFilter = budgetCRC ? `AND (p.price_crc IS NULL OR p.price_crc <= $${index})` : "";
+  const budgetFilter = budgetCRC
+    ? `AND (p.price_crc IS NULL OR p.price_crc <= $${index})`
+    : "";
   if (budgetCRC) values.push(budgetCRC);
 
   const sql = `
@@ -590,7 +606,7 @@ function buildFallbackReply() {
 }
 
 // ------------------------------------------------------------
-// Transacción / idempotencia / conversación
+// Idempotencia / conversación
 // ------------------------------------------------------------
 async function findMessageByExternalId(
   organization_id,
@@ -620,10 +636,11 @@ async function findMessageByExternalId(
 
 async function findLatestAssistantReply(conversation_id, runner = pool) {
   const columns = await getTableColumns("messages", runner);
-  const roleColumn = columns.has("role");
-  const contentColumn = columns.has("content");
 
-  if (!roleColumn || !contentColumn) return null;
+  const hasRole = columns.has("role");
+  const hasContent = columns.has("content");
+
+  if (!hasRole || !hasContent) return null;
 
   const result = await dbQuery(
     runner,
