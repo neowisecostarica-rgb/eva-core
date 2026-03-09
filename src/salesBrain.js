@@ -1009,7 +1009,7 @@ async function updateConversationState(
   try {
     await updateFlexible(
       "conversations",
-      `id = $2`,
+      `id = $1`,
       [conversation_id],
       {
         stage,
