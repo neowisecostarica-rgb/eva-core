@@ -2,17 +2,17 @@ import pool from "./db.js";
 
 // ============================================================
 // EVA Core - salesBrain.js
-// Bundle Quirúrgico Definitivo
-// - Intent Engine PRO
-// - Budget Detection
-// - Smart Catalog Ranking
-// - Closing Engine
-// - Objection Engine
-// - Followup Engine
-// - Pipeline / Memory / Execution Logs
+// Bundle Quirúrgico v9
+// - Alineado a schema real
+// - Leads como fuente de verdad
+// - Conversaciones por organization_id + channel + external_user_id
+// - Pipeline events usando event_data / from_stage / to_stage / lead_phone
+// - Followups consistentes con due_at + scheduled_for
+// - Execution log en eva_execution_log
+// - Customer memory usando customer_profiles.profile_json
+// - Catálogo contextual
 // - Idempotencia inbound
 // - Transacción atómica
-// - Tolerante a diferencias reales de schema
 // ============================================================
 
 const tableColumnsCache = new Map();
@@ -25,11 +25,12 @@ function normalizeText(value = "") {
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
     .trim();
 }
 
 function unique(arr) {
-  return [...new Set(arr)];
+  return [...new Set(arr.filter(Boolean))];
 }
 
 function safeNumber(value) {
@@ -41,6 +42,10 @@ function compactObject(obj) {
   return Object.fromEntries(
     Object.entries(obj).filter(([, value]) => value !== undefined)
   );
+}
+
+function now() {
+  return new Date();
 }
 
 async function dbQuery(runner, sql, params = []) {
@@ -127,7 +132,7 @@ async function updateFlexible(
 }
 
 // ------------------------------------------------------------
-// Detección de presupuesto / intención / uso
+// Detección comercial
 // ------------------------------------------------------------
 function detectBudgetCRC(text) {
   const normalized = normalizeText(text);
@@ -164,7 +169,7 @@ function detectUseCase(text) {
   const normalized = normalizeText(text);
 
   if (
-    /(ingenieria|diseno|arquitectura|render|edicion|programacion|desarrollo)/i.test(
+    /(ingenieria|ingeniería|diseno|diseño|arquitectura|render|edicion|edición|programacion|programación|desarrollo)/i.test(
       normalized
     )
   ) {
@@ -179,7 +184,7 @@ function detectUseCase(text) {
     return "study";
   }
 
-  if (/(ninos|niño|nina|niña|primaria)/i.test(normalized)) {
+  if (/(ninos|niños|niño|niña|primaria)/i.test(normalized)) {
     return "school";
   }
 
@@ -260,6 +265,7 @@ function detectIntent(text) {
     "cual me recomienda",
     "cual recomiendas",
     "que me recomiendas",
+    "qué me recomiendas",
     "comparar",
     "diferencia",
     "mejor opcion",
@@ -280,6 +286,7 @@ function detectIntent(text) {
     "hola",
     "buenas",
     "buenos dias",
+    "buenos días",
     "buenas tardes",
     "buenas noches"
   ];
@@ -415,7 +422,7 @@ function extractSearchTerms(text, productInterest, useCase) {
     ...(useCase ? [useCase] : []),
     ...matchedBusinessTerms,
     ...baseTerms
-  ]).slice(0, 8);
+  ]).slice(0, 10);
 }
 
 function scoreCatalogRow(row, text, budgetCRC, useCase, productInterest) {
@@ -431,6 +438,8 @@ function scoreCatalogRow(row, text, budgetCRC, useCase, productInterest) {
 
   if (haystack.includes("thinkpad")) score += 12;
   if (haystack.includes("latitude")) score += 10;
+  if (haystack.includes("elitebook")) score += 9;
+  if (haystack.includes("probook")) score += 8;
 
   if (useCase === "study" && /(estudio|escuela|colegio|universidad)/i.test(haystack)) {
     score += 15;
@@ -468,6 +477,12 @@ function scoreCatalogRow(row, text, budgetCRC, useCase, productInterest) {
     }
   }
 
+  const stock = safeNumber(row.stock);
+  if (stock !== null) {
+    if (stock > 0) score += 10;
+    else score -= 20;
+  }
+
   return score;
 }
 
@@ -495,6 +510,7 @@ async function searchCatalogSmart(
   const budgetFilter = budgetCRC
     ? `AND (p.price_crc IS NULL OR p.price_crc <= $${index})`
     : "";
+
   if (budgetCRC) values.push(budgetCRC);
 
   const sql = `
@@ -517,18 +533,16 @@ async function searchCatalogSmart(
     FROM product_catalog p
     WHERE p.organization_id = $1
       AND (${likeClauses.length > 0 ? likeClauses.join(" OR ") : "TRUE"})
+      AND (p.is_active IS NULL OR p.is_active = true)
       ${budgetFilter}
-      AND (
-        p.is_active IS NULL
-        OR p.is_active = true
-      )
     ORDER BY p.updated_at DESC NULLS LAST, p.name ASC
     LIMIT 12
   `;
 
   try {
     const result = await dbQuery(runner, sql, values);
-    const ranked = result.rows
+
+    return result.rows
       .map((row) => ({
         ...row,
         _score: scoreCatalogRow(row, text, budgetCRC, useCase, productInterest)
@@ -536,8 +550,6 @@ async function searchCatalogSmart(
       .sort((a, b) => b._score - a._score)
       .slice(0, 3)
       .map(({ _score, ...row }) => row);
-
-    return ranked;
   } catch (err) {
     console.error("searchCatalogSmart error", err.message);
     return [];
@@ -635,13 +647,6 @@ async function findMessageByExternalId(
 }
 
 async function findLatestAssistantReply(conversation_id, runner = pool) {
-  const columns = await getTableColumns("messages", runner);
-
-  const hasRole = columns.has("role");
-  const hasContent = columns.has("content");
-
-  if (!hasRole || !hasContent) return null;
-
   const result = await dbQuery(
     runner,
     `
@@ -650,6 +655,21 @@ async function findLatestAssistantReply(conversation_id, runner = pool) {
     WHERE conversation_id = $1
       AND role = 'assistant'
     ORDER BY created_at DESC NULLS LAST, id DESC
+    LIMIT 1
+    `,
+    [conversation_id]
+  );
+
+  return result.rows[0] || null;
+}
+
+async function getConversationById(conversation_id, runner = pool) {
+  const result = await dbQuery(
+    runner,
+    `
+    SELECT *
+    FROM conversations
+    WHERE id = $1
     LIMIT 1
     `,
     [conversation_id]
@@ -668,7 +688,7 @@ async function ensureConversation(
   const hasChannel = columns.has("channel");
 
   const sql = `
-    SELECT id
+    SELECT *
     FROM conversations
     WHERE organization_id = $1
       AND external_user_id = $2
@@ -681,7 +701,7 @@ async function ensureConversation(
   const result = await dbQuery(runner, sql, params);
 
   if (result.rows.length > 0) {
-    return result.rows[0].id;
+    return result.rows[0];
   }
 
   const created = await insertFlexible(
@@ -690,13 +710,15 @@ async function ensureConversation(
       organization_id,
       external_user_id: phone,
       channel,
-      created_at: new Date(),
-      updated_at: new Date()
+      stage: "DISCOVERY",
+      control_mode: "HYBRID",
+      created_at: now(),
+      updated_at: now()
     },
     runner
   );
 
-  return created?.id || null;
+  return created || null;
 }
 
 // ------------------------------------------------------------
@@ -704,9 +726,6 @@ async function ensureConversation(
 // ------------------------------------------------------------
 async function findLeadByPhone(organization_id, phone, runner = pool) {
   try {
-    const columns = await getTableColumns("leads", runner);
-    if (!columns.has("phone") || !columns.has("organization_id")) return null;
-
     const result = await dbQuery(
       runner,
       `
@@ -714,7 +733,7 @@ async function findLeadByPhone(organization_id, phone, runner = pool) {
       FROM leads
       WHERE organization_id = $1
         AND phone = $2
-      ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST
+      ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST, id DESC
       LIMIT 1
       `,
       [organization_id, phone]
@@ -731,6 +750,7 @@ async function upsertLeadMemory(
   {
     organization_id,
     phone,
+    channel,
     intent,
     stage,
     lead_score,
@@ -751,13 +771,16 @@ async function upsertLeadMemory(
     const payload = compactObject({
       organization_id,
       phone,
+      source: channel,
+      intent,
       stage,
-      budget_crc: budgetCRC,
+      score: lead_score,
+      budget: budgetCRC ? String(budgetCRC) : undefined,
       product_interest: productInterest,
       use_case: useCase,
       interest_level: interestLevel,
-      last_update: new Date(),
-      updated_at: new Date()
+      last_contact_at: now(),
+      updated_at: now()
     });
 
     if (existing?.id) {
@@ -768,11 +791,20 @@ async function upsertLeadMemory(
         payload,
         runner
       );
-      return updated?.id || existing.id;
+      return updated || existing;
     }
 
-    const created = await insertFlexible("leads", payload, runner);
-    return created?.id || null;
+    const created = await insertFlexible(
+      "leads",
+      {
+        ...payload,
+        status: "OPEN",
+        created_at: now()
+      },
+      runner
+    );
+
+    return created || null;
   } catch (err) {
     console.error("upsertLeadMemory error", err.message);
     return null;
@@ -780,54 +812,63 @@ async function upsertLeadMemory(
 }
 
 async function upsertCustomerProfile(
-  { organization_id, phone, budgetCRC, productInterest, useCase },
+  { organization_id, phone, budgetCRC, productInterest, useCase, leadScore, intent, stage },
   runner = pool
 ) {
   try {
-    const columns = await getTableColumns("customer_profiles", runner);
-    if (!columns.has("organization_id")) return null;
-
-    const phoneColumn =
-      columns.has("phone") ? "phone" :
-      columns.has("lead_phone") ? "lead_phone" :
-      null;
-
-    if (!phoneColumn) return null;
-
     const result = await dbQuery(
       runner,
       `
       SELECT *
       FROM customer_profiles
       WHERE organization_id = $1
-        AND ${phoneColumn} = $2
+        AND external_user_id = $2
       LIMIT 1
       `,
       [organization_id, phone]
     );
 
-    const payload = compactObject({
-      organization_id,
-      [phoneColumn]: phone,
-      budget_crc: budgetCRC,
-      product_interest: productInterest,
-      use_case: useCase,
-      updated_at: new Date()
-    });
+    const previous = result.rows[0]?.profile_json || {};
+
+    const profileJson = {
+      ...previous,
+      phone,
+      last_intent: intent,
+      last_stage: stage,
+      last_lead_score: leadScore,
+      budget_crc: budgetCRC ?? previous.budget_crc ?? null,
+      product_interest: productInterest ?? previous.product_interest ?? null,
+      use_case: useCase ?? previous.use_case ?? null,
+      updated_at: new Date().toISOString()
+    };
 
     if (result.rows[0]?.id) {
       const updated = await updateFlexible(
         "customer_profiles",
-        `id = $${Object.keys(payload).length + 1}`,
+        `id = $${3}`,
         [result.rows[0].id],
-        payload,
+        {
+          profile_json: profileJson,
+          updated_at: now()
+        },
         runner
       );
-      return updated?.id || result.rows[0].id;
+      return updated || result.rows[0];
     }
 
-    const created = await insertFlexible("customer_profiles", payload, runner);
-    return created?.id || null;
+    const created = await insertFlexible(
+      "customer_profiles",
+      {
+        organization_id,
+        external_user_id: phone,
+        profile_json: profileJson,
+        created_at: now(),
+        updated_at: now()
+      },
+      runner
+    );
+
+    return created || null;
   } catch (err) {
     if (err.message?.includes('relation "customer_profiles" does not exist')) {
       return null;
@@ -842,56 +883,41 @@ async function createPipelineEvent(
   {
     organization_id,
     conversation_id,
-    lead_id,
-    stage,
-    intent,
-    lead_score,
-    message,
-    reply
+    lead_phone,
+    from_stage = null,
+    to_stage = null,
+    event_type,
+    reason = null,
+    event_data = {}
   },
   runner = pool
 ) {
-  await insertFlexible(
-    "pipeline_events",
-    {
-      organization_id,
-      conversation_id,
-      lead_id,
-      stage,
-      intent,
-      lead_score,
-      event_type: stage,
-      source: "sales_brain",
-      payload: {
-        message,
-        reply,
-        stage,
-        intent,
-        lead_score
+  try {
+    await insertFlexible(
+      "pipeline_events",
+      {
+        organization_id,
+        conversation_id,
+        lead_phone,
+        from_stage,
+        to_stage,
+        event_type,
+        reason,
+        event_data,
+        created_at: now()
       },
-      created_at: new Date(),
-      updated_at: new Date()
-    },
-    runner
-  );
+      runner
+    );
+  } catch (err) {
+    console.error("createPipelineEvent error", err.message);
+  }
 }
 
 async function hasOpenSimilarFollowup(
-  { organization_id, conversation_id, intent },
+  { organization_id, conversation_id, reason },
   runner = pool
 ) {
   try {
-    const columns = await getTableColumns("followups", runner);
-
-    const statusColumn = columns.has("status");
-    const reasonColumn = columns.has("reason");
-    const conversationColumn = columns.has("conversation_id");
-    const orgColumn = columns.has("organization_id");
-
-    if (!statusColumn || !reasonColumn || !conversationColumn || !orgColumn) {
-      return false;
-    }
-
     const result = await dbQuery(
       runner,
       `
@@ -903,7 +929,7 @@ async function hasOpenSimilarFollowup(
         AND reason = $3
       LIMIT 1
       `,
-      [organization_id, conversation_id, intent]
+      [organization_id, conversation_id, reason]
     );
 
     return result.rows.length > 0;
@@ -919,8 +945,10 @@ async function createFollowupIfNeeded(
 ) {
   if (lead_score < 55) return;
 
+  const reason = `AUTO_${intent}`;
+
   const duplicated = await hasOpenSimilarFollowup(
-    { organization_id, conversation_id, intent },
+    { organization_id, conversation_id, reason },
     runner
   );
 
@@ -934,18 +962,18 @@ async function createFollowupIfNeeded(
       organization_id,
       conversation_id,
       lead_phone: phone,
-      phone,
       status: "pending",
-      reason: intent,
+      reason,
       scheduled_for: runAt,
       due_at: runAt,
       payload: {
         type: "sales_followup",
+        intent,
         template:
           "Hola 🙂 solo quería saber si todavía sigues buscando equipo. Si quieres, te puedo compartir opciones que sí valen la pena."
       },
-      created_at: new Date(),
-      updated_at: new Date()
+      created_at: now(),
+      updated_at: now()
     },
     runner
   );
@@ -954,39 +982,69 @@ async function createFollowupIfNeeded(
 async function registerExecutionLog(
   {
     organization_id,
-    conversation_id,
     phone,
     intent,
     stage,
-    lead_score,
-    reply,
-    budgetCRC,
-    productInterest,
-    useCase,
-    external_message_id
+    reply
   },
   runner = pool
 ) {
-  await insertFlexible(
-    "eva_execution_logs",
-    {
-      organization_id,
-      conversation_id,
-      external_user_id: phone,
-      external_message_id,
-      intent,
-      stage,
-      lead_score,
-      reply,
-      payload: {
-        budget_crc: budgetCRC,
-        product_interest: productInterest,
-        use_case: useCase
+  try {
+    await insertFlexible(
+      "eva_execution_log",
+      {
+        organization_id,
+        phone,
+        intent,
+        stage,
+        reply,
+        created_at: now()
       },
-      created_at: new Date()
-    },
-    runner
-  );
+      runner
+    );
+  } catch (err) {
+    console.error("registerExecutionLog error", err.message);
+  }
+}
+
+async function updateConversationState(
+  { conversation_id, stage, summary },
+  runner = pool
+) {
+  try {
+    await updateFlexible(
+      "conversations",
+      `id = $${3}`,
+      [conversation_id],
+      {
+        stage,
+        summary,
+        updated_at: now()
+      },
+      runner
+    );
+  } catch (err) {
+    console.error("updateConversationState error", err.message);
+  }
+}
+
+function buildConversationSummary({
+  intent,
+  stage,
+  budgetCRC,
+  productInterest,
+  useCase
+}) {
+  const parts = [
+    `intent=${intent}`,
+    `stage=${stage}`
+  ];
+
+  if (budgetCRC) parts.push(`budget=${budgetCRC}`);
+  if (productInterest) parts.push(`product=${productInterest}`);
+  if (useCase) parts.push(`use_case=${useCase}`);
+
+  return parts.join(" | ");
 }
 
 // ------------------------------------------------------------
@@ -1014,7 +1072,7 @@ export async function handleInbound({ organization_id, payload }) {
   try {
     await client.query("BEGIN");
 
-    // 1) Idempotencia: si ya se procesó ese external_message_id, no repetir efectos.
+    // 1) Idempotencia inbound
     if (external_message_id) {
       const existingInbound = await findMessageByExternalId(
         organization_id,
@@ -1048,16 +1106,19 @@ export async function handleInbound({ organization_id, payload }) {
     }
 
     // 2) Conversación atómica por tenant + canal + usuario
-    const conversation_id = await ensureConversation(
+    const conversation = await ensureConversation(
       organization_id,
       phone,
       channel,
       client
     );
 
-    if (!conversation_id) {
+    if (!conversation?.id) {
       throw new Error("conversation_not_created");
     }
+
+    const conversation_id = conversation.id;
+    const previousStage = conversation.stage || "DISCOVERY";
 
     // 3) Guardar inbound
     await insertFlexible(
@@ -1065,11 +1126,13 @@ export async function handleInbound({ organization_id, payload }) {
       {
         organization_id,
         conversation_id,
-        channel,
         role: "user",
         content: message,
         external_message_id,
-        created_at: new Date()
+        meta: {
+          channel
+        },
+        created_at: now()
       },
       client
     );
@@ -1108,25 +1171,31 @@ export async function handleInbound({ organization_id, payload }) {
       reply = buildBudgetReply(budgetCRC);
     }
 
-    // 5) Guardar respuesta assistant
+    // 5) Guardar assistant
     await insertFlexible(
       "messages",
       {
         organization_id,
         conversation_id,
-        channel,
         role: "assistant",
         content: reply,
-        created_at: new Date()
+        meta: {
+          channel,
+          intent,
+          stage,
+          lead_score
+        },
+        created_at: now()
       },
       client
     );
 
     // 6) Persistencia comercial
-    const lead_id = await upsertLeadMemory(
+    const lead = await upsertLeadMemory(
       {
         organization_id,
         phone,
+        channel,
         intent,
         stage,
         lead_score,
@@ -1143,24 +1212,91 @@ export async function handleInbound({ organization_id, payload }) {
         phone,
         budgetCRC,
         productInterest,
-        useCase
+        useCase,
+        leadScore: lead_score,
+        intent,
+        stage
       },
       client
     );
 
-    await createPipelineEvent(
+    await updateConversationState(
       {
-        organization_id,
         conversation_id,
-        lead_id,
         stage,
-        intent,
-        lead_score,
-        message,
-        reply
+        summary: buildConversationSummary({
+          intent,
+          stage,
+          budgetCRC,
+          productInterest,
+          useCase
+        })
       },
       client
     );
+
+    if (!lead?.created_at || !lead?.updated_at || lead.created_at?.getTime?.() === lead.updated_at?.getTime?.()) {
+      await createPipelineEvent(
+        {
+          organization_id,
+          conversation_id,
+          lead_phone: phone,
+          from_stage: null,
+          to_stage: stage,
+          event_type: "lead_touched",
+          reason: "inbound_message",
+          event_data: {
+            intent,
+            lead_score
+          }
+        },
+        client
+      );
+    }
+
+    if (previousStage !== stage) {
+      await createPipelineEvent(
+        {
+          organization_id,
+          conversation_id,
+          lead_phone: phone,
+          from_stage: previousStage,
+          to_stage: stage,
+          event_type: "stage_changed",
+          reason: "intent_detection",
+          event_data: {
+            intent,
+            lead_score,
+            budget_crc: budgetCRC,
+            use_case: useCase,
+            product_interest: productInterest
+          }
+        },
+        client
+      );
+    }
+
+    if (catalogMatches.length > 0) {
+      await createPipelineEvent(
+        {
+          organization_id,
+          conversation_id,
+          lead_phone: phone,
+          from_stage: stage,
+          to_stage: stage,
+          event_type: "offer_sent",
+          reason: "catalog_match",
+          event_data: {
+            products: catalogMatches.map((p) => ({
+              id: p.id,
+              name: p.name,
+              price_crc: p.price_crc
+            }))
+          }
+        },
+        client
+      );
+    }
 
     await createFollowupIfNeeded(
       {
@@ -1176,16 +1312,10 @@ export async function handleInbound({ organization_id, payload }) {
     await registerExecutionLog(
       {
         organization_id,
-        conversation_id,
         phone,
         intent,
         stage,
-        lead_score,
-        reply,
-        budgetCRC,
-        productInterest,
-        useCase,
-        external_message_id
+        reply
       },
       client
     );
@@ -1199,7 +1329,7 @@ export async function handleInbound({ organization_id, payload }) {
       stage,
       lead_score,
       conversation_id,
-      lead_id,
+      lead_id: lead?.id || null,
       duplicate_ignored: false,
       data: {
         budget_crc: budgetCRC,
