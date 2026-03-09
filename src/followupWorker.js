@@ -6,11 +6,13 @@ async function getDueFollowups() {
     SELECT *
     FROM followups
     WHERE status = 'pending'
-    AND due_at <= NOW()
+      AND due_at <= NOW()
+    ORDER BY due_at ASC
     LIMIT 20
   `);
 
   return result.rows;
+
 }
 
 async function markFollowupSent(id) {
@@ -24,6 +26,7 @@ async function markFollowupSent(id) {
     `,
     [id]
   );
+
 }
 
 async function processFollowups() {
@@ -34,13 +37,21 @@ async function processFollowups() {
 
   for (const f of followups) {
 
-    const message = `Hola 🙂 solo quería saber si todavía estás buscando laptop.
-Tengo algunas opciones disponibles que te podrían servir.`;
+    let message = "Hola 🙂 solo quería saber si todavía estás buscando equipo.";
+
+    if (f.payload && f.payload.template) {
+
+      message = f.payload.template;
+
+    }
 
     console.log("FOLLOWUP TRIGGERED", {
       phone: f.lead_phone,
       message
     });
+
+    // Aquí luego enviaremos a WhatsApp
+    // await sendWhatsAppMessage(f.lead_phone, message);
 
     await markFollowupSent(f.id);
 
