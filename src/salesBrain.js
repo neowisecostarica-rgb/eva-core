@@ -1,95 +1,57 @@
-import { pool } from "./db.js";
+import pool from "./db.js";
 
-const INTENTS = {
-  BUY: "BUY",
-  INFO: "INFO",
-  SUPPORT: "SUPPORT",
-  GREETING: "GREETING",
-  UNKNOWN: "UNKNOWN"
-};
+export async function handleInbound({ organization_id, payload }) {
 
-function detectIntent(text = "") {
-  const msg = text.toLowerCase();
+  const message = payload.message || "";
 
-  if (msg.includes("precio") || msg.includes("comprar")) return INTENTS.BUY;
-  if (msg.includes("hola") || msg.includes("buenas")) return INTENTS.GREETING;
-  if (msg.includes("ayuda") || msg.includes("soporte")) return INTENTS.SUPPORT;
+  const phone = payload.phone || "unknown";
 
-  return INTENTS.INFO;
-}
-
-function generateReply(intent) {
-  switch (intent) {
-    case INTENTS.GREETING:
-      return "Hola 👋 soy Eva, ¿en qué puedo ayudarte hoy?";
-
-    case INTENTS.BUY:
-      return "Perfecto 👍 ¿Qué tipo de laptop estás buscando?";
-
-    case INTENTS.SUPPORT:
-      return "Con gusto te ayudo. ¿Cuál es el problema con tu equipo?";
-
-    default:
-      return "Cuéntame un poco más para poder ayudarte mejor.";
-  }
-}
-
-export async function handleInboundMessage(payload) {
-  const client = await pool.connect();
+  const reply = "Gracias por escribirnos. ¿En qué puedo ayudarte?";
 
   try {
-    const { organization_id, phone, message } = payload;
 
-    const intent = detectIntent(message);
-    const reply = generateReply(intent);
-
-    const conversation = await client.query(
+    const conversation = await pool.query(
       `
-      INSERT INTO conversations (organization_id, phone)
-      VALUES ($1, $2)
-      ON CONFLICT (organization_id, phone)
-      DO UPDATE SET updated_at = NOW()
+      INSERT INTO conversations (organization_id, external_user_id)
+      VALUES ($1,$2)
       RETURNING id
       `,
       [organization_id, phone]
     );
 
-    const conversationId = conversation.rows[0].id;
+    const conversation_id = conversation.rows[0].id;
 
-    await client.query(
+    await pool.query(
       `
-      INSERT INTO messages (
-        organization_id,
-        conversation_id,
-        role,
-        content,
-        created_at
-      )
-      VALUES ($1, $2, 'user', $3, NOW())
+      INSERT INTO messages
+      (organization_id, conversation_id, role, content)
+      VALUES ($1,$2,'user',$3)
       `,
-      [organization_id, conversationId, message]
+      [organization_id, conversation_id, message]
     );
 
-    await client.query(
+    await pool.query(
       `
-      INSERT INTO messages (
-        organization_id,
-        conversation_id,
-        role,
-        content,
-        created_at
-      )
-      VALUES ($1, $2, 'assistant', $3, NOW())
+      INSERT INTO messages
+      (organization_id, conversation_id, role, content)
+      VALUES ($1,$2,'assistant',$3)
       `,
-      [organization_id, conversationId, reply]
+      [organization_id, conversation_id, reply]
     );
 
     return {
-      reply,
-      intent
+      ok: true,
+      reply
     };
 
-  } finally {
-    client.release();
+  } catch (err) {
+
+    console.error("salesBrain error", err);
+
+    return {
+      error: "brain_error"
+    };
+
   }
+
 }
