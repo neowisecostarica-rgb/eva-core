@@ -1,43 +1,23 @@
 import express from "express";
-import { handleInboundMessage } from "../salesBrain.js";
-import { getOrganizationFromApiKey } from "../lib/auth.js";
-import { registerUsage } from "../usage.js";
+import { handleInbound } from "../salesBrain.js";
+import { authenticate } from "../lib/auth.js";
 
 const router = express.Router();
 
-router.post("/inbound", async (req, res) => {
+router.post("/inbound", authenticate, async (req, res) => {
 
   try {
 
-    const apiKey = req.headers["x-api-key"];
-
-    if (!apiKey) {
-      return res.status(401).json({
-        error: "missing_api_key"
-      });
-    }
-
-    const organizationId = await getOrganizationFromApiKey(apiKey);
-
-    const payload = {
-      organization_id: organizationId,
-      phone: req.body.phone,
-      message: req.body.message
-    };
-
-    const result = await handleInboundMessage(payload);
-
-    await registerUsage(organizationId);
-
-    res.json({
-      ok: true,
-      reply: result.reply,
-      intent: result.intent
+    const result = await handleInbound({
+      organization_id: req.organization.id,
+      payload: req.body
     });
+
+    res.json(result);
 
   } catch (err) {
 
-    console.error(err);
+    console.error("inbound error", err);
 
     res.status(500).json({
       error: "server_error"
