@@ -3,6 +3,7 @@ import dotenv from "dotenv";
 
 import messagesRoute from "./routes/messages.js";
 import metricsRoute from "./routes/metrics.js";
+import { startFollowupWorker } from "./followupWorker.js";
 
 dotenv.config();
 
@@ -20,6 +21,16 @@ app.get("/", (req, res) => {
 
 app.use("/v1/messages", messagesRoute);
 app.use("/v1/metrics", metricsRoute);
+
+/* ===============================
+   FOLLOWUP WORKER
+================================ */
+
+startFollowupWorker();
+
+/* ===============================
+   SERVER START
+================================ */
 
 const PORT = process.env.PORT || 3000;
 
