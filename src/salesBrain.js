@@ -1001,21 +1001,20 @@ async function registerExecutionLog(
     console.error("registerExecutionLog error", err.message);
   }
 }
-
 async function updateConversationState(
   { conversation_id, stage, summary },
   runner = pool
 ) {
   try {
-    await updateFlexible(
-      "conversations",
-      `id = $1`,
-      [conversation_id],
-      {
-        stage,
-        summary
-      },
-      runner
+    await runner.query(
+      `
+      UPDATE conversations
+      SET stage = $1,
+          summary = $2,
+          updated_at = NOW()
+      WHERE id = $3
+      `,
+      [stage, summary, conversation_id]
     );
   } catch (err) {
     console.error("updateConversationState error", err.message);
