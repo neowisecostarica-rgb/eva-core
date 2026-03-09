@@ -1,30 +1,45 @@
 import express from "express";
 import { handleInbound } from "../salesBrain.js";
 import { authenticate } from "../lib/auth.js";
+import { validateInbound } from "../validators.js";
 
 const router = express.Router();
 
 router.post("/inbound", authenticate, async (req, res) => {
-
   try {
+    const validated = validateInbound({
+      ...req.body,
+      organization_id: req.organization.id
+    });
 
     const result = await handleInbound({
       organization_id: req.organization.id,
-      payload: req.body
+      payload: {
+        ...validated,
+        channel: String(req.body?.channel || "whatsapp").trim().toLowerCase(),
+        external_message_id: req.body?.external_message_id
+          ? String(req.body.external_message_id).trim()
+          : null,
+        metadata:
+          req.body?.metadata && typeof req.body.metadata === "object"
+            ? req.body.metadata
+            : null
+      }
     });
 
-    res.json(result);
+    if (result?.error === "brain_error") {
+      return res.status(500).json(result);
+    }
 
+    return res.json(result);
   } catch (err) {
-
     console.error("inbound error", err);
 
-    res.status(500).json({
-      error: "server_error"
+    return res.status(400).json({
+      error: "bad_request",
+      message: err.message || "invalid payload"
     });
-
   }
-
 });
 
 export default router;
