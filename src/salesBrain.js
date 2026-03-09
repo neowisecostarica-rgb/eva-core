@@ -2,9 +2,10 @@ import pool from "./db.js";
 
 // ============================================================
 // EVA Core - salesBrain.js
-// Bundle Quirúrgico v9
-// - Alineado a schema real
-// - Leads como fuente de verdad
+// Bundle Quirúrgico v9.1
+// FIXES:
+// - Corrige duplicate updated_at en UPDATEs
+// - Mantiene leads como fuente de verdad
 // - Conversaciones por organization_id + channel + external_user_id
 // - Pipeline events usando event_data / from_stage / to_stage / lead_phone
 // - Followups consistentes con due_at + scheduled_for
@@ -108,21 +109,31 @@ async function updateFlexible(
 ) {
   const columns = await getTableColumns(tableName, runner);
 
-  const entries = Object.entries(candidateValues).filter(
+  const normalizedCandidateValues = { ...candidateValues };
+
+  // Evita doble asignación de updated_at
+  if (columns.has("updated_at")) {
+    delete normalizedCandidateValues.updated_at;
+  }
+
+  const entries = Object.entries(normalizedCandidateValues).filter(
     ([key, value]) => columns.has(key) && value !== undefined
   );
-
-  if (entries.length === 0) {
-    return null;
-  }
 
   const sets = entries.map(([key], i) => `${key} = $${i + 1}`);
   const values = entries.map(([, value]) => value);
 
+  if (columns.has("updated_at")) {
+    sets.push(`updated_at = NOW()`);
+  }
+
+  if (sets.length === 0) {
+    return null;
+  }
+
   const sql = `
     UPDATE ${tableName}
     SET ${sets.join(", ")}
-    ${columns.has("updated_at") ? `, updated_at = NOW()` : ""}
     WHERE ${whereClause}
     RETURNING *
   `;
@@ -663,21 +674,6 @@ async function findLatestAssistantReply(conversation_id, runner = pool) {
   return result.rows[0] || null;
 }
 
-async function getConversationById(conversation_id, runner = pool) {
-  const result = await dbQuery(
-    runner,
-    `
-    SELECT *
-    FROM conversations
-    WHERE id = $1
-    LIMIT 1
-    `,
-    [conversation_id]
-  );
-
-  return result.rows[0] || null;
-}
-
 async function ensureConversation(
   organization_id,
   phone,
@@ -779,8 +775,7 @@ async function upsertLeadMemory(
       product_interest: productInterest,
       use_case: useCase,
       interest_level: interestLevel,
-      last_contact_at: now(),
-      updated_at: now()
+      last_contact_at: now()
     });
 
     if (existing?.id) {
@@ -799,7 +794,8 @@ async function upsertLeadMemory(
       {
         ...payload,
         status: "OPEN",
-        created_at: now()
+        created_at: now(),
+        updated_at: now()
       },
       runner
     );
@@ -845,11 +841,10 @@ async function upsertCustomerProfile(
     if (result.rows[0]?.id) {
       const updated = await updateFlexible(
         "customer_profiles",
-        `id = $${3}`,
+        `id = $2`,
         [result.rows[0].id],
         {
-          profile_json: profileJson,
-          updated_at: now()
+          profile_json: profileJson
         },
         runner
       );
@@ -1014,12 +1009,11 @@ async function updateConversationState(
   try {
     await updateFlexible(
       "conversations",
-      `id = $${3}`,
+      `id = $2`,
       [conversation_id],
       {
         stage,
-        summary,
-        updated_at: now()
+        summary
       },
       runner
     );
@@ -1191,6 +1185,8 @@ export async function handleInbound({ organization_id, payload }) {
     );
 
     // 6) Persistencia comercial
+    const existingLeadBefore = await findLeadByPhone(organization_id, phone, client);
+
     const lead = await upsertLeadMemory(
       {
         organization_id,
@@ -1235,7 +1231,7 @@ export async function handleInbound({ organization_id, payload }) {
       client
     );
 
-    if (!lead?.created_at || !lead?.updated_at || lead.created_at?.getTime?.() === lead.updated_at?.getTime?.()) {
+    if (!existingLeadBefore?.id) {
       await createPipelineEvent(
         {
           organization_id,
@@ -1243,8 +1239,8 @@ export async function handleInbound({ organization_id, payload }) {
           lead_phone: phone,
           from_stage: null,
           to_stage: stage,
-          event_type: "lead_touched",
-          reason: "inbound_message",
+          event_type: "lead_created",
+          reason: "first_inbound_message",
           event_data: {
             intent,
             lead_score
