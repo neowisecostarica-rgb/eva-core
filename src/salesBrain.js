@@ -1,39 +1,65 @@
 import pool from "./db.js";
 
+// ----------------------------------------------------
+// Utilidad: buscar productos relevantes en el catálogo
+// ----------------------------------------------------
+async function searchCatalog(organization_id, text) {
+  const q = `
+    SELECT id, name, price_crc, description
+    FROM product_catalog
+    WHERE organization_id = $1
+      AND (
+        LOWER(name) LIKE $2
+        OR LOWER(description) LIKE $2
+        OR LOWER(category) LIKE $2
+      )
+    ORDER BY name ASC
+    LIMIT 3
+  `;
+
+  const term = `%${text.toLowerCase()}%`;
+
+  const result = await pool.query(q, [organization_id, term]);
+  return result.rows;
+}
+
+// ----------------------------------------------------
+// Motor principal
+// ----------------------------------------------------
 export async function handleInbound({ organization_id, payload }) {
 
   const message = payload.message || "";
   const phone = payload.phone || "unknown";
 
-  // ---- Heurística mínima (intent / stage / score)
   const text = message.toLowerCase();
 
   let intent = "UNKNOWN";
   let stage = "DISCOVERY";
   let lead_score = 10;
 
-  if (text.includes("precio") || text.includes("cuesta") || text.includes("cuánto")) {
+  if (text.includes("precio") || text.includes("cuesta")) {
     intent = "INFO";
-    lead_score = 25;
+    lead_score = 30;
   }
 
-  if (text.includes("comprar") || text.includes("quiero") || text.includes("tienen")) {
+  if (text.includes("busco") || text.includes("quiero")) {
     intent = "BUY";
     stage = "QUALIFYING";
-    lead_score = 60;
+    lead_score = 50;
   }
 
-  if (text.includes("estudiar") || text.includes("trabajo") || text.includes("ingeniería")) {
-    intent = intent === "UNKNOWN" ? "INFO" : intent;
-    lead_score += 10;
+  if (text.includes("laptop") || text.includes("computadora")) {
+    intent = "BUY";
+    lead_score += 20;
   }
 
-  // ---- Respuesta simple por ahora
-  const reply = "Perfecto 👍 te puedo ayudar a encontrar una buena opción. ¿Tienes algún presupuesto aproximado?";
+  let reply = "Perfecto 👍 déjame buscar algunas opciones para ti.";
 
   try {
 
-    // 1) buscar o crear conversación
+    // -----------------------------------------
+    // Conversación existente o nueva
+    // -----------------------------------------
     let conversation = await pool.query(
       `
       SELECT id
@@ -66,7 +92,9 @@ export async function handleInbound({ organization_id, payload }) {
 
     }
 
-    // 2) guardar mensaje usuario
+    // -----------------------------------------
+    // Guardar mensaje usuario
+    // -----------------------------------------
     await pool.query(
       `
       INSERT INTO messages
@@ -76,7 +104,33 @@ export async function handleInbound({ organization_id, payload }) {
       [organization_id, conversation_id, message]
     );
 
-    // 3) guardar respuesta EVA
+    // -----------------------------------------
+    // Buscar productos en el catálogo
+    // -----------------------------------------
+    let catalogMatches = [];
+
+    if (intent === "BUY" || intent === "INFO") {
+      catalogMatches = await searchCatalog(organization_id, text);
+    }
+
+    // -----------------------------------------
+    // Construir respuesta con productos
+    // -----------------------------------------
+    if (catalogMatches.length > 0) {
+
+      reply = "Te puedo recomendar estas opciones:\n\n";
+
+      for (const p of catalogMatches) {
+        reply += `💻 ${p.name} — ₡${p.price_crc}\n`;
+      }
+
+      reply += "\n¿Te gustaría ver fotos o más detalles de alguno?";
+
+    }
+
+    // -----------------------------------------
+    // Guardar respuesta EVA
+    // -----------------------------------------
     await pool.query(
       `
       INSERT INTO messages
@@ -86,7 +140,9 @@ export async function handleInbound({ organization_id, payload }) {
       [organization_id, conversation_id, reply]
     );
 
-    // 4) LOG DE DECISIÓN (nuevo bloque)
+    // -----------------------------------------
+    // Registrar decisión del motor
+    // -----------------------------------------
     await pool.query(
       `
       INSERT INTO eva_execution_logs
@@ -117,7 +173,8 @@ export async function handleInbound({ organization_id, payload }) {
       reply,
       intent,
       stage,
-      lead_score
+      lead_score,
+      catalog_matches: catalogMatches
     };
 
   } catch (err) {
