@@ -1001,40 +1001,66 @@ async function createFollowupIfNeeded(
   { organization_id, conversation_id, phone, intent, lead_score },
   runner = pool
 ) {
+
   if (lead_score < 55) return;
 
-  const reason = `AUTO_${intent}`;
+  const reasonBase = `AUTO_${intent}`;
 
   const duplicated = await hasOpenSimilarFollowup(
-    { organization_id, conversation_id, reason },
+    { organization_id, conversation_id, reason: reasonBase },
     runner
   );
 
   if (duplicated) return;
 
-  const runAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const nowTime = Date.now();
 
-  await insertFlexible(
-    "followups",
+  const followups = [
     {
-      organization_id,
-      conversation_id,
-      lead_phone: phone,
-      status: "pending",
-      reason,
-      scheduled_for: runAt,
-      due_at: runAt,
-      payload: {
-        type: "sales_followup",
-        intent,
-        template:
-          "Hola 🙂 solo quería saber si todavía sigues buscando equipo. Si quieres, te puedo compartir opciones que sí valen la pena."
-      },
-      created_at: now(),
-      updated_at: now()
+      delay: 24 * 60 * 60 * 1000,
+      template:
+        "Hola 🙂 solo quería saber si todavía sigues buscando equipo. Si quieres, te puedo recomendar opciones que realmente valgan la pena."
     },
-    runner
-  );
+    {
+      delay: 48 * 60 * 60 * 1000,
+      template:
+        "Te escribo porque algunas unidades suelen agotarse rápido. Si todavía estás buscando laptop, puedo ayudarte a elegir la mejor opción."
+    },
+    {
+      delay: 72 * 60 * 60 * 1000,
+      template:
+        "Último mensaje por aquí 🙂 si todavía necesitas laptop o computadora, con gusto te ayudo a encontrar una buena opción."
+    }
+  ];
+
+  for (let i = 0; i < followups.length; i++) {
+
+    const f = followups[i];
+
+    const runAt = new Date(nowTime + f.delay);
+
+    await insertFlexible(
+      "followups",
+      {
+        organization_id,
+        conversation_id,
+        lead_phone: phone,
+        status: "pending",
+        reason: reasonBase,
+        scheduled_for: runAt,
+        due_at: runAt,
+        payload: {
+          type: "sales_followup",
+          step: i + 1,
+          intent,
+          template: f.template
+        },
+        created_at: now(),
+        updated_at: now()
+      },
+      runner
+    );
+  }
 }
 
 async function registerExecutionLog(
