@@ -631,6 +631,27 @@ function buildFallbackReply() {
 // ------------------------------------------------------------
 // Idempotencia / conversación
 // ------------------------------------------------------------
+
+// Evita doble respuesta si el webhook llega duplicado
+
+async function assistantRecentlyReplied(conversation_id, runner = pool) {
+
+  const result = await runner.query(
+    `
+    SELECT created_at
+    FROM messages
+    WHERE conversation_id = $1
+      AND role = 'assistant'
+      AND created_at >= NOW() - INTERVAL '10 seconds'
+    ORDER BY created_at DESC
+    LIMIT 1
+    `,
+    [conversation_id]
+  );
+
+  return result.rows.length > 0;
+
+}
 async function findMessageByExternalId(
   organization_id,
   external_message_id,
@@ -1112,6 +1133,33 @@ export async function handleInbound({ organization_id, payload }) {
     const conversation_id = conversation.id;
     const previousStage = conversation.stage || "DISCOVERY";
 
+    // Guard contra doble respuesta si webhook llega duplicado
+const duplicateWindow = await assistantRecentlyReplied(conversation_id, client);
+
+if (duplicateWindow) {
+
+  const priorReply = await findLatestAssistantReply(conversation_id, client);
+
+  await client.query("COMMIT");
+
+  return {
+    ok: true,
+    duplicate_ignored: true,
+    conversation_id,
+    reply: priorReply?.content || null,
+    intent,
+    stage,
+    lead_score,
+    data: {
+      budget_crc: budgetCRC,
+      product_interest: productInterest,
+      use_case: useCase
+    },
+    catalog_matches: []
+  };
+
+}
+    
     // 3) Guardar inbound
     await insertFlexible(
       "messages",
@@ -1150,6 +1198,7 @@ export async function handleInbound({ organization_id, payload }) {
     }
 
    if (intent === "GREETING") {
+
   reply = buildGreetingReply();
 
 } else if (intent === "BUY") {
@@ -1161,7 +1210,30 @@ export async function handleInbound({ organization_id, payload }) {
   }
 
 } else if (intent === "SUPPORT") {
+
   reply = buildSupportReply();
+
+} else if (intent === "OBJECTION" && objection_type === "PRICE") {
+
+  reply = buildObjectionReply(catalogMatches);
+
+} else if (intent === "CLOSING") {
+
+  reply = buildClosingReply(catalogMatches);
+
+} else if (catalogMatches.length > 0) {
+
+  reply = buildCatalogReply(catalogMatches, budgetCRC);
+
+} else if (budgetCRC) {
+
+  reply = buildBudgetReply(budgetCRC);
+
+} else {
+
+  reply = buildFallbackReply();
+
+}
 
     // 5) Guardar assistant
     await insertFlexible(
