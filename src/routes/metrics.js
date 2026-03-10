@@ -43,7 +43,7 @@ router.get("/summary", authenticate, async (req, res) => {
       SELECT COUNT(*)
       FROM leads
       WHERE organization_id=$1
-      AND interest_level='HIGH'
+      AND score >= 80
       `,
       [organization_id]
     );
@@ -58,13 +58,35 @@ router.get("/summary", authenticate, async (req, res) => {
       [organization_id]
     );
 
+    const pipeline = await pool.query(
+      `
+      SELECT stage, COUNT(*) as total
+      FROM leads
+      WHERE organization_id=$1
+      GROUP BY stage
+      `,
+      [organization_id]
+    );
+
+    const intents = await pool.query(
+      `
+      SELECT intent, COUNT(*) as total
+      FROM leads
+      WHERE organization_id=$1
+      GROUP BY intent
+      `,
+      [organization_id]
+    );
+
     res.json({
 
       conversations: conversations.rows[0].count,
       leads: leads.rows[0].count,
       conversations_today: conversationsToday.rows[0].count,
       hot_leads: hotLeads.rows[0].count,
-      followups_pending: followupsPending.rows[0].count
+      followups_pending: followupsPending.rows[0].count,
+      pipeline: pipeline.rows,
+      intents: intents.rows
 
     });
 
