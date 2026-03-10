@@ -1149,19 +1149,19 @@ export async function handleInbound({ organization_id, payload }) {
       );
     }
 
-    if (intent === "GREETING") {
-      reply = buildGreetingReply();
-    } else if (intent === "SUPPORT") {
-      reply = buildSupportReply();
-    } else if (intent === "OBJECTION" && objection_type === "PRICE") {
-      reply = buildObjectionReply(catalogMatches);
-    } else if (intent === "CLOSING") {
-      reply = buildClosingReply(catalogMatches);
-    } else if (catalogMatches.length > 0) {
-      reply = buildCatalogReply(catalogMatches, budgetCRC);
-    } else if (budgetCRC) {
-      reply = buildBudgetReply(budgetCRC);
-    }
+   if (intent === "GREETING") {
+  reply = buildGreetingReply();
+
+} else if (intent === "BUY") {
+
+  if (budgetCRC) {
+    reply = `Perfecto 👍 con un presupuesto cercano a ${formatCRC(budgetCRC)} te puedo recomendar opciones que sí valgan la pena.\n\n¿La necesitas para estudio o para trabajo?`;
+  } else {
+    reply = "Perfecto 👍 te ayudo a encontrar una buena opción.\n\n¿La laptop la necesitas para estudio o para trabajo?";
+  }
+
+} else if (intent === "SUPPORT") {
+  reply = buildSupportReply();
 
     // 5) Guardar assistant
     await insertFlexible(
