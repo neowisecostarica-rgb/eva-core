@@ -739,6 +739,48 @@ async function ensureConversation(
 }
 
 // ------------------------------------------------------------
+// SALES RADAR
+// ------------------------------------------------------------
+
+async function detectHotLead(
+  {
+    organization_id,
+    conversation_id,
+    lead_phone,
+    lead_score
+  },
+  runner = pool
+) {
+  if (!lead_score) return;
+
+  if (lead_score < 85) return;
+
+  try {
+
+    await insertFlexible(
+      "pipeline_events",
+      {
+        organization_id,
+        conversation_id,
+        lead_phone,
+        event_type: "hot_lead_detected",
+        reason: "lead_score_threshold",
+        event_data: {
+          score: lead_score
+        },
+        created_at: now()
+      },
+      runner
+    );
+
+  } catch (err) {
+
+    console.error("detectHotLead error", err.message);
+
+  }
+}
+
+// ------------------------------------------------------------
 // Memoria / Leads / Pipeline / Followups
 // ------------------------------------------------------------
 async function findLeadByPhone(organization_id, phone, runner = pool) {
@@ -1374,7 +1416,19 @@ if (duplicateWindow) {
       },
       client
     );
+    
+// SALES RADAR
 
+await detectHotLead(
+  {
+    organization_id,
+    conversation_id,
+    lead_phone: phone,
+    lead_score
+  },
+  client
+);
+    
     await registerExecutionLog(
       {
         organization_id,
