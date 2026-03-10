@@ -15,6 +15,27 @@ async function getDueFollowups() {
 
 }
 
+function generateFollowupMessage(followup) {
+
+  if (followup.reason === "hot_lead") {
+    return "Hola 🙂 te escribo porque hace un momento consultaste por un equipo. Si quieres puedo ayudarte a elegir el mejor según tu presupuesto.";
+  }
+
+  if (followup.reason === "catalog_sent") {
+    return "Hola 🙂 solo quería saber si pudiste ver las opciones que te enviamos.";
+  }
+
+  if (followup.reason === "price_question") {
+    return "Hola 🙂 si tienes alguna duda sobre el precio o las características del equipo puedo ayudarte.";
+  }
+
+  if (followup.reason === "abandoned_chat") {
+    return "Hola 🙂 seguimos teniendo equipos disponibles por si todavía estás buscando.";
+  }
+
+  return "Hola 🙂 solo quería saber si todavía estás buscando equipo.";
+}
+
 async function markFollowupSent(id) {
 
   await pool.query(
@@ -37,21 +58,18 @@ async function processFollowups() {
 
   for (const f of followups) {
 
-    let message = "Hola 🙂 solo quería saber si todavía estás buscando equipo.";
-
-    if (f.payload && f.payload.template) {
-
-      message = f.payload.template;
-
-    }
+    const message = generateFollowupMessage(f);
 
     console.log("FOLLOWUP TRIGGERED", {
       phone: f.lead_phone,
+      reason: f.reason,
       message
     });
 
-    // Aquí luego enviaremos a WhatsApp
-    // await sendWhatsAppMessage(f.lead_phone, message);
+    /*
+      Aquí luego enviaremos a WhatsApp
+      await sendWhatsAppMessage(f.lead_phone, message);
+    */
 
     await markFollowupSent(f.id);
 
