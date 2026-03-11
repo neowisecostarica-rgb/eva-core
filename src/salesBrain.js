@@ -2,33 +2,39 @@ import pool from "./db.js";
 
 /*
 ========================================
-UTILS
-========================================
-*/
-
-function now() {
-  return new Date();
-}
-
-/*
-========================================
-INTENT DETECTION (simple heurística)
+INTENT DETECTION
 ========================================
 */
 
 function detectIntent(text) {
+  const t = String(text || "").toLowerCase();
 
-  const t = text.toLowerCase();
-
-  if (t.includes("precio") || t.includes("cuesta") || t.includes("vale")) {
+  if (
+    t.includes("precio") ||
+    t.includes("cuesta") ||
+    t.includes("vale") ||
+    t.includes("comprar") ||
+    t.includes("disponible")
+  ) {
     return "BUY";
   }
 
-  if (t.includes("información") || t.includes("info")) {
+  if (
+    t.includes("informacion") ||
+    t.includes("información") ||
+    t.includes("info") ||
+    t.includes("caracteristicas") ||
+    t.includes("características")
+  ) {
     return "INFO";
   }
 
-  if (t.includes("hola") || t.includes("buenas")) {
+  if (
+    t.includes("hola") ||
+    t.includes("buenas") ||
+    t.includes("buenos dias") ||
+    t.includes("buenos días")
+  ) {
     return "GREETING";
   }
 
@@ -42,13 +48,10 @@ STAGE DETECTION
 */
 
 function detectStage(intent) {
-
   if (intent === "BUY") return "QUALIFYING";
-
   if (intent === "INFO") return "DISCOVERY";
-
+  if (intent === "GREETING") return "DISCOVERY";
   return "DISCOVERY";
-
 }
 
 /*
@@ -58,13 +61,10 @@ LEAD SCORE
 */
 
 function calculateLeadScore(intent) {
-
   if (intent === "BUY") return 80;
-
   if (intent === "INFO") return 50;
-
-  return 20;
-
+  if (intent === "GREETING") return 20;
+  return 10;
 }
 
 /*
@@ -73,26 +73,34 @@ ENSURE CONVERSATION
 ========================================
 */
 
-async function ensureConversation(
-  organization_id,
-  phone,
-  channel
-) {
-
-  const result = await pool.query(
+async function ensureConversation(organization_id, phone, channel = "whatsapp") {
+  const existing = await pool.query(
     `
     SELECT *
     FROM conversations
     WHERE organization_id = $1
       AND external_user_id = $2
       AND channel = $3
+    ORDER BY created_at ASC NULLS LAST, id ASC
     LIMIT 1
     `,
     [organization_id, phone, channel]
   );
 
-  if (result.rows.length > 0) {
-    return result.rows[0];
+  if (existing.rows.length > 0) {
+    const conversation = existing.rows[0];
+
+    await pool.query(
+      `
+      UPDATE conversations
+      SET updated_at = NOW(),
+          last_message_at = NOW()
+      WHERE id = $1
+      `,
+      [conversation.id]
+    );
+
+    return conversation;
   }
 
   const created = await pool.query(
@@ -104,16 +112,16 @@ async function ensureConversation(
       stage,
       control_mode,
       created_at,
-      updated_at
+      updated_at,
+      last_message_at
     )
-    VALUES ($1,$2,$3,'DISCOVERY','HYBRID',NOW(),NOW())
+    VALUES ($1,$2,$3,'DISCOVERY','HYBRID',NOW(),NOW(),NOW())
     RETURNING *
     `,
     [organization_id, phone, channel]
   );
 
   return created.rows[0];
-
 }
 
 /*
@@ -128,8 +136,7 @@ async function saveMessage({
   role,
   content
 }) {
-
-  await pool.query(
+  const result = await pool.query(
     `
     INSERT INTO messages (
       organization_id,
@@ -139,15 +146,12 @@ async function saveMessage({
       created_at
     )
     VALUES ($1,$2,$3,$4,NOW())
+    RETURNING *
     `,
-    [
-      organization_id,
-      conversation_id,
-      role,
-      content
-    ]
+    [organization_id, conversation_id, role, content]
   );
 
+  return result.rows[0];
 }
 
 /*
@@ -162,8 +166,7 @@ async function upsertLead({
   lead_score,
   stage
 }) {
-
-  const result = await pool.query(
+  const existing = await pool.query(
     `
     SELECT *
     FROM leads
@@ -174,25 +177,22 @@ async function upsertLead({
     [organization_id, phone]
   );
 
-  if (result.rows.length > 0) {
+  if (existing.rows.length > 0) {
+    const current = existing.rows[0];
 
-    await pool.query(
+    const updated = await pool.query(
       `
       UPDATE leads
       SET score = $1,
           stage = $2,
           updated_at = NOW()
       WHERE id = $3
+      RETURNING *
       `,
-      [
-        lead_score,
-        stage,
-        result.rows[0].id
-      ]
+      [lead_score, stage, current.id]
     );
 
-    return result.rows[0];
-
+    return updated.rows[0];
   }
 
   const created = await pool.query(
@@ -208,16 +208,10 @@ async function upsertLead({
     VALUES ($1,$2,$3,$4,NOW(),NOW())
     RETURNING *
     `,
-    [
-      organization_id,
-      phone,
-      lead_score,
-      stage
-    ]
+    [organization_id, phone, lead_score, stage]
   );
 
   return created.rows[0];
-
 }
 
 /*
@@ -233,9 +227,7 @@ async function createFollowupIfNeeded({
   lead_score,
   stage
 }) {
-
   if (!lead_score || lead_score < 40) return;
-
   if (stage === "CLOSED") return;
 
   let hours = 24;
@@ -243,6 +235,20 @@ async function createFollowupIfNeeded({
   if (lead_score >= 80) hours = 12;
   else if (lead_score >= 60) hours = 24;
   else hours = 36;
+
+  const alreadyPending = await pool.query(
+    `
+    SELECT id
+    FROM followups
+    WHERE organization_id = $1
+      AND conversation_id = $2
+      AND status = 'pending'
+    LIMIT 1
+    `,
+    [organization_id, conversation_id]
+  );
+
+  if (alreadyPending.rows.length > 0) return;
 
   await pool.query(
     `
@@ -261,14 +267,8 @@ async function createFollowupIfNeeded({
       $1,$2,$3,'abandoned_chat',1,'pending',NOW() + ($4 || ' hours')::interval,NOW(),NOW()
     )
     `,
-    [
-      organization_id,
-      conversation_id,
-      lead_phone,
-      hours
-    ]
+    [organization_id, conversation_id, lead_phone, hours]
   );
-
 }
 
 /*
@@ -278,27 +278,19 @@ GENERATE REPLY
 */
 
 function generateReply(intent) {
-
   if (intent === "BUY") {
-
     return "Perfecto 👍 puedo ayudarte a elegir la mejor opción según tu presupuesto. ¿Qué tipo de laptop estás buscando?";
-
   }
 
   if (intent === "INFO") {
-
     return "Claro 🙂 con gusto te comparto la información. ¿Qué equipo estás buscando?";
-
   }
 
   if (intent === "GREETING") {
-
     return "Hola 👋 soy Eva de Compu Store. ¿En qué puedo ayudarte hoy?";
-
   }
 
   return "Cuéntame qué equipo estás buscando y con gusto te ayudo a elegir la mejor opción.";
-
 }
 
 /*
@@ -311,44 +303,32 @@ export async function handleInbound({
   organization_id,
   payload
 }) {
-
   try {
+    const phone = String(payload?.phone || "").trim();
+    const text = String(payload?.message || "").trim();
+    const channel = String(payload?.channel || "whatsapp").trim().toLowerCase();
 
-    const phone = payload.from;
-    const text = payload.text || "";
-    const channel = payload.channel || "whatsapp";
+    if (!organization_id) {
+      throw new Error("organization_id missing in handleInbound");
+    }
 
-    /*
-    Detect intent
-    */
+    if (!phone) {
+      throw new Error("phone missing in handleInbound");
+    }
+
+    if (!text) {
+      throw new Error("message missing in handleInbound");
+    }
 
     const intent = detectIntent(text);
-
-    /*
-    Detect stage
-    */
-
     const stage = detectStage(intent);
-
-    /*
-    Lead score
-    */
-
     const lead_score = calculateLeadScore(intent);
-
-    /*
-    Conversation
-    */
 
     const conversation = await ensureConversation(
       organization_id,
       phone,
       channel
     );
-
-    /*
-    Save user message
-    */
 
     await saveMessage({
       organization_id,
@@ -357,10 +337,6 @@ export async function handleInbound({
       content: text
     });
 
-    /*
-    Upsert lead
-    */
-
     const lead = await upsertLead({
       organization_id,
       phone,
@@ -368,15 +344,7 @@ export async function handleInbound({
       stage
     });
 
-    /*
-    Generate reply
-    */
-
     const reply = generateReply(intent);
-
-    /*
-    Save assistant message
-    */
 
     await saveMessage({
       organization_id,
@@ -385,9 +353,16 @@ export async function handleInbound({
       content: reply
     });
 
-    /*
-    Create followup
-    */
+    await pool.query(
+      `
+      UPDATE conversations
+      SET stage = $1,
+          updated_at = NOW(),
+          last_message_at = NOW()
+      WHERE id = $2
+      `,
+      [stage, conversation.id]
+    );
 
     await createFollowupIfNeeded({
       organization_id,
@@ -398,7 +373,6 @@ export async function handleInbound({
     });
 
     return {
-
       ok: true,
       reply,
       intent,
@@ -406,17 +380,13 @@ export async function handleInbound({
       lead_score,
       conversation_id: conversation.id,
       lead_id: lead.id
-
     };
-
   } catch (err) {
-
     console.error("salesBrain error", err);
 
     return {
-      error: "brain_error"
+      error: "brain_error",
+      details: err.message || "unknown brain error"
     };
-
   }
-
 }
