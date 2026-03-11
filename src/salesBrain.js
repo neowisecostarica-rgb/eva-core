@@ -2,30 +2,76 @@ import pool from "./db.js";
 
 /*
 ====================================================
-INTENT DETECTION
+NORMALIZATION
+====================================================
+*/
+
+function normalizeText(value = "") {
+  return String(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function normalizePhone(phone = "") {
+  return String(phone).replace(/\D/g, "");
+}
+
+function safeJson(value, fallback = {}) {
+  if (!value) return fallback;
+  if (typeof value === "object") return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+}
+
+/*
+====================================================
+SIGNAL DETECTION
 ====================================================
 */
 
 function detectIntent(text) {
+  const t = normalizeText(text);
 
-  const t = String(text || "").toLowerCase();
+  if (
+    t.includes("quiero comprar") ||
+    t.includes("la quiero") ||
+    t.includes("me la deja") ||
+    t.includes("como pago") ||
+    t.includes("sinpe") ||
+    t.includes("tarjeta") ||
+    t.includes("apartar") ||
+    t.includes("apartarla")
+  ) {
+    return "CLOSE_INTENT";
+  }
 
   if (
     t.includes("precio") ||
     t.includes("cuanto cuesta") ||
-    t.includes("cuánto cuesta") ||
-    t.includes("vale") ||
-    t.includes("comprar") ||
-    t.includes("disponible")
+    t.includes("cuanto vale") ||
+    t.includes("disponible") ||
+    t.includes("me interesa") ||
+    t.includes("tienen") ||
+    t.includes("busco") ||
+    t.includes("ocupo")
   ) {
     return "BUY";
   }
 
   if (
-    t.includes("informacion") ||
-    t.includes("información") ||
+    t.includes("garantia") ||
+    t.includes("procesador") ||
+    t.includes("ram") ||
+    t.includes("ssd") ||
+    t.includes("especificaciones") ||
     t.includes("caracteristicas") ||
-    t.includes("características")
+    t.includes("informacion") ||
+    t.includes("info")
   ) {
     return "INFO";
   }
@@ -34,134 +80,303 @@ function detectIntent(text) {
     t.includes("hola") ||
     t.includes("buenas") ||
     t.includes("buenos dias") ||
-    t.includes("buenos días")
+    t.includes("buen dia") ||
+    t.includes("buenas tardes")
   ) {
     return "GREETING";
   }
 
   return "UNKNOWN";
-
 }
-
-/*
-====================================================
-STAGE DETECTION
-====================================================
-*/
-
-function detectStage(intent) {
-
-  if (intent === "BUY") return "QUALIFYING";
-  if (intent === "INFO") return "DISCOVERY";
-  if (intent === "GREETING") return "DISCOVERY";
-
-  return "DISCOVERY";
-
-}
-
-/*
-====================================================
-LEAD SCORE
-====================================================
-*/
-
-function calculateLeadScore(intent) {
-
-  if (intent === "BUY") return 80;
-  if (intent === "INFO") return 50;
-  if (intent === "GREETING") return 20;
-
-  return 10;
-
-}
-
-/*
-====================================================
-PIPELINE EVENT DETECTION
-====================================================
-*/
 
 function detectPipelineEvent(text) {
+  const t = normalizeText(text);
 
-  const t = String(text || "").toLowerCase();
-
-  if (t.includes("precio") || t.includes("cuanto cuesta")) {
-    return "PRICE_REQUEST";
+  if (
+    t.includes("como pago") ||
+    t.includes("sinpe") ||
+    t.includes("tarjeta") ||
+    t.includes("transferencia")
+  ) {
+    return "PAYMENT_INTENT";
   }
 
-  if (t.includes("fotos") || t.includes("imagen")) {
-    return "CATALOG_REQUEST";
-  }
-
-  if (t.includes("comprar") || t.includes("la quiero")) {
+  if (
+    t.includes("quiero comprar") ||
+    t.includes("la quiero") ||
+    t.includes("apartar") ||
+    t.includes("apartarla") ||
+    t.includes("me la deja")
+  ) {
     return "READY_TO_BUY";
   }
 
-  if (t.includes("hola") || t.includes("buenas")) {
+  if (
+    t.includes("es nueva") ||
+    t.includes("muy cara") ||
+    t.includes("muy caro") ||
+    t.includes("por que tan barata") ||
+    t.includes("porque tan barata")
+  ) {
+    return "OBJECTION_PRICE";
+  }
+
+  if (
+    t.includes("garantia") ||
+    t.includes("tiene garantia")
+  ) {
+    return "WARRANTY_REQUEST";
+  }
+
+  if (
+    t.includes("fotos") ||
+    t.includes("imagenes") ||
+    t.includes("imagenes reales") ||
+    t.includes("mandeme fotos") ||
+    t.includes("mandame fotos")
+  ) {
+    return "CATALOG_REQUEST";
+  }
+
+  if (
+    t.includes("precio") ||
+    t.includes("cuanto cuesta") ||
+    t.includes("cuanto vale")
+  ) {
+    return "PRICE_REQUEST";
+  }
+
+  if (
+    t.includes("hola") ||
+    t.includes("buenas") ||
+    t.includes("buenos dias") ||
+    t.includes("buen dia")
+  ) {
     return "GREETING";
   }
 
   return "QUESTION";
-
 }
 
-/*
-====================================================
-SAVE PIPELINE EVENT
-====================================================
-*/
+function detectUseCase(text) {
+  const t = normalizeText(text);
 
-async function savePipelineEvent({
-  organization_id,
-  conversation_id,
-  lead_id,
-  event_type,
-  metadata = null
-}) {
-
-  try {
-
-    await pool.query(
-      `
-      INSERT INTO pipeline_events (
-        organization_id,
-        conversation_id,
-        lead_id,
-        event_type,
-        metadata,
-        created_at
-      )
-      VALUES ($1,$2,$3,$4,$5,NOW())
-      `,
-      [
-        organization_id,
-        conversation_id,
-        lead_id,
-        event_type,
-        metadata
-      ]
-    );
-
-  } catch (err) {
-
-    console.error("pipeline event error", err);
-
+  if (
+    t.includes("estudio") ||
+    t.includes("escuela") ||
+    t.includes("colegio") ||
+    t.includes("universidad") ||
+    t.includes("clases")
+  ) {
+    return "estudio";
   }
 
+  if (
+    t.includes("trabajo") ||
+    t.includes("oficina") ||
+    t.includes("empresa") ||
+    t.includes("excel") ||
+    t.includes("administrativo")
+  ) {
+    return "trabajo";
+  }
+
+  if (
+    t.includes("diseno") ||
+    t.includes("diseño") ||
+    t.includes("edicion") ||
+    t.includes("edición") ||
+    t.includes("arquitectura")
+  ) {
+    return "diseno";
+  }
+
+  if (
+    t.includes("gaming") ||
+    t.includes("juegos") ||
+    t.includes("gamer")
+  ) {
+    return "gaming";
+  }
+
+  return null;
+}
+
+function detectProductInterest(text) {
+  const t = normalizeText(text);
+
+  if (t.includes("laptop") || t.includes("computadora") || t.includes("portatil")) {
+    return "laptop";
+  }
+
+  if (t.includes("impresora")) {
+    return "impresora";
+  }
+
+  if (t.includes("monitor")) {
+    return "monitor";
+  }
+
+  return null;
+}
+
+function detectBudget(text) {
+  const t = normalizeText(text);
+
+  const milMatch = t.match(/(\d{2,4})\s*mil\b/);
+  if (milMatch) {
+    return parseInt(milMatch[1], 10) * 1000;
+  }
+
+  const numberMatches = [...t.matchAll(/\b\d{5,7}\b/g)].map((m) => parseInt(m[0], 10));
+  if (numberMatches.length > 0) {
+    return Math.max(...numberMatches);
+  }
+
+  const crcMatches = [...t.matchAll(/₡\s*([\d.,]+)/g)].map((m) =>
+    parseInt(String(m[1]).replace(/[^\d]/g, ""), 10)
+  );
+  if (crcMatches.length > 0) {
+    return Math.max(...crcMatches);
+  }
+
+  return null;
+}
+
+function detectObjection(text) {
+  const t = normalizeText(text);
+
+  if (t.includes("es nueva")) return "is_new";
+  if (t.includes("muy cara") || t.includes("muy caro")) return "price_high";
+  if (t.includes("garantia")) return "warranty";
+  if (t.includes("procesador")) return "processor";
+  if (t.includes("por que tan barata") || t.includes("porque tan barata")) return "cheap_suspicion";
+
+  return null;
+}
+
+function hasCloseSignal(text) {
+  const t = normalizeText(text);
+
+  return (
+    t.includes("quiero comprar") ||
+    t.includes("como pago") ||
+    t.includes("sinpe") ||
+    t.includes("tarjeta") ||
+    t.includes("apartar") ||
+    t.includes("apartarla") ||
+    t.includes("donde estan") ||
+    t.includes("donde estan ubicados") ||
+    t.includes("ubicacion") ||
+    t.includes("ubicados")
+  );
+}
+
+function calculateLeadScore({
+  intent,
+  pipelineEvent,
+  budget,
+  useCase,
+  productInterest,
+  closeSignal,
+  objection
+}) {
+  let score = 10;
+
+  if (intent === "GREETING") score += 10;
+  if (intent === "INFO") score += 25;
+  if (intent === "BUY") score += 45;
+  if (intent === "CLOSE_INTENT") score += 65;
+
+  if (pipelineEvent === "PRICE_REQUEST") score += 15;
+  if (pipelineEvent === "CATALOG_REQUEST") score += 20;
+  if (pipelineEvent === "WARRANTY_REQUEST") score += 15;
+  if (pipelineEvent === "PAYMENT_INTENT") score += 30;
+  if (pipelineEvent === "READY_TO_BUY") score += 35;
+
+  if (budget) score += 15;
+  if (useCase) score += 10;
+  if (productInterest) score += 10;
+  if (closeSignal) score += 20;
+
+  if (objection === "price_high") score -= 10;
+
+  if (score > 100) score = 100;
+  if (score < 0) score = 0;
+
+  return score;
+}
+
+function detectStage({
+  currentStage,
+  intent,
+  pipelineEvent,
+  closeSignal
+}) {
+  if (pipelineEvent === "PAYMENT_INTENT" || closeSignal) {
+    return "CLOSING";
+  }
+
+  if (pipelineEvent === "READY_TO_BUY") {
+    return "CLOSING";
+  }
+
+  if (
+    pipelineEvent === "CATALOG_REQUEST" ||
+    pipelineEvent === "WARRANTY_REQUEST" ||
+    pipelineEvent === "PRICE_REQUEST"
+  ) {
+    return "OFFER";
+  }
+
+  if (intent === "BUY") {
+    return "QUALIFYING";
+  }
+
+  if (intent === "INFO" || intent === "GREETING") {
+    return currentStage || "DISCOVERY";
+  }
+
+  return currentStage || "DISCOVERY";
+}
+
+function deriveLeadStatus(score, stage) {
+  if (stage === "CLOSING" || score >= 85) return "HOT";
+  if (score >= 50) return "WARM";
+  return "NEW";
 }
 
 /*
 ====================================================
-ENSURE CONVERSATION
+DB HELPERS
 ====================================================
 */
 
-async function ensureConversation(
+async function findExistingInboundByExternalId({
+  organization_id,
+  external_message_id
+}) {
+  if (!external_message_id) return null;
+
+  const result = await pool.query(
+    `
+    SELECT *
+    FROM messages
+    WHERE organization_id = $1
+      AND external_message_id = $2
+    LIMIT 1
+    `,
+    [organization_id, external_message_id]
+  );
+
+  return result.rows[0] || null;
+}
+
+async function ensureConversation({
   organization_id,
   phone,
   channel = "whatsapp"
-) {
-
+}) {
   const existing = await pool.query(
     `
     SELECT *
@@ -176,7 +391,6 @@ async function ensureConversation(
   );
 
   if (existing.rows.length > 0) {
-
     const conversation = existing.rows[0];
 
     await pool.query(
@@ -189,8 +403,10 @@ async function ensureConversation(
       [conversation.id]
     );
 
-    return conversation;
-
+    return {
+      ...conversation,
+      last_message_at: new Date().toISOString()
+    };
   }
 
   const created = await pool.query(
@@ -199,35 +415,32 @@ async function ensureConversation(
       organization_id,
       external_user_id,
       channel,
+      summary,
       stage,
-      control_mode,
       created_at,
       updated_at,
+      control_mode,
       last_message_at
     )
-    VALUES ($1,$2,$3,'DISCOVERY','HYBRID',NOW(),NOW(),NOW())
+    VALUES (
+      $1, $2, $3, '', 'DISCOVERY', NOW(), NOW(), 'HYBRID', NOW()
+    )
     RETURNING *
     `,
     [organization_id, phone, channel]
   );
 
   return created.rows[0];
-
 }
-
-/*
-====================================================
-SAVE MESSAGE
-====================================================
-*/
 
 async function saveMessage({
   organization_id,
   conversation_id,
   role,
-  content
+  content,
+  meta = null,
+  external_message_id = null
 }) {
-
   const result = await pool.query(
     `
     INSERT INTO messages (
@@ -235,31 +448,37 @@ async function saveMessage({
       conversation_id,
       role,
       content,
-      created_at
+      meta,
+      created_at,
+      external_message_id
     )
-    VALUES ($1,$2,$3,$4,NOW())
+    VALUES ($1, $2, $3, $4, $5, NOW(), $6)
     RETURNING *
     `,
-    [organization_id, conversation_id, role, content]
+    [
+      organization_id,
+      conversation_id,
+      role,
+      content,
+      meta,
+      external_message_id
+    ]
   );
 
   return result.rows[0];
-
 }
-
-/*
-====================================================
-UPSERT LEAD
-====================================================
-*/
 
 async function upsertLead({
   organization_id,
   phone,
-  lead_score,
-  stage
+  budget,
+  use_case,
+  interest_level,
+  intent,
+  score,
+  stage,
+  product_interest
 }) {
-
   const existing = await pool.query(
     `
     SELECT *
@@ -271,24 +490,41 @@ async function upsertLead({
     [organization_id, phone]
   );
 
-  if (existing.rows.length > 0) {
+  const status = deriveLeadStatus(score, stage);
 
-    const lead = existing.rows[0];
+  if (existing.rows.length > 0) {
+    const current = existing.rows[0];
 
     const updated = await pool.query(
       `
       UPDATE leads
-      SET score = $1,
-          stage = $2,
+      SET budget = COALESCE($1, budget),
+          use_case = COALESCE($2, use_case),
+          interest_level = $3,
+          intent = $4,
+          score = $5,
+          stage = $6,
+          status = $7,
+          product_interest = COALESCE($8, product_interest),
+          last_contact_at = NOW(),
           updated_at = NOW()
-      WHERE id = $3
+      WHERE id = $9
       RETURNING *
       `,
-      [lead_score, stage, lead.id]
+      [
+        budget,
+        use_case,
+        interest_level,
+        intent,
+        score,
+        stage,
+        status,
+        product_interest,
+        current.id
+      ]
     );
 
     return updated.rows[0];
-
   }
 
   const created = await pool.query(
@@ -296,100 +532,453 @@ async function upsertLead({
     INSERT INTO leads (
       organization_id,
       phone,
-      score,
+      status,
       stage,
+      budget,
+      use_case,
+      interest_level,
+      intent,
+      score,
+      last_contact_at,
       created_at,
-      updated_at
+      updated_at,
+      product_interest
     )
-    VALUES ($1,$2,$3,$4,NOW(),NOW())
+    VALUES (
+      $1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW(), NOW(), $10
+    )
     RETURNING *
     `,
-    [organization_id, phone, lead_score, stage]
+    [
+      organization_id,
+      phone,
+      status,
+      stage,
+      budget,
+      use_case,
+      interest_level,
+      intent,
+      score,
+      product_interest
+    ]
   );
 
   return created.rows[0];
-
 }
 
-/*
-====================================================
-CREATE FOLLOWUP
-====================================================
-*/
+async function getCustomerProfile({
+  organization_id,
+  phone
+}) {
+  const result = await pool.query(
+    `
+    SELECT *
+    FROM customer_profiles
+    WHERE organization_id = $1
+      AND external_user_id = $2
+    LIMIT 1
+    `,
+    [organization_id, phone]
+  );
+
+  if (result.rows.length === 0) return null;
+
+  const row = result.rows[0];
+
+  return {
+    ...row,
+    profile_json: safeJson(row.profile_json, {})
+  };
+}
+
+async function upsertCustomerProfile({
+  organization_id,
+  phone,
+  memoryPatch
+}) {
+  const existing = await getCustomerProfile({
+    organization_id,
+    phone
+  });
+
+  if (existing) {
+    const mergedProfile = {
+      ...safeJson(existing.profile_json, {}),
+      ...memoryPatch
+    };
+
+    const updated = await pool.query(
+      `
+      UPDATE customer_profiles
+      SET profile_json = $1,
+          updated_at = NOW()
+      WHERE id = $2
+      RETURNING *
+      `,
+      [mergedProfile, existing.id]
+    );
+
+    return {
+      ...updated.rows[0],
+      profile_json: safeJson(updated.rows[0].profile_json, {})
+    };
+  }
+
+  const created = await pool.query(
+    `
+    INSERT INTO customer_profiles (
+      organization_id,
+      external_user_id,
+      agent_id,
+      profile_json,
+      created_at,
+      updated_at
+    )
+    VALUES ($1, $2, NULL, $3, NOW(), NOW())
+    RETURNING *
+    `,
+    [organization_id, phone, memoryPatch]
+  );
+
+  return {
+    ...created.rows[0],
+    profile_json: safeJson(created.rows[0].profile_json, {})
+  };
+}
+
+async function savePipelineEvent({
+  organization_id,
+  lead_phone,
+  from_stage,
+  to_stage,
+  reason,
+  conversation_id,
+  event_type,
+  event_data
+}) {
+  try {
+    await pool.query(
+      `
+      INSERT INTO pipeline_events (
+        organization_id,
+        lead_phone,
+        from_stage,
+        to_stage,
+        reason,
+        created_at,
+        conversation_id,
+        event_type,
+        event_data
+      )
+      VALUES ($1, $2, $3, $4, $5, NOW(), $6, $7, $8)
+      `,
+      [
+        organization_id,
+        lead_phone,
+        from_stage,
+        to_stage,
+        reason,
+        conversation_id,
+        event_type,
+        event_data
+      ]
+    );
+  } catch (err) {
+    console.error("pipeline event error", err);
+  }
+}
+
+async function updateConversationState({
+  conversation_id,
+  stage,
+  summary
+}) {
+  await pool.query(
+    `
+    UPDATE conversations
+    SET stage = $1,
+        summary = $2,
+        updated_at = NOW(),
+        last_message_at = NOW()
+    WHERE id = $3
+    `,
+    [stage, summary, conversation_id]
+  );
+}
+
+async function searchCatalogSmart({
+  organization_id,
+  text,
+  budget,
+  use_case,
+  product_interest
+}) {
+  const result = await pool.query(
+    `
+    SELECT *
+    FROM product_catalog
+    WHERE organization_id = $1
+      AND is_active = true
+    ORDER BY featured DESC, updated_at DESC NULLS LAST, name ASC
+    LIMIT 50
+    `,
+    [organization_id]
+  );
+
+  const normalizedText = normalizeText(text);
+
+  const scored = result.rows.map((item) => {
+    let score = 0;
+
+    const haystack = normalizeText(
+      `${item.name || ""} ${item.category || ""} ${item.description || ""}`
+    );
+
+    if (product_interest && haystack.includes(product_interest)) score += 25;
+    if (normalizedText.includes("laptop") && haystack.includes("laptop")) score += 25;
+    if (normalizedText.includes("thinkpad") && haystack.includes("thinkpad")) score += 35;
+    if (normalizedText.includes("dell") && haystack.includes("dell")) score += 25;
+    if (normalizedText.includes("lenovo") && haystack.includes("lenovo")) score += 25;
+    if (normalizedText.includes("teclado numerico") && haystack.includes("15")) score += 15;
+    if (use_case === "estudio") score += 5;
+    if (use_case === "trabajo") score += 10;
+
+    if (typeof item.stock === "number" && item.stock > 0) score += 10;
+    if (item.featured) score += 10;
+
+    if (budget && typeof item.price_crc === "number") {
+      if (item.price_crc <= budget) score += 25;
+      const delta = Math.abs(item.price_crc - budget);
+      if (delta <= 30000) score += 10;
+    }
+
+    return {
+      ...item,
+      _score: score
+    };
+  });
+
+  return scored
+    .filter((item) => item._score > 0)
+    .sort((a, b) => b._score - a._score)
+    .slice(0, 3);
+}
+
+function buildSummary({
+  stage,
+  intent,
+  budget,
+  use_case,
+  product_interest,
+  pipelineEvent
+}) {
+  const parts = [
+    `stage=${stage}`,
+    `intent=${intent}`,
+    pipelineEvent ? `event=${pipelineEvent}` : null,
+    budget ? `budget=${budget}` : null,
+    use_case ? `use_case=${use_case}` : null,
+    product_interest ? `product_interest=${product_interest}` : null
+  ].filter(Boolean);
+
+  return parts.join(" | ");
+}
+
+function formatCatalogList(items = []) {
+  if (!items.length) return "";
+
+  return items
+    .map((item) => `• ${item.name} — ₡${Number(item.price_crc || 0).toLocaleString("es-CR")}`)
+    .join("\n");
+}
+
+function buildObjectionReply({
+  objection,
+  catalogMatches = []
+}) {
+  if (objection === "is_new") {
+    return "Son equipos reacondicionados de línea corporativa, revisados y funcionales 👍 La ventaja es que obtienes mejor calidad y respaldo sin pagar de más.";
+  }
+
+  if (objection === "price_high") {
+    return "Entiendo 👍 La diferencia es que trabajamos línea corporativa revisada, con mejor durabilidad y respaldo. Si me dices tu presupuesto exacto te recomiendo la opción más conveniente.";
+  }
+
+  if (objection === "warranty") {
+    return "Sí, trabajamos con garantía. Si quieres te recomiendo una opción según tu presupuesto y uso para que veas cuál te conviene más.";
+  }
+
+  if (objection === "processor") {
+    if (catalogMatches.length > 0) {
+      return `Claro 👍 Tengo estas opciones disponibles ahora mismo:\n\n${formatCatalogList(catalogMatches)}\n\nSi me dices si la ocupas para estudio o trabajo te guío mejor.`;
+    }
+
+    return "Claro 👍 Si me dices tu presupuesto y si la ocupas para estudio o trabajo te recomiendo la mejor opción disponible.";
+  }
+
+  if (objection === "cheap_suspicion") {
+    return "Porque son equipos corporativos reacondicionados y revisados, no domésticos nuevos. La idea es darte buena tecnología funcional a mejor precio, sin sacrificar respaldo.";
+  }
+
+  return null;
+}
+
+function buildCloseReply() {
+  return "Perfecto 🙌 Para avanzar te puedo ayudar con el apartado o con la forma de pago. ¿La ocupas por SINPE, transferencia o tarjeta?";
+}
+
+function buildCatalogReply({
+  catalogMatches,
+  budget,
+  use_case
+}) {
+  if (!catalogMatches.length) {
+    if (budget) {
+      return `Perfecto 👍 con un presupuesto cercano a ₡${Number(budget).toLocaleString("es-CR")} te puedo ayudar a buscar una buena opción. ¿La ocupas para estudio o trabajo?`;
+    }
+
+    return "Perfecto 👍 te puedo ayudar a elegir la mejor opción. ¿Qué presupuesto manejas más o menos y si la ocupas para estudio o trabajo?";
+  }
+
+  let intro = "Te puedo recomendar estas opciones:";
+  if (budget) {
+    intro = `Te puedo recomendar estas opciones según un presupuesto cercano a ₡${Number(budget).toLocaleString("es-CR")}:`;
+  } else if (use_case) {
+    intro = `Te puedo recomendar estas opciones para ${use_case}:`;
+  }
+
+  return `${intro}\n\n${formatCatalogList(catalogMatches)}\n\n¿Te gustaría ver fotos o más detalles de alguna?`;
+}
+
+function generateReply({
+  intent,
+  pipelineEvent,
+  objection,
+  closeSignal,
+  budget,
+  use_case,
+  catalogMatches,
+  memory
+}) {
+  const objectionReply = buildObjectionReply({
+    objection,
+    catalogMatches
+  });
+  if (objectionReply) return objectionReply;
+
+  if (closeSignal || pipelineEvent === "PAYMENT_INTENT" || pipelineEvent === "READY_TO_BUY") {
+    return buildCloseReply();
+  }
+
+  if (pipelineEvent === "CATALOG_REQUEST") {
+    return buildCatalogReply({
+      catalogMatches,
+      budget: budget || memory?.budget_crc || null,
+      use_case: use_case || memory?.use_case || null
+    });
+  }
+
+  if (pipelineEvent === "PRICE_REQUEST") {
+    return buildCatalogReply({
+      catalogMatches,
+      budget: budget || memory?.budget_crc || null,
+      use_case: use_case || memory?.use_case || null
+    });
+  }
+
+  if (intent === "GREETING") {
+    return "Hola 👋 Soy Eva de Compu Store Costa Rica. ¿Buscas laptop para estudio o trabajo? Si quieres también me puedes decir tu presupuesto aproximado.";
+  }
+
+  if (intent === "INFO") {
+    return "Claro 🙂 con gusto te ayudo. Dime tu presupuesto aproximado y si la ocupas para estudio o trabajo para recomendarte mejor.";
+  }
+
+  if (intent === "BUY") {
+    return buildCatalogReply({
+      catalogMatches,
+      budget: budget || memory?.budget_crc || null,
+      use_case: use_case || memory?.use_case || null
+    });
+  }
+
+  return "Cuéntame qué presupuesto manejas y si la laptop la ocupas para estudio o trabajo. Así te recomiendo una opción más precisa.";
+}
 
 async function createFollowupIfNeeded({
   organization_id,
   conversation_id,
   lead_phone,
-  lead_score
+  lead_score,
+  stage,
+  reason
 }) {
+  if (!lead_score || lead_score < 40) return;
+  if (stage === "CLOSING") return;
 
-  if (lead_score < 40) return;
-
-  const exists = await pool.query(
+  const pending = await pool.query(
     `
     SELECT id
     FROM followups
-    WHERE conversation_id = $1
+    WHERE organization_id = $1
+      AND conversation_id = $2
       AND status = 'pending'
     LIMIT 1
     `,
-    [conversation_id]
+    [organization_id, conversation_id]
   );
 
-  if (exists.rows.length > 0) return;
+  if (pending.rows.length > 0) return;
+
+  let hours = 24;
+  if (lead_score >= 85) hours = 12;
+  else if (lead_score >= 60) hours = 24;
+  else hours = 36;
+
+  const dueAtExpression = `${hours} hours`;
 
   await pool.query(
     `
     INSERT INTO followups (
       organization_id,
-      conversation_id,
-      lead_phone,
-      reason,
-      attempt,
-      status,
-      due_at,
       created_at,
-      updated_at
+      updated_at,
+      scheduled_for,
+      conversation_id,
+      due_at,
+      payload,
+      lead_phone,
+      status,
+      reason,
+      attempt
     )
     VALUES (
-      $1,$2,$3,'abandoned_chat',1,'pending',
-      NOW() + interval '24 hours',
+      $1,
       NOW(),
-      NOW()
+      NOW(),
+      NOW() + $2::interval,
+      $3,
+      NOW() + $2::interval,
+      $4,
+      $5,
+      'pending',
+      $6,
+      1
     )
     `,
     [
       organization_id,
+      dueAtExpression,
       conversation_id,
-      lead_phone
+      {
+        source: "salesBrain",
+        lead_score,
+        stage
+      },
+      lead_phone,
+      reason || "abandoned_chat"
     ]
   );
-
-}
-
-/*
-====================================================
-GENERATE REPLY
-====================================================
-*/
-
-function generateReply(intent) {
-
-  if (intent === "BUY") {
-    return "Perfecto 👍 puedo ayudarte a elegir la mejor opción según tu presupuesto. ¿Qué tipo de laptop estás buscando?";
-  }
-
-  if (intent === "INFO") {
-    return "Claro 🙂 con gusto te comparto la información. ¿Qué equipo estás buscando?";
-  }
-
-  if (intent === "GREETING") {
-    return "Hola 👋 soy Eva de Compu Store. ¿En qué puedo ayudarte hoy?";
-  }
-
-  return "Cuéntame qué equipo estás buscando y con gusto te ayudo.";
-
 }
 
 /*
@@ -402,61 +991,210 @@ export async function handleInbound({
   organization_id,
   payload
 }) {
-
   try {
+    const phone = normalizePhone(payload?.phone || "");
+    const text = String(payload?.message || "").trim();
+    const channel = String(payload?.channel || "whatsapp").trim().toLowerCase();
+    const external_message_id = payload?.external_message_id
+      ? String(payload.external_message_id).trim()
+      : null;
+    const inboundMeta = payload?.metadata && typeof payload.metadata === "object"
+      ? payload.metadata
+      : null;
 
-    const phone = String(payload.phone || "").trim();
-    const text = String(payload.message || "").trim();
-    const channel = String(payload.channel || "whatsapp").toLowerCase();
+    if (!organization_id) {
+      throw new Error("organization_id missing");
+    }
 
-    const intent = detectIntent(text);
-    const stage = detectStage(intent);
-    const lead_score = calculateLeadScore(intent);
+    if (!phone) {
+      throw new Error("phone missing");
+    }
 
-    const pipeline_event = detectPipelineEvent(text);
+    if (!text) {
+      throw new Error("message missing");
+    }
 
-    const conversation = await ensureConversation(
+    const duplicate = await findExistingInboundByExternalId({
+      organization_id,
+      external_message_id
+    });
+
+    if (duplicate) {
+      return {
+        ok: true,
+        duplicate_ignored: true,
+        reply: null,
+        intent: null,
+        stage: null,
+        lead_score: null,
+        conversation_id: duplicate.conversation_id,
+        lead_id: null
+      };
+    }
+
+    const existingProfile = await getCustomerProfile({
+      organization_id,
+      phone
+    });
+
+    const existingMemory = existingProfile?.profile_json || {};
+
+    const conversation = await ensureConversation({
       organization_id,
       phone,
       channel
-    );
+    });
 
-    await saveMessage({
+    const previousStage = conversation.stage || existingMemory.last_stage || "DISCOVERY";
+
+    const intent = detectIntent(text);
+    const pipelineEvent = detectPipelineEvent(text);
+    const use_case = detectUseCase(text) || existingMemory.use_case || null;
+    const product_interest = detectProductInterest(text) || existingMemory.product_interest || null;
+    const budget = detectBudget(text) || existingMemory.budget_crc || null;
+    const objection = detectObjection(text);
+    const closeSignal = hasCloseSignal(text);
+
+    const stage = detectStage({
+      currentStage: previousStage,
+      intent,
+      pipelineEvent,
+      closeSignal
+    });
+
+    const lead_score = calculateLeadScore({
+      intent,
+      pipelineEvent,
+      budget,
+      useCase: use_case,
+      productInterest: product_interest,
+      closeSignal,
+      objection
+    });
+
+    const interest_level = lead_score;
+
+    const inboundMessage = await saveMessage({
       organization_id,
       conversation_id: conversation.id,
       role: "user",
-      content: text
+      content: text,
+      meta: inboundMeta,
+      external_message_id
     });
 
     const lead = await upsertLead({
       organization_id,
       phone,
-      lead_score,
-      stage
+      budget,
+      use_case,
+      interest_level,
+      intent,
+      score: lead_score,
+      stage,
+      product_interest
+    });
+
+    const memoryPatch = {
+      budget_crc: budget,
+      use_case,
+      interest_level,
+      last_intent: intent,
+      last_stage: stage,
+      product_interest,
+      last_pipeline_event: pipelineEvent,
+      last_seen_at: new Date().toISOString()
+    };
+
+    const customerProfile = await upsertCustomerProfile({
+      organization_id,
+      phone,
+      memoryPatch
     });
 
     await savePipelineEvent({
       organization_id,
+      lead_phone: phone,
+      from_stage: previousStage,
+      to_stage: stage,
+      reason: pipelineEvent,
       conversation_id: conversation.id,
-      lead_id: lead.id,
-      event_type: pipeline_event,
-      metadata: { message: text }
+      event_type: pipelineEvent,
+      event_data: {
+        message: text,
+        intent,
+        score: lead_score,
+        budget,
+        use_case,
+        product_interest,
+        objection
+      }
     });
 
-    const reply = generateReply(intent);
+    const catalogMatches = await searchCatalogSmart({
+      organization_id,
+      text,
+      budget,
+      use_case,
+      product_interest
+    });
+
+    const reply = generateReply({
+      intent,
+      pipelineEvent,
+      objection,
+      closeSignal,
+      budget,
+      use_case,
+      catalogMatches,
+      memory: customerProfile?.profile_json || existingMemory
+    });
 
     await saveMessage({
       organization_id,
       conversation_id: conversation.id,
       role: "assistant",
-      content: reply
+      content: reply,
+      meta: {
+        intent,
+        stage,
+        lead_score,
+        pipeline_event: pipelineEvent,
+        catalog_matches: catalogMatches.map((item) => ({
+          id: item.id,
+          name: item.name,
+          price_crc: item.price_crc
+        }))
+      }
+    });
+
+    await updateConversationState({
+      conversation_id: conversation.id,
+      stage,
+      summary: buildSummary({
+        stage,
+        intent,
+        budget,
+        use_case,
+        product_interest,
+        pipelineEvent
+      })
     });
 
     await createFollowupIfNeeded({
       organization_id,
       conversation_id: conversation.id,
       lead_phone: phone,
-      lead_score
+      lead_score,
+      stage,
+      reason:
+        pipelineEvent === "PRICE_REQUEST"
+          ? "price_question"
+          : pipelineEvent === "CATALOG_REQUEST"
+            ? "catalog_sent"
+            : lead_score >= 85
+              ? "hot_lead"
+              : "abandoned_chat"
     });
 
     return {
@@ -466,18 +1204,32 @@ export async function handleInbound({
       stage,
       lead_score,
       conversation_id: conversation.id,
-      lead_id: lead.id
+      lead_id: lead.id,
+      duplicate_ignored: false,
+      data: {
+        budget_crc: budget,
+        use_case,
+        product_interest,
+        pipeline_event: pipelineEvent,
+        objection
+      },
+      catalog_matches: catalogMatches.map((item) => ({
+        id: item.id,
+        name: item.name,
+        category: item.category,
+        description: item.description,
+        price_crc: item.price_crc,
+        stock: item.stock,
+        featured: item.featured
+      })),
+      inbound_message_id: inboundMessage.id
     };
-
   } catch (err) {
-
     console.error("salesBrain error", err);
 
     return {
       error: "brain_error",
-      details: err.message
+      details: err.message || "unknown brain error"
     };
-
   }
-
 }
