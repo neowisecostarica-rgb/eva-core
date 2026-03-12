@@ -40,7 +40,7 @@ async function userRepliedAfterFollowup(followup) {
       AND created_at > $2
     LIMIT 1
     `,
-    [followup.conversation_id, followup.created_at]
+    [followup.conversation_id, followup.due_at]
   );
 
   return result.rows.length > 0;
