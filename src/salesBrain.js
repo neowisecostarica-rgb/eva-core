@@ -36,6 +36,12 @@ function uniqueStrings(values = []) {
   return [...new Set(values.filter(Boolean).map((v) => String(v).trim()))];
 }
 
+function addOpportunity(opportunities, value) {
+  if (!value) return opportunities;
+  if (!opportunities.includes(value)) opportunities.push(value);
+  return opportunities;
+}
+
 /*
 ====================================================
 SIGNAL DETECTION
@@ -56,7 +62,10 @@ function detectIntent(text) {
     t.includes("apartar") ||
     t.includes("apartarla") ||
     t.includes("se puede apartar") ||
-    t.includes("me la deja")
+    t.includes("me la deja") ||
+    t.includes("quiero esa") ||
+    t.includes("me la reservo") ||
+    t.includes("reservarla")
   ) {
     return "CLOSE_INTENT";
   }
@@ -138,7 +147,8 @@ function detectPipelineEvent(text) {
     t.includes("apartarla") ||
     t.includes("me la deja") ||
     t.includes("reservar") ||
-    t.includes("se puede apartar")
+    t.includes("se puede apartar") ||
+    t.includes("quiero esa")
   ) {
     return "READY_TO_BUY";
   }
@@ -390,7 +400,7 @@ function detectSalesOpportunities({
       t.includes("tinta")
     )
   ) {
-    opportunities.push("PRINTER_MAINTENANCE");
+    addOpportunity(opportunities, "PRINTER_MAINTENANCE");
   }
 
   if (
@@ -402,8 +412,9 @@ function detectSalesOpportunities({
       t.includes("tarda mucho")
     )
   ) {
-    opportunities.push("SSD_UPGRADE");
-    opportunities.push("RAM_UPGRADE");
+    addOpportunity(opportunities, "SSD_UPGRADE");
+    addOpportunity(opportunities, "RAM_UPGRADE");
+    addOpportunity(opportunities, "MAINTENANCE");
   }
 
   if (
@@ -415,7 +426,7 @@ function detectSalesOpportunities({
       t.includes("se descarga")
     )
   ) {
-    opportunities.push("BATTERY_REPLACEMENT");
+    addOpportunity(opportunities, "BATTERY_REPLACEMENT");
   }
 
   if (
@@ -426,21 +437,32 @@ function detectSalesOpportunities({
       pipelineEvent === "CATALOG_REQUEST"
     )
   ) {
-    opportunities.push("NEW_DEVICE");
+    addOpportunity(opportunities, "NEW_DEVICE");
   }
 
   if (
     useCase === "trabajo" &&
     productInterest === "laptop"
   ) {
-    opportunities.push("BUSINESS_LINE_DEVICE");
+    addOpportunity(opportunities, "BUSINESS_LINE_DEVICE");
   }
 
   if (
     useCase === "estudio" &&
     productInterest === "laptop"
   ) {
-    opportunities.push("STUDY_DEVICE");
+    addOpportunity(opportunities, "STUDY_DEVICE");
+  }
+
+  if (
+    productInterest === "laptop" &&
+    (
+      pipelineEvent === "PRICE_REQUEST" ||
+      pipelineEvent === "CATALOG_REQUEST" ||
+      intent === "BUY"
+    )
+  ) {
+    addOpportunity(opportunities, "ACCESSORY_UPSELL");
   }
 
   return uniqueStrings(opportunities);
@@ -480,7 +502,7 @@ function calculateLeadScore({
   if (urgency === "medium") score += 8;
 
   if (Array.isArray(opportunities)) {
-    score += Math.min(opportunities.length * 5, 15);
+    score += Math.min(opportunities.length * 5, 20);
   }
 
   if (objection === "price_high") score -= 10;
@@ -1135,13 +1157,19 @@ function buildPrinterServiceReply({ brand_hint }) {
 function buildLaptopGuidedReply({
   catalogMatches,
   budget,
-  use_case
+  use_case,
+  opportunities = []
 }) {
   if (!catalogMatches.length) {
     return buildCatalogReply({ catalogMatches, budget, use_case });
   }
 
-  return `Perfecto 👍 Para ${use_case || "lo que me comentas"} te recomiendo estas opciones:\n\n${formatCatalogList(catalogMatches)}\n\nTodas son línea corporativa, revisadas y con garantía.\n\n¿Quieres que te pase fotos reales de alguna?`;
+  let extraLine = "";
+  if (opportunities.includes("ACCESSORY_UPSELL")) {
+    extraLine = "\n\nSi quieres, también te puedo orientar con accesorios como cargador, mouse o monitor según lo que ocupes.";
+  }
+
+  return `Perfecto 👍 Para ${use_case || "lo que me comentas"} te recomiendo estas opciones:\n\n${formatCatalogList(catalogMatches)}\n\nTodas son línea corporativa, revisadas y con garantía.${extraLine}\n\n¿Quieres que te pase fotos reales de alguna?`;
 }
 
 function buildAccessoryReply({ brand_hint }) {
@@ -1197,7 +1225,12 @@ function generateReply({
     return buildAccessoryReply({ brand_hint });
   }
 
-  if (closeSignal || pipelineEvent === "PAYMENT_INTENT" || pipelineEvent === "READY_TO_BUY" || lead_score >= 85) {
+  if (
+    closeSignal ||
+    pipelineEvent === "PAYMENT_INTENT" ||
+    pipelineEvent === "READY_TO_BUY" ||
+    lead_score >= 85
+  ) {
     return buildCloseReply({
       product_interest,
       catalogMatches
@@ -1209,7 +1242,8 @@ function generateReply({
       return buildLaptopGuidedReply({
         catalogMatches,
         budget: budget || memory?.budget_crc || null,
-        use_case: use_case || memory?.use_case || null
+        use_case: use_case || memory?.use_case || null,
+        opportunities
       });
     }
 
@@ -1253,7 +1287,8 @@ function generateReply({
       return buildLaptopGuidedReply({
         catalogMatches,
         budget: budget || memory?.budget_crc || null,
-        use_case: use_case || memory?.use_case || null
+        use_case: use_case || memory?.use_case || null,
+        opportunities
       });
     }
 
@@ -1270,6 +1305,12 @@ function generateReply({
 
   return "Cuéntame un poco más de lo que necesitas y te ayudo a orientarte mejor.";
 }
+
+/*
+====================================================
+FOLLOWUPS
+====================================================
+*/
 
 async function createFollowupIfNeeded({
   organization_id,
@@ -1337,7 +1378,7 @@ async function createFollowupIfNeeded({
       dueAtExpression,
       conversation_id,
       {
-        source: "salesBrain_v2_1",
+        source: "salesBrain_rc1",
         lead_score,
         stage
       },
@@ -1413,12 +1454,28 @@ export async function handleInbound({
 
     const previousStage = conversation.stage || existingMemory.last_stage || "DISCOVERY";
 
+    const rawBrandHint = detectDeviceType(text);
+    const rawUseCase = detectUseCase(text);
+    const rawProductInterest = detectProductInterest(text);
+    const rawBudget = detectBudget(text);
+
     const intent = detectIntent(text);
     const pipelineEvent = detectPipelineEvent(text);
-    const brand_hint = detectDeviceType(text) || existingMemory.brand_hint || null;
-    const use_case = detectUseCase(text) || existingMemory.use_case || null;
-    const product_interest = detectProductInterest(text) || existingMemory.product_interest || null;
-    const budget = detectBudget(text) || existingMemory.budget_crc || null;
+    const product_interest = rawProductInterest || existingMemory.product_interest || null;
+    const use_case = rawUseCase || existingMemory.use_case || null;
+    const budget = rawBudget || existingMemory.budget_crc || null;
+
+    // Evita arrastrar marca vieja a otro producto distinto
+    let brand_hint = null;
+    if (rawBrandHint) {
+      brand_hint = rawBrandHint;
+    } else if (
+      existingMemory.brand_hint &&
+      product_interest === existingMemory.product_interest
+    ) {
+      brand_hint = existingMemory.brand_hint;
+    }
+
     const objection = detectObjection(text);
     const closeSignal = hasCloseSignal(text);
     const urgency = detectUrgency(text);
