@@ -1452,6 +1452,28 @@ export async function handleInbound({
       channel
     });
 
+    // Protección secundaria contra duplicados cuando no hay external_message_id
+if (!external_message_id) {
+  const duplicateByContent = await detectDuplicateByContent({
+    organization_id,
+    conversation_id: conversation.id,
+    text
+  });
+
+  if (duplicateByContent) {
+    return {
+      ok: true,
+      duplicate_ignored: true,
+      reply: null,
+      intent: null,
+      stage: null,
+      lead_score: null,
+      conversation_id: conversation.id,
+      lead_id: null
+    };
+  }
+}
+    
     const previousStage = conversation.stage || existingMemory.last_stage || "DISCOVERY";
 
     const rawBrandHint = detectDeviceType(text);
