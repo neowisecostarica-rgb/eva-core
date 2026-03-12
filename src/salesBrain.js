@@ -585,6 +585,35 @@ async function findExistingInboundByExternalId({
   return result.rows[0] || null;
 }
 
+
+async function detectDuplicateByContent({
+  organization_id,
+  conversation_id,
+  text
+}) {
+
+  const result = await pool.query(
+    `
+    SELECT id
+    FROM messages
+    WHERE organization_id = $1
+      AND conversation_id = $2
+      AND role = 'user'
+      AND content = $3
+      AND created_at > NOW() - INTERVAL '5 seconds'
+    LIMIT 1
+    `,
+    [
+      organization_id,
+      conversation_id,
+      text
+    ]
+  );
+
+  return result.rows.length > 0;
+
+}
+
 async function ensureConversation({
   organization_id,
   phone,
