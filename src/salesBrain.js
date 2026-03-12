@@ -917,10 +917,18 @@ async function searchCatalogSmart({
     [organization_id]
   );
 
+  let products = result.rows;
+
+  if (product_interest) {
+    products = products.filter((p) =>
+      normalizeText(p.category || "").includes(product_interest)
+    );
+  }
+
   const normalizedText = normalizeText(text);
   const tokens = uniqueStrings(normalizedText.split(/\s+/).filter((t) => t.length >= 3));
 
-  const scored = result.rows.map((item) => {
+  const scored = products.map((item) => {
     let score = 0;
 
     const haystack = normalizeText(
@@ -1048,7 +1056,13 @@ function buildCloseReply({
   catalogMatches = []
 }) {
   if (product_interest === "laptop" && catalogMatches.length > 0) {
-    return `Perfecto 🙌 Esta opción puede servirte muy bien.\n\n${catalogMatches[0].name} — ${formatMoney(catalogMatches[0].price_crc)}\n\nSi quieres te la puedo apartar con ₡20.000 para asegurarte la unidad y coordinamos entrega o envío.`;
+    const top = catalogMatches.slice(0, 2);
+
+    if (top.length === 1) {
+      return `Perfecto 🙌 Esta opción puede servirte muy bien.\n\n${top[0].name} — ${formatMoney(top[0].price_crc)}\n\nSi quieres te la puedo apartar con ₡20.000 para asegurarte la unidad y coordinamos entrega o envío.`;
+    }
+
+    return `Perfecto 🙌 Estas son las opciones más cercanas a lo que buscas:\n\n${formatCatalogList(top)}\n\nSi quieres te paso fotos reales o te ayudo a apartar una con ₡20.000 para asegurarte la unidad.`;
   }
 
   if (product_interest === "impresora") {
@@ -1087,7 +1101,6 @@ function buildPrinterMaintenanceReply({
 }) {
   const t = normalizeText(text);
 
-  let severity = "basico";
   let priceText = "mantenimiento básico ₡20.000";
 
   if (
@@ -1098,7 +1111,6 @@ function buildPrinterMaintenanceReply({
     t.includes("falla fuerte") ||
     t.includes("muy sucia")
   ) {
-    severity = "profundo";
     priceText = "mantenimiento profundo ₡30.000+";
   } else if (
     t.includes("revision") ||
@@ -1106,7 +1118,6 @@ function buildPrinterMaintenanceReply({
     t.includes("limpieza") ||
     t.includes("mantenimiento")
   ) {
-    severity = "intermedio";
     priceText = "mantenimiento intermedio ₡25.000";
   }
 
@@ -1135,7 +1146,7 @@ function buildLaptopGuidedReply({
 
 function buildAccessoryReply({ brand_hint }) {
   if (brand_hint === "toshiba") {
-    return "Sí, con gusto te ayudamos 👍 Para confirmar el cargador correcto de Toshiba Satellite, lo ideal es validar el modelo exacto o una foto del cargador original/etiqueta. Si me la envías te digo si lo tenemos o cuál te sirve.";
+    return "Sí, con gusto te ayudamos 👍 Para confirmar el cargador correcto de Toshiba Satellite, lo ideal es validar el modelo exacto o una foto del cargador original o etiqueta. Si me la envías te digo si lo tenemos o cuál te sirve.";
   }
 
   return "Con gusto 👍 Para confirmarte el accesorio correcto, envíame el modelo exacto del equipo o una foto de la etiqueta y así te digo cuál te funciona.";
@@ -1326,7 +1337,7 @@ async function createFollowupIfNeeded({
       dueAtExpression,
       conversation_id,
       {
-        source: "salesBrain_v2",
+        source: "salesBrain_v2_1",
         lead_score,
         stage
       },
