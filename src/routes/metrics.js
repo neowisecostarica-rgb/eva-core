@@ -80,13 +80,21 @@ router.get("/summary", authenticate, async (req, res) => {
 
     res.json({
 
-      conversations: conversations.rows[0].count,
-      leads: leads.rows[0].count,
-      conversations_today: conversationsToday.rows[0].count,
-      hot_leads: hotLeads.rows[0].count,
-      followups_pending: followupsPending.rows[0].count,
-      pipeline: pipeline.rows,
-      intents: intents.rows
+      conversations: Number(conversations.rows[0].count),
+      leads: Number(leads.rows[0].count),
+      conversations_today: Number(conversationsToday.rows[0].count),
+      hot_leads: Number(hotLeads.rows[0].count),
+      followups_pending: Number(followupsPending.rows[0].count),
+
+      pipeline: pipeline.rows.map(r => ({
+        stage: r.stage,
+        total: Number(r.total)
+      })),
+
+      intents: intents.rows.map(r => ({
+        intent: r.intent,
+        total: Number(r.total)
+      }))
 
     });
 
