@@ -58,6 +58,35 @@ router.get("/summary", authenticate, async (req, res) => {
       [organization_id]
     );
 
+    const messagesToday = await pool.query(
+  `
+  SELECT COUNT(*)
+  FROM messages
+  WHERE organization_id=$1
+  AND created_at >= CURRENT_DATE
+  `,
+  [organization_id]
+);
+
+const avgScore = await pool.query(
+  `
+  SELECT AVG(score)
+  FROM leads
+  WHERE organization_id=$1
+  `,
+  [organization_id]
+);
+
+const closingLeads = await pool.query(
+  `
+  SELECT COUNT(*)
+  FROM leads
+  WHERE organization_id=$1
+  AND stage='CLOSING'
+  `,
+  [organization_id]
+);
+    
     const pipeline = await pool.query(
       `
       SELECT stage, COUNT(*) as total
@@ -78,25 +107,39 @@ router.get("/summary", authenticate, async (req, res) => {
       [organization_id]
     );
 
-    res.json({
+   
 
-      conversations: Number(conversations.rows[0].count),
-      leads: Number(leads.rows[0].count),
-      conversations_today: Number(conversationsToday.rows[0].count),
-      hot_leads: Number(hotLeads.rows[0].count),
-      followups_pending: Number(followupsPending.rows[0].count),
+  res.json({
 
-      pipeline: pipeline.rows.map(r => ({
-        stage: r.stage,
-        total: Number(r.total)
-      })),
+  conversations: Number(conversations.rows[0].count),
+  leads: Number(leads.rows[0].count),
+  conversations_today: Number(conversationsToday.rows[0].count),
+  messages_today: Number(messagesToday.rows[0].count),
 
-      intents: intents.rows.map(r => ({
-        intent: r.intent,
-        total: Number(r.total)
-      }))
+  hot_leads: Number(hotLeads.rows[0].count),
+  followups_pending: Number(followupsPending.rows[0].count),
 
-    });
+  avg_lead_score: Number(avgScore.rows[0].avg || 0),
+
+  closing_leads: Number(closingLeads.rows[0].count),
+
+  conversion_rate:
+    Number(leads.rows[0].count) > 0
+      ? Number(closingLeads.rows[0].count) /
+        Number(leads.rows[0].count)
+      : 0,
+
+  pipeline: pipeline.rows.map(r => ({
+    stage: r.stage,
+    total: Number(r.total)
+  })),
+
+  intents: intents.rows.map(r => ({
+    intent: r.intent,
+    total: Number(r.total)
+  }))
+
+});
 
   } catch (err) {
 
