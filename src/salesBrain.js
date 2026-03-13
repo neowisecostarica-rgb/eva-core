@@ -1417,6 +1417,33 @@ async function createFollowupIfNeeded({
   );
 }
 
+// ======================================
+// IDEMPOTENCY CHECK (avoid duplicate messages)
+// ======================================
+
+if (payload.external_message_id) {
+  const duplicateCheck = await pool.query(
+    `
+    SELECT id
+    FROM messages
+    WHERE external_message_id = $1
+    LIMIT 1
+    `,
+    [payload.external_message_id]
+  );
+
+  if (duplicateCheck.rows.length > 0) {
+    console.log("DUPLICATE MESSAGE IGNORED", {
+      external_message_id: payload.external_message_id
+    });
+
+    return {
+      ok: true,
+      duplicate_ignored: true
+    };
+  }
+}
+
 /*
 ====================================================
 HANDLE INBOUND
