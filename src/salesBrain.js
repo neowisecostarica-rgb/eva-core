@@ -1705,15 +1705,6 @@ if (!external_message_id) {
                 ? "hot_lead"
                 : "abandoned_chat"
     });
-
-    if (reply) {
-  await saveMessage({
-    organization_id,
-    conversation_id: conversation.id,
-    role: "assistant",
-    content: reply
-  });
-}
     
     return {
       ok: true,
