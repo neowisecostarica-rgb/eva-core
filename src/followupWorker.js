@@ -14,7 +14,9 @@ async function getDueFollowups() {
     SELECT *
     FROM followups
     WHERE status = 'pending'
-AND organization_id IS NOT NULL
+      AND organization_id IS NOT NULL
+      AND due_at <= NOW()
+  `);
 
   return result.rows;
 
