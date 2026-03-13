@@ -14,10 +14,7 @@ async function getDueFollowups() {
     SELECT *
     FROM followups
     WHERE status = 'pending'
-      AND due_at <= NOW()
-    ORDER BY due_at ASC
-    LIMIT 20
-  `);
+AND organization_id IS NOT NULL
 
   return result.rows;
 
