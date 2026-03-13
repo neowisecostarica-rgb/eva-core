@@ -7,6 +7,7 @@ function normalizePhone(phone) {
 }
 
 export function validateInbound(body) {
+
   if (!body || typeof body !== "object") {
     throw new Error("invalid payload");
   }
@@ -31,11 +32,13 @@ export function validateInbound(body) {
     throw new Error("invalid phone");
   }
 
- return {
-  organization_id: organization_id.trim(),
-  phone: normalizedPhone,
-  message: message.trim(),
-  channel: body.channel || "whatsapp",
-  external_message_id: body.external_message_id || null,
-  metadata: body.metadata || null
-};
+  return {
+    organization_id: organization_id.trim(),
+    phone: normalizedPhone,
+    message: message.trim(),
+    channel: body.channel || "whatsapp",
+    external_message_id: body.external_message_id || null,
+    metadata: body.metadata || null
+  };
+
+}
