@@ -6,10 +6,8 @@ export async function authenticate(req, res, next) {
 
     // aceptar API key desde header o body
     const apiKey =
-      req.headers["x-api-key"] ||
-      req.headers["api-key"] ||
-      req.body?.api_key ||
-      req.query?.api_key;
+  req.headers["x-api-key"] ||
+  req.headers["api-key"];
 
     if (!apiKey) {
       return res.status(401).json({
