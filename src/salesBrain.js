@@ -71,19 +71,27 @@ function detectIntent(text) {
   }
 
   if (
-    t.includes("precio") ||
-    t.includes("cuanto cuesta") ||
-    t.includes("cuanto vale") ||
-    t.includes("disponible") ||
-    t.includes("me interesa") ||
-    t.includes("tienen") ||
-    t.includes("busco") ||
-    t.includes("ocupo") ||
-    t.includes("andan buscando") ||
-    t.includes("tiene disponibles")
-  ) {
-    return "BUY";
-  }
+  t.includes("precio") ||
+  t.includes("cuanto cuesta") ||
+  t.includes("cuanto vale") ||
+  t.includes("disponible") ||
+  t.includes("me interesa") ||
+  t.includes("tienen") ||
+  t.includes("busco") ||
+  t.includes("ocupo") ||
+  t.includes("andan buscando") ||
+  t.includes("tiene disponibles") ||
+  t.includes("quiero una laptop") ||
+  t.includes("quiero laptop") ||
+  t.includes("necesito laptop") ||
+  t.includes("necesito una laptop") ||
+  t.includes("quiero una computadora") ||
+  t.includes("necesito computadora") ||
+  t.includes("quiero comprar laptop")
+) {
+  return "BUY";
+}
+
 
   if (
     t.includes("garantia") ||
