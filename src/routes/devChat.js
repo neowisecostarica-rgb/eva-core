@@ -5,8 +5,7 @@ const router = express.Router();
 
 /*
 DEV CHAT
-Este endpoint permite hablar con EVA sin WhatsApp
-solo para pruebas internas
+Permite probar EVA sin WhatsApp
 */
 
 router.post("/chat", async (req, res) => {
@@ -19,10 +18,13 @@ router.post("/chat", async (req, res) => {
       });
     }
 
+    // teléfono dinámico para evitar duplicados
+    const phone = "dev_" + Date.now();
+
     const result = await handleInbound({
       organization_id: "db83e3f9-d971-4ed1-9b6d-82408fbd7c03",
       payload: {
-        phone: "50688888888",
+        phone,
         message,
         channel: "dev",
         external_message_id: null,
