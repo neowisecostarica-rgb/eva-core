@@ -22,7 +22,7 @@ router.post("/chat", async (req, res) => {
     const result = await handleInbound({
       organization_id: "00000000-0000-0000-0000-000000000000",
       payload: {
-        phone: "dev-user",
+        phone: "50688888888",
         message,
         channel: "dev"
       }
