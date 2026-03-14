@@ -1521,7 +1521,12 @@ if (!external_message_id) {
 
     const intent = detectIntent(text);
     const pipelineEvent = detectPipelineEvent(text);
-    const product_interest = rawProductInterest || existingMemory.product_interest || null;
+    const product_interest =
+  rawProductInterest ||
+  detectProductInterest(text) ||
+  existingMemory.product_interest ||
+  null;
+
     const use_case = rawUseCase || existingMemory.use_case || null;
     const budget = rawBudget || existingMemory.budget_crc || null;
 
