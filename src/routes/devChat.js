@@ -20,7 +20,7 @@ router.post("/chat", async (req, res) => {
     }
 
     const result = await handleInbound({
-      organization_id: "00000000-0000-0000-0000-000000000000",
+      organization_id: "db83e3f9-d971-4ed1-9b6d-82408fbd7c03,
       payload: {
         phone: "50688888888",
         message,
