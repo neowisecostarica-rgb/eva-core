@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 import messagesRoute from "./routes/messages.js";
 import metricsRoute from "./routes/metrics.js";
 import { startFollowupWorker } from "./followupWorker.js";
+import devChatRoute from "./routes/devChat.js";
 
 dotenv.config();
 
@@ -82,6 +83,7 @@ app.get("/health", (req, res) => {
 
 app.use("/v1/messages", messagesRoute);
 app.use("/v1/metrics", metricsRoute);
+app.use("/dev", devChatRoute);
 
 /* ===============================
    FOLLOWUP WORKER
