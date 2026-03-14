@@ -42,6 +42,76 @@ function addOpportunity(opportunities, value) {
   return opportunities;
 }
 
+function formatMoney(value) {
+  return `₡${Number(value || 0).toLocaleString("es-CR")}`;
+}
+
+/*
+====================================================
+CONTEXT ENGINE V2
+====================================================
+*/
+
+function buildContextText({ text, memory = {} }) {
+  const parts = [
+    text,
+    memory?.product_interest,
+    memory?.use_case,
+    memory?.brand_hint,
+    memory?.last_pipeline_event,
+    Array.isArray(memory?.sales_opportunities)
+      ? memory.sales_opportunities.join(" ")
+      : null
+  ];
+
+  return normalizeText(parts.filter(Boolean).join(" "));
+}
+
+function inferProductFromContext({ text, useCase, memory = {} }) {
+  const t = normalizeText(text);
+  const rememberedProduct = memory?.product_interest || null;
+
+  if (
+    t.includes("universidad") ||
+    t.includes("colegio") ||
+    t.includes("escuela") ||
+    t.includes("clases") ||
+    t.includes("tareas") ||
+    t.includes("office") ||
+    t.includes("excel") ||
+    t.includes("teletrabajo") ||
+    t.includes("portatil") ||
+    t.includes("portátil")
+  ) {
+    return "laptop";
+  }
+
+  if (useCase === "estudio" || useCase === "trabajo" || useCase === "diseno" || useCase === "gaming") {
+    return "laptop";
+  }
+
+  if (
+    t.includes("mantenimiento de impresora") ||
+    t.includes("no imprime") ||
+    t.includes("atasco") ||
+    t.includes("tinta") ||
+    t.includes("cartucho")
+  ) {
+    return "impresora";
+  }
+
+  if (
+    t.includes("doble pantalla") ||
+    t.includes("full hd 15.6") ||
+    t.includes("monitor portatil") ||
+    t.includes("monitor portátil")
+  ) {
+    return "monitor";
+  }
+
+  return rememberedProduct;
+}
+
 /*
 ====================================================
 SIGNAL DETECTION
@@ -71,27 +141,31 @@ function detectIntent(text) {
   }
 
   if (
-  t.includes("precio") ||
-  t.includes("cuanto cuesta") ||
-  t.includes("cuanto vale") ||
-  t.includes("disponible") ||
-  t.includes("me interesa") ||
-  t.includes("tienen") ||
-  t.includes("busco") ||
-  t.includes("ocupo") ||
-  t.includes("andan buscando") ||
-  t.includes("tiene disponibles") ||
-  t.includes("quiero una laptop") ||
-  t.includes("quiero laptop") ||
-  t.includes("necesito laptop") ||
-  t.includes("necesito una laptop") ||
-  t.includes("quiero una computadora") ||
-  t.includes("necesito computadora") ||
-  t.includes("quiero comprar laptop")
-) {
-  return "BUY";
-}
-
+    t.includes("precio") ||
+    t.includes("cuanto cuesta") ||
+    t.includes("cuanto vale") ||
+    t.includes("disponible") ||
+    t.includes("me interesa") ||
+    t.includes("tienen") ||
+    t.includes("busco") ||
+    t.includes("ocupo") ||
+    t.includes("andan buscando") ||
+    t.includes("tiene disponibles") ||
+    t.includes("quiero una laptop") ||
+    t.includes("quiero laptop") ||
+    t.includes("necesito laptop") ||
+    t.includes("necesito una laptop") ||
+    t.includes("quiero una computadora") ||
+    t.includes("necesito computadora") ||
+    t.includes("quiero comprar laptop") ||
+    t.includes("algo para estudio") ||
+    t.includes("algo para trabajo") ||
+    t.includes("algo barato") ||
+    t.includes("ocupo una compu") ||
+    t.includes("ocupo una computadora")
+  ) {
+    return "BUY";
+  }
 
   if (
     t.includes("garantia") ||
@@ -111,21 +185,24 @@ function detectIntent(text) {
   if (
     t.includes("mantenimiento") ||
     t.includes("reparacion") ||
-    t.includes("revisión") ||
     t.includes("revision") ||
+    t.includes("revisión") ||
     t.includes("no imprime") ||
     t.includes("no enciende") ||
     t.includes("esta lenta") ||
+    t.includes("está lenta") ||
     t.includes("esta muy lenta") ||
+    t.includes("está muy lenta") ||
     t.includes("falla")
   ) {
     return "SUPPORT";
   }
 
   if (
-    t.includes("hola") ||
-    t.includes("buenas") ||
+    t === "hola" ||
+    t === "buenas" ||
     t.includes("buenos dias") ||
+    t.includes("buen día") ||
     t.includes("buen dia") ||
     t.includes("buenas tardes") ||
     t.includes("buenas noches")
@@ -178,7 +255,9 @@ function detectPipelineEvent(text) {
   if (
     t.includes("fotos") ||
     t.includes("imagenes") ||
+    t.includes("imágenes") ||
     t.includes("imagenes reales") ||
+    t.includes("imágenes reales") ||
     t.includes("mandeme fotos") ||
     t.includes("mandame fotos") ||
     t.includes("fotos reales")
@@ -198,6 +277,7 @@ function detectPipelineEvent(text) {
   if (
     t.includes("mantenimiento") ||
     t.includes("servicio tecnico") ||
+    t.includes("servicio técnico") ||
     t.includes("no imprime") ||
     t.includes("reparacion")
   ) {
@@ -205,8 +285,8 @@ function detectPipelineEvent(text) {
   }
 
   if (
-    t.includes("hola") ||
-    t.includes("buenas") ||
+    t === "hola" ||
+    t === "buenas" ||
     t.includes("buenos dias") ||
     t.includes("buen dia")
   ) {
@@ -243,7 +323,9 @@ function detectUseCase(text) {
 
   if (
     t.includes("diseno") ||
+    t.includes("diseño") ||
     t.includes("edicion") ||
+    t.includes("edición") ||
     t.includes("arquitectura") ||
     t.includes("photoshop") ||
     t.includes("illustrator") ||
@@ -269,7 +351,9 @@ function detectProductInterest(text) {
   if (
     t.includes("laptop") ||
     t.includes("computadora") ||
+    t.includes("compu") ||
     t.includes("portatil") ||
+    t.includes("portátil") ||
     t.includes("notebook")
   ) {
     return "laptop";
@@ -305,6 +389,10 @@ function detectDeviceType(text) {
   if (t.includes("dell")) return "dell";
   if (t.includes("lenovo")) return "lenovo";
   if (t.includes("thinkpad")) return "thinkpad";
+  if (t.includes("latitude")) return "latitude";
+  if (t.includes("x1 carbon")) return "x1 carbon";
+  if (t.includes("probook")) return "probook";
+  if (t.includes("yoga")) return "yoga";
 
   return null;
 }
@@ -357,8 +445,11 @@ function hasCloseSignal(text) {
     t.includes("apartarla") ||
     t.includes("reservar") ||
     t.includes("donde estan") ||
+    t.includes("donde están") ||
     t.includes("donde estan ubicados") ||
+    t.includes("donde están ubicados") ||
     t.includes("ubicacion") ||
+    t.includes("ubicación") ||
     t.includes("ubicados")
   );
 }
@@ -379,12 +470,55 @@ function detectUrgency(text) {
   if (
     t.includes("esta semana") ||
     t.includes("pronto") ||
-    t.includes("en estos dias")
+    t.includes("en estos dias") ||
+    t.includes("en estos días")
   ) {
     return "medium";
   }
 
   return null;
+}
+
+function detectSalesSignals(text) {
+  const t = normalizeText(text);
+
+  const signals = {
+    price_segment: null,
+    urgency: null,
+    buyer_type: null
+  };
+
+  if (/(barato|economico|económico|lo mas barato|lo más barato|algo sencillo|no muy caro)/.test(t)) {
+    signals.price_segment = "economico";
+  }
+
+  if (/(algo bueno|mejorcito|algo mejor|intermedio)/.test(t)) {
+    signals.price_segment = "medio";
+  }
+
+  if (/(premium|lo mejor|potente|alto rendimiento)/.test(t)) {
+    signals.price_segment = "premium";
+  }
+
+  if (/(universidad|colegio|estudio|clases|tareas)/.test(t)) {
+    signals.buyer_type = "estudiante";
+  }
+
+  if (/(trabajo|oficina|empresa|negocio|teletrabajo|excel)/.test(t)) {
+    signals.buyer_type = "profesional";
+  }
+
+  if (/(diseno|diseño|render|edicion|edición|arquitectura|autocad|photoshop)/.test(t)) {
+    signals.buyer_type = "power_user";
+  }
+
+  if (/(hoy|ya|urgente|para hoy)/.test(t)) {
+    signals.urgency = "high";
+  } else if (/(esta semana|pronto|estos dias|estos días)/.test(t)) {
+    signals.urgency = "medium";
+  }
+
+  return signals;
 }
 
 function detectSalesOpportunities({
@@ -405,6 +539,7 @@ function detectSalesOpportunities({
       t.includes("atasco") ||
       t.includes("mancha") ||
       t.includes("lineas") ||
+      t.includes("líneas") ||
       t.includes("tinta")
     )
   ) {
@@ -448,17 +583,11 @@ function detectSalesOpportunities({
     addOpportunity(opportunities, "NEW_DEVICE");
   }
 
-  if (
-    useCase === "trabajo" &&
-    productInterest === "laptop"
-  ) {
+  if (useCase === "trabajo" && productInterest === "laptop") {
     addOpportunity(opportunities, "BUSINESS_LINE_DEVICE");
   }
 
-  if (
-    useCase === "estudio" &&
-    productInterest === "laptop"
-  ) {
+  if (useCase === "estudio" && productInterest === "laptop") {
     addOpportunity(opportunities, "STUDY_DEVICE");
   }
 
@@ -593,13 +722,11 @@ async function findExistingInboundByExternalId({
   return result.rows[0] || null;
 }
 
-
 async function detectDuplicateByContent({
   organization_id,
   conversation_id,
   text
 }) {
-
   const result = await pool.query(
     `
     SELECT id
@@ -611,15 +738,10 @@ async function detectDuplicateByContent({
       AND created_at > NOW() - INTERVAL '5 seconds'
     LIMIT 1
     `,
-    [
-      organization_id,
-      conversation_id,
-      text
-    ]
+    [organization_id, conversation_id, text]
   );
 
   return result.rows.length > 0;
-
 }
 
 async function ensureConversation({
@@ -962,7 +1084,8 @@ async function searchCatalogSmart({
   budget,
   use_case,
   product_interest,
-  brand_hint
+  brand_hint,
+  salesSignals = {}
 }) {
   const result = await pool.query(
     `
@@ -1015,6 +1138,10 @@ async function searchCatalogSmart({
     if (use_case === "trabajo") score += 10;
     if (use_case === "diseno") score += 8;
 
+    if (salesSignals?.buyer_type === "estudiante" && haystack.includes("thinkpad 11e")) score += 18;
+    if (salesSignals?.buyer_type === "profesional" && (haystack.includes("latitude") || haystack.includes("probook") || haystack.includes("thinkpad"))) score += 14;
+    if (salesSignals?.buyer_type === "power_user" && (haystack.includes("x1") || haystack.includes("carbon") || haystack.includes("i7"))) score += 14;
+
     if (typeof item.stock === "number" && item.stock > 0) score += 10;
     if (item.featured) score += 10;
 
@@ -1023,6 +1150,12 @@ async function searchCatalogSmart({
       const delta = Math.abs(item.price_crc - budget);
       if (delta <= 30000) score += 12;
       if (delta <= 15000) score += 8;
+    }
+
+    if (!budget && typeof item.price_crc === "number") {
+      if (salesSignals?.price_segment === "economico" && item.price_crc <= 130000) score += 20;
+      if (salesSignals?.price_segment === "medio" && item.price_crc > 130000 && item.price_crc <= 210000) score += 16;
+      if (salesSignals?.price_segment === "premium" && item.price_crc > 210000) score += 20;
     }
 
     return {
@@ -1065,10 +1198,6 @@ function buildSummary({
   ].filter(Boolean);
 
   return parts.join(" | ");
-}
-
-function formatMoney(value) {
-  return `₡${Number(value || 0).toLocaleString("es-CR")}`;
 }
 
 function formatCatalogList(items = []) {
@@ -1167,6 +1296,7 @@ function buildPrinterMaintenanceReply({
     t.includes("atasco") ||
     t.includes("mancha") ||
     t.includes("lineas") ||
+    t.includes("líneas") ||
     t.includes("falla fuerte") ||
     t.includes("muy sucia")
   ) {
@@ -1195,9 +1325,18 @@ function buildLaptopGuidedReply({
   catalogMatches,
   budget,
   use_case,
-  opportunities = []
+  opportunities = [],
+  salesSignals = {}
 }) {
   if (!catalogMatches.length) {
+    if (salesSignals?.buyer_type === "estudiante" && !budget) {
+      return "Perfecto 👍 para estudio normalmente recomendamos laptops corporativas reacondicionadas con SSD y buena batería. ¿Qué presupuesto manejas más o menos para enseñarte la mejor opción?";
+    }
+
+    if (salesSignals?.buyer_type === "profesional" && !budget) {
+      return "Perfecto 👍 para trabajo conviene una laptop corporativa estable y rápida. Si me dices tu presupuesto aproximado te recomiendo la opción más conveniente.";
+    }
+
     return buildCatalogReply({ catalogMatches, budget, use_case });
   }
 
@@ -1217,6 +1356,42 @@ function buildAccessoryReply({ brand_hint }) {
   return "Con gusto 👍 Para confirmarte el accesorio correcto, envíame el modelo exacto del equipo o una foto de la etiqueta y así te digo cuál te funciona.";
 }
 
+function buildSmartFallback({
+  product_interest,
+  use_case,
+  memory = {},
+  salesSignals = {}
+}) {
+  const finalProduct = product_interest || memory?.product_interest || null;
+  const finalUseCase = use_case || memory?.use_case || null;
+
+  if (finalProduct === "laptop") {
+    if (finalUseCase === "estudio" || salesSignals?.buyer_type === "estudiante") {
+      return "Perfecto 👍 para estudio lo ideal es una laptop con SSD y buena batería. ¿Qué presupuesto manejas más o menos?";
+    }
+
+    if (finalUseCase === "trabajo" || salesSignals?.buyer_type === "profesional") {
+      return "Perfecto 👍 para trabajo conviene una laptop ágil y confiable. ¿Qué presupuesto manejas más o menos para recomendarte bien?";
+    }
+
+    return "¿La laptop la ocupas para estudio, trabajo o algo más exigente como diseño?";
+  }
+
+  if (finalProduct === "impresora") {
+    return "Claro 👋 Cuéntame qué falla presenta la impresora y te doy un rango de servicio más cercano al real.";
+  }
+
+  if (finalUseCase === "estudio") {
+    return "Perfecto 👍 para estudio normalmente recomendamos laptops corporativas reacondicionadas. ¿Qué presupuesto manejas más o menos?";
+  }
+
+  if (finalUseCase === "trabajo") {
+    return "Perfecto 👍 para trabajo te puedo recomendar una laptop corporativa rápida y confiable. ¿Qué presupuesto manejas aproximadamente?";
+  }
+
+  return "Cuéntame qué equipo estás buscando y te ayudo a orientarte mejor.";
+}
+
 function generateReply({
   text,
   intent,
@@ -1230,7 +1405,8 @@ function generateReply({
   memory,
   opportunities,
   lead_score,
-  brand_hint
+  brand_hint,
+  salesSignals
 }) {
   const objectionReply = buildObjectionReply({
     objection,
@@ -1247,7 +1423,8 @@ function generateReply({
       normalizeText(text).includes("no imprime") ||
       normalizeText(text).includes("atasco") ||
       normalizeText(text).includes("mancha") ||
-      normalizeText(text).includes("lineas")
+      normalizeText(text).includes("lineas") ||
+      normalizeText(text).includes("líneas")
     ) {
       return buildPrinterMaintenanceReply({
         text,
@@ -1280,7 +1457,8 @@ function generateReply({
         catalogMatches,
         budget: budget || memory?.budget_crc || null,
         use_case: use_case || memory?.use_case || null,
-        opportunities
+        opportunities,
+        salesSignals
       });
     }
 
@@ -1325,7 +1503,8 @@ function generateReply({
         catalogMatches,
         budget: budget || memory?.budget_crc || null,
         use_case: use_case || memory?.use_case || null,
-        opportunities
+        opportunities,
+        salesSignals
       });
     }
 
@@ -1336,11 +1515,12 @@ function generateReply({
     });
   }
 
-  if (memory?.product_interest === "laptop") {
-    return "Cuéntame qué presupuesto manejas y si la laptop la ocupas para estudio o trabajo. Así te recomiendo una opción más precisa.";
-  }
-
-  return "Cuéntame un poco más de lo que necesitas y te ayudo a orientarte mejor.";
+  return buildSmartFallback({
+    product_interest,
+    use_case,
+    memory,
+    salesSignals
+  });
 }
 
 /*
@@ -1415,7 +1595,7 @@ async function createFollowupIfNeeded({
       dueAtExpression,
       conversation_id,
       {
-        source: "salesBrain_rc1",
+        source: "salesBrain_rc2",
         lead_score,
         stage
       },
@@ -1424,7 +1604,6 @@ async function createFollowupIfNeeded({
     ]
   );
 }
-
 
 /*
 ====================================================
@@ -1490,47 +1669,57 @@ export async function handleInbound({
       channel
     });
 
-    // Protección secundaria contra duplicados cuando no hay external_message_id
-if (!external_message_id) {
-  const duplicateByContent = await detectDuplicateByContent({
-    organization_id,
-    conversation_id: conversation.id,
-    text
-  });
+    if (!external_message_id) {
+      const duplicateByContent = await detectDuplicateByContent({
+        organization_id,
+        conversation_id: conversation.id,
+        text
+      });
 
-  if (duplicateByContent) {
-    return {
-      ok: true,
-      duplicate_ignored: true,
-      reply: null,
-      intent: null,
-      stage: null,
-      lead_score: null,
-      conversation_id: conversation.id,
-      lead_id: null
-    };
-  }
-}
-    
+      if (duplicateByContent) {
+        return {
+          ok: true,
+          duplicate_ignored: true,
+          reply: null,
+          intent: null,
+          stage: null,
+          lead_score: null,
+          conversation_id: conversation.id,
+          lead_id: null
+        };
+      }
+    }
+
     const previousStage = conversation.stage || existingMemory.last_stage || "DISCOVERY";
 
-    const rawBrandHint = detectDeviceType(text);
-    const rawUseCase = detectUseCase(text);
-    const rawProductInterest = detectProductInterest(text);
-    const rawBudget = detectBudget(text);
+    const contextText = buildContextText({
+      text,
+      memory: existingMemory
+    });
 
-    const intent = detectIntent(text);
-    const pipelineEvent = detectPipelineEvent(text);
+    const rawBrandHint = detectDeviceType(contextText);
+    const rawUseCase = detectUseCase(contextText);
+    const rawProductInterest = detectProductInterest(contextText);
+    const rawBudget = detectBudget(contextText);
+
+    const intent = detectIntent(contextText);
+    const pipelineEvent = detectPipelineEvent(contextText);
+
+    const inferredProduct = inferProductFromContext({
+      text: contextText,
+      useCase: rawUseCase,
+      memory: existingMemory
+    });
+
     const product_interest =
-  rawProductInterest ||
-  detectProductInterest(text) ||
-  existingMemory.product_interest ||
-  null;
+      rawProductInterest ||
+      inferredProduct ||
+      existingMemory.product_interest ||
+      null;
 
     const use_case = rawUseCase || existingMemory.use_case || null;
     const budget = rawBudget || existingMemory.budget_crc || null;
 
-    // Evita arrastrar marca vieja a otro producto distinto
     let brand_hint = null;
     if (rawBrandHint) {
       brand_hint = rawBrandHint;
@@ -1541,12 +1730,13 @@ if (!external_message_id) {
       brand_hint = existingMemory.brand_hint;
     }
 
-    const objection = detectObjection(text);
-    const closeSignal = hasCloseSignal(text);
-    const urgency = detectUrgency(text);
+    const objection = detectObjection(contextText);
+    const closeSignal = hasCloseSignal(contextText);
+    const urgency = detectUrgency(contextText);
+    const salesSignals = detectSalesSignals(contextText);
 
     const opportunities = detectSalesOpportunities({
-      text,
+      text: contextText,
       productInterest: product_interest,
       useCase: use_case,
       intent,
@@ -1570,7 +1760,7 @@ if (!external_message_id) {
       productInterest: product_interest,
       closeSignal,
       objection,
-      urgency,
+      urgency: urgency || salesSignals?.urgency || null,
       opportunities
     });
 
@@ -1583,7 +1773,9 @@ if (!external_message_id) {
       content: text,
       meta: {
         ...(inboundMeta || {}),
-        normalized_text: normalizeText(text)
+        normalized_text: normalizeText(text),
+        context_text: contextText,
+        sales_signals: salesSignals
       },
       external_message_id
     });
@@ -1610,8 +1802,9 @@ if (!external_message_id) {
       last_pipeline_event: pipelineEvent,
       last_seen_at: nowIso(),
       brand_hint,
-      urgency,
-      sales_opportunities: opportunities
+      urgency: urgency || salesSignals?.urgency || null,
+      sales_opportunities: opportunities,
+      sales_signals: salesSignals
     };
 
     const customerProfile = await upsertCustomerProfile({
@@ -1622,11 +1815,12 @@ if (!external_message_id) {
 
     const catalogMatches = await searchCatalogSmart({
       organization_id,
-      text,
+      text: contextText,
       budget,
       use_case,
       product_interest,
-      brand_hint
+      brand_hint,
+      salesSignals
     });
 
     const reply = generateReply({
@@ -1642,7 +1836,8 @@ if (!external_message_id) {
       memory: customerProfile?.profile_json || existingMemory,
       opportunities,
       lead_score,
-      brand_hint
+      brand_hint,
+      salesSignals
     });
 
     await saveMessage({
@@ -1656,8 +1851,9 @@ if (!external_message_id) {
         lead_score,
         pipeline_event: pipelineEvent,
         objection,
-        urgency,
+        urgency: urgency || salesSignals?.urgency || null,
         opportunities,
+        sales_signals: salesSignals,
         catalog_matches: catalogMatches.map((item) => ({
           id: item.id,
           name: item.name,
@@ -1690,15 +1886,17 @@ if (!external_message_id) {
       event_type: pipelineEvent,
       event_data: {
         message: text,
+        context_text: contextText,
         intent,
         score: lead_score,
         budget,
         use_case,
         product_interest,
         objection,
-        urgency,
+        urgency: urgency || salesSignals?.urgency || null,
         brand_hint,
-        opportunities
+        opportunities,
+        sales_signals: salesSignals
       }
     });
 
@@ -1719,7 +1917,7 @@ if (!external_message_id) {
                 ? "hot_lead"
                 : "abandoned_chat"
     });
-    
+
     return {
       ok: true,
       reply,
@@ -1735,9 +1933,10 @@ if (!external_message_id) {
         product_interest,
         pipeline_event: pipelineEvent,
         objection,
-        urgency,
+        urgency: urgency || salesSignals?.urgency || null,
         brand_hint,
-        opportunities
+        opportunities,
+        sales_signals: salesSignals
       },
       catalog_matches: catalogMatches.map((item) => ({
         id: item.id,
