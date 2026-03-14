@@ -5,13 +5,13 @@ const router = express.Router();
 
 /*
 DEV CHAT
-Simulador de conversaciones para entrenar EVA
+Este endpoint permite hablar con EVA sin WhatsApp
+solo para pruebas internas
 */
 
 router.post("/chat", async (req, res) => {
   try {
-
-    const { message } = req.body;
+    const message = String(req.body?.message || "").trim();
 
     if (!message) {
       return res.status(400).json({
@@ -24,7 +24,9 @@ router.post("/chat", async (req, res) => {
       payload: {
         phone: "50688888888",
         message,
-        channel: "dev"
+        channel: "dev",
+        external_message_id: null,
+        metadata: null
       }
     });
 
@@ -34,7 +36,8 @@ router.post("/chat", async (req, res) => {
     console.error("dev chat error", err);
 
     return res.status(500).json({
-      error: "dev_chat_failed"
+      error: "brain_error",
+      details: err.message
     });
   }
 });
