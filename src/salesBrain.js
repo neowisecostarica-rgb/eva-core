@@ -41,6 +41,7 @@ import { detectUseCase } from "./brain/engines/useCaseEngine.js";
 import { detectProductInterest } from "./brain/engines/productEngine.js";
 import { detectBudget } from "./brain/engines/budgetEngine.js";
 import { generateReply } from "./brain/replies/replyEngine.js";
+import { detectInterestLevel } from "./brain/engines/interestEngine.js";
 /*
 ====================================================
 BRAIN UTILITIES
@@ -305,6 +306,11 @@ export async function handleInbound({ organization_id, payload }) {
     const useCase = detectUseCase(text);
     const productInterest = detectProductInterest(text);
     const budget = detectBudget(text);
+    const interestLevel = detectInterestLevel({
+  intent,
+  pipelineEvent,
+  text
+});
 
     /*
     ----------------------------------------------------
@@ -354,9 +360,10 @@ export async function handleInbound({ organization_id, payload }) {
     ----------------------------------------------------
     */
 
-   const reply = generateReply({
+  const reply = generateReply({
   intent,
-  catalogMatches
+  catalogMatches,
+  interestLevel
 });
 
     /*
