@@ -253,20 +253,20 @@ Así puedes comprar con confianza.
 ¿Quieres que te envíe **fotos reales del equipo**?`;
 
 }
-  ----------------------------------------------------
-  BUY
-  ----------------------------------------------------
-  */
+  /*
+----------------------------------------------------
+BUY
+----------------------------------------------------
+*/
 
-  if (intent === "BUY") {
+if (intent === "BUY") {
 
-    function productReply({ catalogMatches, interestLevel })
+  return productReply({
+    catalogMatches,
+    interestLevel
+  });
 
-    if (product) {
-      return product;
-    }
-
-  }
+}
 
   /*
   ----------------------------------------------------
