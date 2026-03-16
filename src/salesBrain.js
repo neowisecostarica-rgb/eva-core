@@ -27,6 +27,14 @@ import { calculateCommercialState } from "./brain/engines/scoreEngine.js";
 
 /*
 ====================================================
+COMMERCE ENGINE
+====================================================
+*/
+
+import { searchCatalog } from "./catalogEngine.js";
+
+/*
+====================================================
 REPLY ENGINE
 ====================================================
 */
@@ -45,38 +53,13 @@ import { nowIso } from "./brain/utils/timeUtils.js";
 
 /*
 ====================================================
-LOCAL HELPERS
+HELPERS
 ====================================================
 */
 
-function normalizeSearchText(value = "") {
-  return String(value)
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .trim();
-}
-
-function buildKeywordPatterns({ product_interest, use_case, text }) {
-  const raw = [product_interest, use_case, text].filter(Boolean).join(" ");
-  const normalized = normalizeSearchText(raw);
-
-  if (!normalized) return [];
-
-  const tokens = [
-    ...new Set(
-      normalized
-        .split(/[^a-z0-9]+/i)
-        .map((v) => v.trim())
-        .filter((v) => v.length >= 2)
-    )
-  ];
-
-  return tokens.slice(0, 8).map((t) => `%${t}%`);
-}
-
 function safeReplyText(replyResult) {
   const text = String(replyResult?.text || "").trim();
+
   if (text) return text;
 
   return "Hola 👋 Soy EVA, asistente de ventas. Cuéntame qué producto estás buscando y con gusto te ayudo.";
@@ -106,6 +89,7 @@ async function hasProcessedMessage({ organization_id, external_message_id }) {
 }
 
 async function ensureConversation({ organization_id, phone, channel = "whatsapp" }) {
+
   const result = await pool.query(
     `
     SELECT *
@@ -146,6 +130,7 @@ async function ensureConversation({ organization_id, phone, channel = "whatsapp"
 }
 
 async function touchConversation({ conversation_id }) {
+
   const timestamp = nowIso();
 
   await pool.query(
@@ -160,6 +145,7 @@ async function touchConversation({ conversation_id }) {
 }
 
 async function updateConversationStage({ conversation_id, stage }) {
+
   await pool.query(
     `
     UPDATE conversations
@@ -184,6 +170,7 @@ async function saveMessage({
   content,
   external_message_id = null
 }) {
+
   const result = await pool.query(
     `
     INSERT INTO messages
@@ -229,6 +216,7 @@ async function upsertLead({
   score,
   stage
 }) {
+
   await pool.query(
     `
     INSERT INTO leads
@@ -285,6 +273,7 @@ async function savePipelineEvent({
   to_stage,
   event_type
 }) {
+
   await pool.query(
     `
     INSERT INTO pipeline_events
@@ -318,6 +307,7 @@ MAIN ORCHESTRATOR
 */
 
 export async function handleInbound({ organization_id, payload }) {
+
   try {
 
     const phone = normalizePhone(payload?.phone || payload?.from || "");
@@ -344,13 +334,19 @@ export async function handleInbound({ organization_id, payload }) {
       channel
     });
 
-    const inboundMessage = await saveMessage({
+    await saveMessage({
       organization_id,
       conversation_id: conversation.id,
       role: "user",
       content: text,
       external_message_id: externalMessageId
     });
+
+    /*
+    ================================================
+    DETECTION ENGINES
+    ================================================
+    */
 
     const intent = detectIntent(text);
     const pipelineEvent = detectPipelineEvent(text);
@@ -383,6 +379,23 @@ export async function handleInbound({ organization_id, payload }) {
     const leadScore = commercialState?.score ?? 0;
     const leadStage = commercialState?.stage ?? "new";
 
+    /*
+    ================================================
+    SEARCH PRODUCTS
+    ================================================
+    */
+
+    const products = await searchCatalog({
+      organization_id,
+      text
+    });
+
+    /*
+    ================================================
+    LEAD UPSERT
+    ================================================
+    */
+
     await upsertLead({
       organization_id,
       phone,
@@ -400,6 +413,7 @@ export async function handleInbound({ organization_id, payload }) {
     });
 
     if (pipelineEvent) {
+
       await savePipelineEvent({
         organization_id,
         conversation_id: conversation.id,
@@ -408,7 +422,14 @@ export async function handleInbound({ organization_id, payload }) {
         to_stage: leadStage,
         event_type: pipelineEvent
       });
+
     }
+
+    /*
+    ================================================
+    GENERATE REPLY
+    ================================================
+    */
 
     const replyResult = generateReply({
       intent,
@@ -417,7 +438,8 @@ export async function handleInbound({ organization_id, payload }) {
       closingIntent,
       opportunities,
       score: leadScore,
-      stage: leadStage
+      stage: leadStage,
+      products
     });
 
     const replyText = safeReplyText(replyResult);
@@ -450,5 +472,6 @@ export async function handleInbound({ organization_id, payload }) {
       error: "brain_error",
       details: err.message || "unknown brain error"
     };
+
   }
 }
