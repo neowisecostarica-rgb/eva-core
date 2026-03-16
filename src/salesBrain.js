@@ -411,20 +411,31 @@ const leadScore = commercialState.score;
 const leadStage = commercialState.stage;
 
     /*
-    ----------------------------------------------------
-    STEP 5 — LEAD UPDATE
-    ----------------------------------------------------
-    */
+----------------------------------------------------
+STEP 5 — LEAD UPDATE
+----------------------------------------------------
 
-    await upsertLead({
-      organization_id,
-      phone,
-      intent,
-      product_interest: productInterest,
-      use_case: useCase,
-      budget
-    });
-/*
+Actualizamos el lead en el CRM.
+
+Además de los datos básicos ahora guardamos:
+
+• score comercial
+• stage del pipeline
+
+Esto permite que EVA mantenga un pipeline
+de ventas real.
+*/
+
+await upsertLead({
+  organization_id,
+  phone,
+  intent,
+  product_interest: productInterest,
+  use_case: useCase,
+  budget,
+  score: leadScore,
+  stage: leadStage
+});
 ----------------------------------------------------
 BLOQUE 9 — UPDATE CUSTOMER MEMORY
 ----------------------------------------------------
