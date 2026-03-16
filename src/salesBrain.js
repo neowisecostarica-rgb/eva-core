@@ -432,15 +432,15 @@ export async function handleInbound({ organization_id, payload }) {
     */
 
     const replyResult = generateReply({
-      intent,
-      interestLevel,
-      objection,
-      closingIntent,
-      opportunities,
-      score: leadScore,
-      stage: leadStage,
-      products
-    });
+  intent,
+  interestLevel,
+  objection,
+  closingIntent,
+  opportunities,
+  score: leadScore,
+  stage: leadStage,
+  catalogMatches: products
+});
 
     const replyText = safeReplyText(replyResult);
 
