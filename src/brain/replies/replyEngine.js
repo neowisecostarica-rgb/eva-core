@@ -133,14 +133,36 @@ Cuéntame un poco más sobre lo que estás buscando y con gusto te ayudo a encon
 ====================================================
 REPLY ORCHESTRATOR
 ====================================================
+
+Este motor genera la respuesta final de EVA.
+
+Recibe señales comerciales detectadas por el Brain
+y decide cómo responder al cliente.
+
+Las respuestas pueden variar según:
+
+• intent → intención principal del cliente
+• catalogMatches → productos encontrados
+• interestLevel → nivel de interés
+• objection → objeciones detectadas
+• closingIntent → intención de cierre
+• score → puntuación comercial del lead
+• stage → etapa del pipeline
+
+Esto permite que EVA adapte su estrategia
+según el momento de compra del cliente.
+====================================================
 */
 
-  export function generateReply({
-  intent,
-  catalogMatches,
-  interestLevel,
-  objection
-})
+export function generateReply({
+  intent = null,
+  catalogMatches = [],
+  interestLevel = null,
+  objection = null,
+  closingIntent = null,
+  score = 0,
+  stage = "new"
+}) {
 
   /*
   ----------------------------------------------------
