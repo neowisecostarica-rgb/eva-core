@@ -6,6 +6,7 @@ import metricsRoute from "./routes/metrics.js";
 import { startFollowupWorker } from "./followupWorker.js";
 import devChatRoute from "./routes/devChat.js";
 import devChatUIRoute from "./routes/devChatUI.js";
+import { startFollowupWorker } from "./followupWorker.js";
 
 dotenv.config();
 
@@ -91,7 +92,7 @@ app.use("/dev", devChatUIRoute);
    FOLLOWUP WORKER
 ================================ */
 
-startFollowupWorker();
+startFollowupWorker(sendWhatsAppMessage);
 
 /* ===============================
    SERVER START
