@@ -297,7 +297,7 @@ cliente
 ====================================================
 */
 
-import { extractProductImages } from "../engines/mediaEngine.js";
+
 import { enhanceReply } from "../engines/aiEnhancer.js";
 
 /*
