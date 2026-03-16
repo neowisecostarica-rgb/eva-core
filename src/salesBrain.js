@@ -244,52 +244,6 @@ async function searchCatalog({
 
 }
 
-/*
-====================================================
-REPLY BUILDER
-====================================================
-*/
-
-function buildReply({
-  intent,
-  catalogMatches
-}) {
-
-  if (intent === "GREETING") {
-
-    return `Hola 🙌
-
-Te atiende EVA, asistente de ventas.
-
-¿En qué puedo ayudarte hoy?`;
-  }
-
-  if (intent === "BUY" && catalogMatches.length > 0) {
-
-    const item = catalogMatches[0];
-
-    return `Te recomiendo esta opción 👇
-
-💻 ${item.name}
-₡${Number(item.price_crc).toLocaleString("es-CR")}
-
-¿Quieres que te envíe fotos reales del equipo?`;
-  }
-
-  if (intent === "SUPPORT") {
-
-    return `Claro 👨‍🔧
-
-Podemos revisar tu equipo en el taller.
-
-¿El problema es con computadora o impresora?`;
-  }
-
-  return `Perfecto 🙌
-
-Cuéntame un poco más de lo que estás buscando para poder ayudarte mejor.`;
-
-}
 
 /*
 ====================================================
