@@ -45,7 +45,7 @@ import { detectInterestLevel } from "./brain/engines/interestEngine.js";
 import { detectObjection } from "./brain/engines/objectionEngine.js";
 import { detectClosingIntent } from "./brain/engines/closingEngine.js";
 import { mergeCustomerMemory } from "./brain/engines/memoryEngine.js";
-
+import { detectOpportunities } from "./brain/engines/opportunityEngine.js";
 /*
 ====================================================
 SCORE ENGINE
@@ -349,22 +349,32 @@ STEP 3 — SAVE INBOUND MESSAGE
       external_message_id: payload?.message_id || null
     });
 
-    /*
-    ----------------------------------------------------
-    STEP 4 — SIGNAL DETECTION
-    ----------------------------------------------------
-    */
+  /*
+----------------------------------------------------
+STEP 4 — SIGNAL DETECTION
+----------------------------------------------------
+*/
 
-    const intent = detectIntent(text);
-    const pipelineEvent = detectPipelineEvent(text);
-    const useCase = detectUseCase(text);
-    const productInterest = detectProductInterest(text);
-    const budget = detectBudget(text);
+const intent = detectIntent(text);
+const pipelineEvent = detectPipelineEvent(text);
+const useCase = detectUseCase(text);
+const productInterest = detectProductInterest(text);
+const budget = detectBudget(text);
+
 const interestLevel = detectInterestLevel({
   intent,
   pipelineEvent,
   text
 });
+
+/*
+----------------------------------------------------
+OPPORTUNITY DETECTION
+----------------------------------------------------
+Detecta posibles ventas adicionales
+*/
+
+const opportunities = detectOpportunities(text);
 
      const objection = detectObjection(text);
      const closingIntent = detectClosingIntent(text);
@@ -527,6 +537,7 @@ const reply = generateReply({
   interestLevel,
   objection,
   closingIntent,
+  opportunities,
   score: leadScore,
   stage: leadStage
 });
