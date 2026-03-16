@@ -4,21 +4,23 @@ EVA FOLLOWUP WORKER
 Automated Sales Follow-Up Engine
 ====================================================
 
-Responsabilidades:
+Este worker revisa followups pendientes
+y envía mensajes automáticamente.
 
-• Revisar followups pendientes
-• Enviar mensajes automáticos
-• Registrar mensajes en CRM
-• Evitar followups innecesarios
-• Mantener estrategia comercial
+Recupera ventas cuando el cliente
+dejó de responder.
 
-Estrategia:
+Estrategia típica:
 
 24h → recordatorio suave
 3 días → urgencia ligera
 7 días → último intento
 
-Este worker corre continuamente.
+Arquitectura:
+
+Worker independiente del SalesBrain.
+Solo ejecuta followups programados.
+
 ====================================================
 */
 
@@ -32,6 +34,12 @@ FOLLOWUP MESSAGE GENERATOR
 
 function buildFollowupMessage(reason) {
 
+  /*
+  ------------------------------------------------
+  SALES FOLLOWUP
+  ------------------------------------------------
+  */
+
   if (reason === "sales_followup") {
 
     return `Hola 🙌
@@ -44,59 +52,17 @@ Si todavía estás buscando laptop o accesorios con gusto puedo ayudarte a encon
 
   }
 
+  /*
+  ------------------------------------------------
+  DEFAULT MESSAGE
+  ------------------------------------------------
+  */
+
   return `Hola 🙌
 
 Solo quería saber si todavía necesitas ayuda con lo que estabas consultando.
 
 Estoy aquí para ayudarte.`;
-}
-
-/*
-====================================================
-CHECK IF CLIENT RESPONDED
-====================================================
-*/
-
-async function clientRespondedAfter(conversation_id, scheduled_for) {
-
-  const result = await pool.query(`
-    SELECT id
-    FROM messages
-    WHERE conversation_id = $1
-      AND role = 'user'
-      AND created_at > $2
-    LIMIT 1
-  `, [conversation_id, scheduled_for]);
-
-  return result.rows.length > 0;
-}
-
-/*
-====================================================
-SAVE MESSAGE TO CRM
-====================================================
-*/
-
-async function saveAssistantMessage({
-  organization_id,
-  conversation_id,
-  message
-}) {
-
-  await pool.query(`
-    INSERT INTO messages (
-      organization_id,
-      conversation_id,
-      role,
-      content,
-      created_at
-    )
-    VALUES ($1, $2, 'assistant', $3, NOW())
-  `, [
-    organization_id,
-    conversation_id,
-    message
-  ]);
 
 }
 
@@ -114,7 +80,7 @@ export async function processFollowups(sendMessage) {
       SELECT *
       FROM followups
       WHERE scheduled_for <= NOW()
-      AND status = 'pending'
+      AND sent = false
       ORDER BY scheduled_for ASC
       LIMIT 20
     `);
@@ -129,25 +95,13 @@ export async function processFollowups(sendMessage) {
 
       /*
       ------------------------------------------------
-      SKIP IF CLIENT ALREADY RESPONDED
+      VALIDATION
       ------------------------------------------------
       */
 
-      const clientAnswered = await clientRespondedAfter(
-        followup.conversation_id,
-        followup.scheduled_for
-      );
-
-      if (clientAnswered) {
-
-        await pool.query(`
-          UPDATE followups
-          SET status = 'cancelled'
-          WHERE id = $1
-        `, [followup.id]);
-
+      if (!followup.lead_phone) {
+        console.warn("FOLLOWUP WITHOUT PHONE", followup.id);
         continue;
-
       }
 
       const message = buildFollowupMessage(followup.reason);
@@ -167,25 +121,13 @@ export async function processFollowups(sendMessage) {
 
         /*
         ------------------------------------------------
-        SAVE MESSAGE IN CRM
-        ------------------------------------------------
-        */
-
-        await saveAssistantMessage({
-          organization_id: followup.organization_id,
-          conversation_id: followup.conversation_id,
-          message
-        });
-
-        /*
-        ------------------------------------------------
-        MARK FOLLOWUP AS SENT
+        MARK AS SENT
         ------------------------------------------------
         */
 
         await pool.query(`
           UPDATE followups
-          SET status = 'sent',
+          SET sent = true,
               sent_at = NOW()
           WHERE id = $1
         `, [followup.id]);
