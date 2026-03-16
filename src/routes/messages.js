@@ -2,10 +2,10 @@ import express from "express";
 import { handleInbound } from "../salesBrain.js";
 import { authenticate } from "../lib/auth.js";
 import { validateInbound } from "../validators.js";
-
+import { securityGuard } from "../lib/security.js";
 const router = express.Router();
 
-router.post("/inbound", authenticate, async (req, res) => {
+router.post("/inbound", securityGuard, async (req, res) => {
   try {
     const validated = validateInbound({
       ...req.body,
