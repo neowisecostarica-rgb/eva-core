@@ -146,9 +146,20 @@ async function saveMessage({
 }
 
 /*
+/*
 ====================================================
 LEAD UPSERT
 ====================================================
+
+Crea o actualiza un lead en el CRM.
+
+Este método ahora también guarda:
+
+• score → nivel comercial del lead
+• stage → etapa actual del pipeline
+
+Esto permite que EVA tenga un pipeline real
+similar a sistemas como HubSpot o Pipedrive.
 */
 
 async function upsertLead({
@@ -157,7 +168,9 @@ async function upsertLead({
   intent,
   product_interest,
   use_case,
-  budget
+  budget,
+  score,
+  stage
 }) {
 
   await pool.query(
@@ -170,17 +183,22 @@ async function upsertLead({
       product_interest,
       use_case,
       budget,
+      score,
+      stage,
       created_at,
       updated_at
     )
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$7)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9)
+
     ON CONFLICT (organization_id, phone)
     DO UPDATE SET
       intent=EXCLUDED.intent,
       product_interest=COALESCE(EXCLUDED.product_interest,leads.product_interest),
       use_case=COALESCE(EXCLUDED.use_case,leads.use_case),
       budget=COALESCE(EXCLUDED.budget,leads.budget),
-      updated_at=$7
+      score=EXCLUDED.score,
+      stage=EXCLUDED.stage,
+      updated_at=$9
     `,
     [
       organization_id,
@@ -189,12 +207,13 @@ async function upsertLead({
       product_interest,
       use_case,
       budget,
+      score,
+      stage,
       nowIso()
     ]
   );
 
 }
-
 /*
 ====================================================
 PIPELINE EVENT LOGGER
