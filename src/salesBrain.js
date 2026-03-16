@@ -332,6 +332,7 @@ PIPELINE EVENT LOGGER
 async function savePipelineEvent({
   organization_id,
   conversation_id,
+  lead_phone,
   event_type
 }) {
   await pool.query(
@@ -340,14 +341,16 @@ async function savePipelineEvent({
     (
       organization_id,
       conversation_id,
+      lead_phone,
       event_type,
       created_at
     )
-    VALUES ($1, $2, $3, $4)
+    VALUES ($1, $2, $3, $4, $5)
     `,
     [
       organization_id,
       conversation_id,
+      lead_phone,
       event_type,
       nowIso()
     ]
