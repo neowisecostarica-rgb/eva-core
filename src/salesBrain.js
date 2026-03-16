@@ -44,6 +44,7 @@ import { generateReply } from "./brain/replies/replyEngine.js";
 import { detectInterestLevel } from "./brain/engines/interestEngine.js";
 import { detectObjection } from "./brain/engines/objectionEngine.js";
 import { detectClosingIntent } from "./brain/engines/closingEngine.js";
+import { mergeCustomerMemory } from "./brain/engines/memoryEngine.js";
 /*
 ====================================================
 BRAIN UTILITIES
@@ -272,18 +273,40 @@ export async function handleInbound({ organization_id, payload }) {
       return { error: "invalid_payload" };
     }
 
-    /*
-    ----------------------------------------------------
-    STEP 2 — CONVERSATION
-    ----------------------------------------------------
-    */
+   /*
+----------------------------------------------------
+STEP 2 — CONVERSATION
+----------------------------------------------------
+*/
 
-    const conversation = await ensureConversation({
-      organization_id,
-      phone
-    });
+const conversation = await ensureConversation({
+  organization_id,
+  phone
+});
 
-    /*
+
+/*
+----------------------------------------------------
+BLOQUE 9 — READ CUSTOMER MEMORY
+----------------------------------------------------
+*/
+
+const profileResult = await pool.query(
+  `
+  SELECT profile_json
+  FROM customer_profiles
+  WHERE organization_id=$1
+  AND external_user_id=$2
+  LIMIT 1
+  `,
+  [organization_id, phone]
+);
+
+let existingMemory = {};
+
+if (profileResult.rows.length > 0) {
+  existingMemory = safeJson(profileResult.rows[0].profile_json, {});
+}
     ----------------------------------------------------
     STEP 3 — SAVE INBOUND MESSAGE
     ----------------------------------------------------
