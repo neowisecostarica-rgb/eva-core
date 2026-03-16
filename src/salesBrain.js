@@ -353,7 +353,42 @@ if (profileResult.rows.length > 0) {
       use_case: useCase,
       budget
     });
+/*
+----------------------------------------------------
+BLOQUE 9 — UPDATE CUSTOMER MEMORY
+----------------------------------------------------
+*/
 
+const updatedMemory = mergeCustomerMemory({
+  memory: existingMemory,
+  product_interest: productInterest,
+  use_case: useCase,
+  budget,
+  pipeline_event: pipelineEvent
+});
+
+await pool.query(
+  `
+  INSERT INTO customer_profiles
+  (
+    organization_id,
+    external_user_id,
+    profile_json,
+    updated_at
+  )
+  VALUES ($1,$2,$3,$4)
+  ON CONFLICT (organization_id, external_user_id)
+  DO UPDATE SET
+    profile_json=$3,
+    updated_at=$4
+  `,
+  [
+    organization_id,
+    phone,
+    JSON.stringify(updatedMemory),
+    nowIso()
+  ]
+);
     /*
     ----------------------------------------------------
     STEP 6 — PIPELINE EVENT
