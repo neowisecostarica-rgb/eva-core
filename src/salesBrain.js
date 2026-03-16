@@ -40,27 +40,28 @@ import { detectPipelineEvent } from "./brain/engines/pipelineEngine.js";
 import { detectUseCase } from "./brain/engines/useCaseEngine.js";
 import { detectProductInterest } from "./brain/engines/productEngine.js";
 import { detectBudget } from "./brain/engines/budgetEngine.js";
-import { generateReply } from "./brain/replies/replyEngine.js";
 import { detectInterestLevel } from "./brain/engines/interestEngine.js";
 import { detectObjection } from "./brain/engines/objectionEngine.js";
 import { detectClosingIntent } from "./brain/engines/closingEngine.js";
 import { mergeCustomerMemory } from "./brain/engines/memoryEngine.js";
 import { detectOpportunities } from "./brain/engines/opportunityEngine.js";
-/*
-====================================================
-SCORE ENGINE
-Calcula score comercial y stage del lead
-====================================================
-*/
-
 import { calculateCommercialState } from "./brain/engines/scoreEngine.js";
+
 /*
 ====================================================
-BRAIN UTILITIES
+REPLY ENGINE
 ====================================================
 */
 
-import { normalizeText, normalizePhone } from "./brain/utils/textUtils.js";
+import { generateReply } from "./brain/replies/replyEngine.js";
+
+/*
+====================================================
+UTILS
+====================================================
+*/
+
+import { normalizePhone } from "./brain/utils/textUtils.js";
 import { safeJson } from "./brain/utils/jsonUtils.js";
 import { nowIso } from "./brain/utils/timeUtils.js";
 
@@ -104,6 +105,7 @@ async function ensureConversation({ organization_id, phone }) {
   );
 
   return created.rows[0];
+
 }
 
 /*
@@ -146,20 +148,9 @@ async function saveMessage({
 }
 
 /*
-/*
 ====================================================
 LEAD UPSERT
 ====================================================
-
-Crea o actualiza un lead en el CRM.
-
-Este método ahora también guarda:
-
-• score → nivel comercial del lead
-• stage → etapa actual del pipeline
-
-Esto permite que EVA tenga un pipeline real
-similar a sistemas como HubSpot o Pipedrive.
 */
 
 async function upsertLead({
@@ -214,6 +205,7 @@ async function upsertLead({
   );
 
 }
+
 /*
 ====================================================
 PIPELINE EVENT LOGGER
@@ -276,11 +268,9 @@ async function searchCatalog({
 
 }
 
-
 /*
 ====================================================
 MAIN ORCHESTRATOR
-HANDLE INBOUND MESSAGE
 ====================================================
 */
 
@@ -289,9 +279,7 @@ export async function handleInbound({ organization_id, payload }) {
   try {
 
     /*
-    ----------------------------------------------------
     STEP 1 — VALIDATION
-    ----------------------------------------------------
     */
 
     const phone = normalizePhone(payload?.phone || "");
@@ -301,45 +289,18 @@ export async function handleInbound({ organization_id, payload }) {
       return { error: "invalid_payload" };
     }
 
-   /*
-----------------------------------------------------
-STEP 2 — CONVERSATION
-----------------------------------------------------
-*/
+    /*
+    STEP 2 — CONVERSATION
+    */
 
-const conversation = await ensureConversation({
-  organization_id,
-  phone
-});
+    const conversation = await ensureConversation({
+      organization_id,
+      phone
+    });
 
-
-/*
-----------------------------------------------------
-BLOQUE 9 — READ CUSTOMER MEMORY
-----------------------------------------------------
-*/
-
-const profileResult = await pool.query(
-  `
-  SELECT profile_json
-  FROM customer_profiles
-  WHERE organization_id=$1
-  AND external_user_id=$2
-  LIMIT 1
-  `,
-  [organization_id, phone]
-);
-
-let existingMemory = {};
-
-if (profileResult.rows.length > 0) {
-  existingMemory = safeJson(profileResult.rows[0].profile_json, {});
-}
-   /*
-----------------------------------------------------
-STEP 3 — SAVE INBOUND MESSAGE
-----------------------------------------------------
-*/
+    /*
+    STEP 3 — SAVE USER MESSAGE
+    */
 
     await saveMessage({
       organization_id,
@@ -349,158 +310,62 @@ STEP 3 — SAVE INBOUND MESSAGE
       external_message_id: payload?.message_id || null
     });
 
-  /*
-----------------------------------------------------
-STEP 4 — SIGNAL DETECTION
-----------------------------------------------------
-*/
-
-const intent = detectIntent(text);
-const pipelineEvent = detectPipelineEvent(text);
-const useCase = detectUseCase(text);
-const productInterest = detectProductInterest(text);
-const budget = detectBudget(text);
-
-const interestLevel = detectInterestLevel({
-  intent,
-  pipelineEvent,
-  text
-});
-
-/*
-----------------------------------------------------
-OPPORTUNITY DETECTION
-----------------------------------------------------
-Detecta posibles ventas adicionales
-*/
-
-const opportunities = detectOpportunities(text);
-
-     const objection = detectObjection(text);
-     const closingIntent = detectClosingIntent(text);
-
-   /*
-----------------------------------------------------
-STEP 4.5 — COMMERCIAL SCORING
-----------------------------------------------------
-
-Aquí calculamos el estado comercial del lead.
-
-El Score Engine usa las señales detectadas para calcular:
-
-• score (0 - 100)
-• stage comercial del pipeline
-
-Esto permite que EVA se comporte como un
-vendedor real y no solo como un chatbot.
-
-Ejemplo:
-
-score >= 85 → hot lead
-score >= 70 → considerando compra
-score >= 50 → interesado
-score < 30 → lead nuevo
-
-Este cálculo NO toca la base de datos.
-Solo genera el estado comercial.
-*/
-
-const commercialState = calculateCommercialState({
-  intent,
-  product_interest: productInterest,
-  use_case: useCase,
-  budget,
-  interest_level: interestLevel,
-  objection,
-  closing_intent: closingIntent,
-  pipeline_event: pipelineEvent,
-  text
-});
-
-const leadScore = commercialState.score;
-const leadStage = commercialState.stage;
-
     /*
-----------------------------------------------------
-STEP 5 — LEAD UPDATE
-----------------------------------------------------
-
-Actualizamos el lead en el CRM.
-
-Además de los datos básicos ahora guardamos:
-
-• score comercial
-• stage del pipeline
-
-Esto permite que EVA mantenga un pipeline
-de ventas real.
-*/
-
-await upsertLead({
-  organization_id,
-  phone,
-  intent,
-  product_interest: productInterest,
-  use_case: useCase,
-  budget,
-  score: leadScore,
-  stage: leadStage
-});
-----------------------------------------------------
-BLOQUE 9 — UPDATE CUSTOMER MEMORY
-----------------------------------------------------
-*/
-
-const updatedMemory = mergeCustomerMemory({
-  memory: existingMemory,
-  product_interest: productInterest,
-  use_case: useCase,
-  budget,
-  pipeline_event: pipelineEvent
-});
-
-await pool.query(
-  `
-  INSERT INTO customer_profiles
-  (
-    organization_id,
-    external_user_id,
-    profile_json,
-    updated_at
-  )
-  VALUES ($1,$2,$3,$4)
-  ON CONFLICT (organization_id, external_user_id)
-  DO UPDATE SET
-    profile_json=$3,
-    updated_at=$4
-  `,
-  [
-    organization_id,
-    phone,
-    JSON.stringify(updatedMemory),
-    nowIso()
-  ]
-);
-    /*
-    ----------------------------------------------------
-    STEP 6 — PIPELINE EVENT
-    ----------------------------------------------------
+    STEP 4 — SIGNAL DETECTION
     */
 
-    if (pipelineEvent) {
+    const intent = detectIntent(text);
+    const pipelineEvent = detectPipelineEvent(text);
+    const useCase = detectUseCase(text);
+    const productInterest = detectProductInterest(text);
+    const budget = detectBudget(text);
 
-      await savePipelineEvent({
-        organization_id,
-        conversation_id: conversation.id,
-        event_type: pipelineEvent
-      });
+    const interestLevel = detectInterestLevel({
+      intent,
+      pipelineEvent,
+      text
+    });
 
-    }
+    const objection = detectObjection(text);
+    const closingIntent = detectClosingIntent(text);
+    const opportunities = detectOpportunities(text);
 
     /*
-    ----------------------------------------------------
+    STEP 5 — COMMERCIAL SCORING
+    */
+
+    const commercialState = calculateCommercialState({
+      intent,
+      product_interest: productInterest,
+      use_case: useCase,
+      budget,
+      interest_level: interestLevel,
+      objection,
+      closing_intent: closingIntent,
+      pipeline_event: pipelineEvent,
+      text
+    });
+
+    const leadScore = commercialState.score;
+    const leadStage = commercialState.stage;
+
+    /*
+    STEP 6 — UPDATE LEAD
+    */
+
+    await upsertLead({
+      organization_id,
+      phone,
+      intent,
+      product_interest: productInterest,
+      use_case: useCase,
+      budget,
+      score: leadScore,
+      stage: leadStage
+    });
+
+    /*
     STEP 7 — CATALOG SEARCH
-    ----------------------------------------------------
     */
 
     const catalogMatches = await searchCatalog({
@@ -508,91 +373,23 @@ await pool.query(
       product_interest: productInterest
     });
 
-   /*
-----------------------------------------------------
-STEP 8 — GENERATE REPLY
-----------------------------------------------------
-
-Enviamos señales comerciales al Reply Engine.
-
-Ahora EVA también conoce:
-
-• score del lead
-• stage comercial del pipeline
-
-Esto permite que el Reply Engine adapte la estrategia
-de venta según el momento del cliente.
-
-Ejemplo:
-
-stage = new → educar
-stage = interested → mostrar producto
-stage = considering → persuadir
-stage = hot → cerrar venta
-*/
-
-const reply = generateReply({
-  intent,
-  catalogMatches,
-  interestLevel,
-  objection,
-  closingIntent,
-  opportunities,
-  score: leadScore,
-  stage: leadStage
-});
-
-   
-
-  /*
-----------------------------------------------------
-STEP 9 — FOLLOWUP SCHEDULING
-----------------------------------------------------
-
-Si el cliente mostró interés pero no cerró,
-programamos un seguimiento automático.
-
-Esto permite recuperar ventas perdidas.
-*/
-
-try {
-
-  const shouldScheduleFollowup =
-    intent === "BUY" ||
-    interestLevel === "HIGH" ||
-    leadStage === "considering";
-
-  if (shouldScheduleFollowup) {
-
-    await pool.query(
-      `
-      INSERT INTO followups (
-        organization_id,
-        conversation_id,
-        lead_phone,
-        scheduled_for,
-        reason
-      )
-      VALUES ($1,$2,$3,NOW() + INTERVAL '24 hours','sales_followup')
-      `,
-      [
-        organizationId,
-        conversationId,
-        phone
-      ]
-    );
-
-  }
-
-} catch (err) {
-
-  console.error("FOLLOWUP SCHEDULING ERROR", err);
-
-}
     /*
-    ----------------------------------------------------
+    STEP 8 — GENERATE REPLY
+    */
+
+    const reply = generateReply({
+      intent,
+      catalogMatches,
+      interestLevel,
+      objection,
+      closingIntent,
+      opportunities,
+      score: leadScore,
+      stage: leadStage
+    });
+
+    /*
     STEP 9 — SAVE BOT MESSAGE
-    ----------------------------------------------------
     */
 
     await saveMessage({
@@ -603,21 +400,25 @@ try {
     });
 
     /*
-----------------------------------------------------
-RESPONSE
-----------------------------------------------------
+    RESPONSE
+    */
 
-Devolvemos información útil para debug,
-analytics o dashboards futuros.
+    return {
+      reply,
+      intent,
+      product_interest: productInterest,
+      score: leadScore,
+      stage: leadStage
+    };
 
-Esto NO se envía al cliente final,
-solo al sistema interno.
-*/
+  } catch (err) {
 
-return {
-  reply,
-  intent,
-  product_interest: productInterest,
-  score: leadScore,
-  stage: leadStage
-};
+    console.error("EVA ERROR", err);
+
+    return {
+      error: "internal_error"
+    };
+
+  }
+
+}
