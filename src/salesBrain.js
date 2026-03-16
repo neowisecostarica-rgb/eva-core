@@ -332,12 +332,13 @@ STEP 3 — SAVE INBOUND MESSAGE
     const useCase = detectUseCase(text);
     const productInterest = detectProductInterest(text);
     const budget = detectBudget(text);
-    const interestLevel = detectInterestLevel({
+const interestLevel = detectInterestLevel({
   intent,
   pipelineEvent,
   text
-     const objection = detectObjection(text);
 });
+
+     const objection = detectObjection(text);
      const closingIntent = detectClosingIntent(text);
 
     /*
