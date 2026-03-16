@@ -354,10 +354,10 @@ export async function handleInbound({ organization_id, payload }) {
     ----------------------------------------------------
     */
 
-    const reply = buildReply({
-      intent,
-      catalogMatches
-    });
+   const reply = generateReply({
+  intent,
+  catalogMatches
+});
 
     /*
     ----------------------------------------------------
