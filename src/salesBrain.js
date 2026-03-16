@@ -43,6 +43,7 @@ import { detectBudget } from "./brain/engines/budgetEngine.js";
 import { generateReply } from "./brain/replies/replyEngine.js";
 import { detectInterestLevel } from "./brain/engines/interestEngine.js";
 import { detectObjection } from "./brain/engines/objectionEngine.js";
+import { detectClosingIntent } from "./brain/engines/closingEngine.js";
 /*
 ====================================================
 BRAIN UTILITIES
@@ -313,6 +314,7 @@ export async function handleInbound({ organization_id, payload }) {
   text
      const objection = detectObjection(text);
 });
+     const closingIntent = detectClosingIntent(text);
 
     /*
     ----------------------------------------------------
@@ -366,7 +368,8 @@ export async function handleInbound({ organization_id, payload }) {
   intent,
   catalogMatches,
   interestLevel,
-  objection
+  objection,
+  closingIntent
 });
 
     /*
