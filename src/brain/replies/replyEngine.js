@@ -26,7 +26,7 @@ HELPERS
 */
 
 import { extractProductImages } from "../engines/mediaEngine.js";
-
+import { enhanceReply } from "../engines/aiEnhancer.js";
 /*
 Formatea el precio de forma segura.
 */
@@ -269,12 +269,183 @@ Es una **laptop de línea corporativa**, diseñada para durar muchos años.
 }
 
 /*
+/*
+====================================================
+EVA REPLY ENGINE
+Motor de respuestas comerciales
+====================================================
+
+Responsabilidades:
+
+• Generar respuestas humanas
+• Recomendar productos
+• Guiar conversación comercial
+• Adaptarse a la intención del cliente
+• Ajustar estrategia según stage del pipeline
+• Prepararse para devolver media (fotos)
+
+Arquitectura:
+
+salesBrain
+   ↓
+replyEngine
+   ↓
+AI enhancer
+   ↓
+cliente
+
+====================================================
+*/
+
+import { extractProductImages } from "../engines/mediaEngine.js";
+import { enhanceReply } from "../engines/aiEnhancer.js";
+
+/*
+====================================================
+HELPERS
+====================================================
+*/
+
+function formatPrice(value) {
+
+  if (value === null || value === undefined || value === "") {
+    return "Consultar precio";
+  }
+
+  const numberValue = Number(value);
+
+  if (Number.isNaN(numberValue)) {
+    return "Consultar precio";
+  }
+
+  return `₡${numberValue.toLocaleString()}`;
+}
+
+/*
+====================================================
+GREETING REPLY
+====================================================
+*/
+
+function greetingReply() {
+
+  return {
+    text: `Hola 👋
+
+Soy Eva, asistente de Compu Store.
+
+¿En qué puedo ayudarte hoy?`,
+    media: []
+  };
+
+}
+
+/*
+====================================================
+SUPPORT REPLY
+====================================================
+*/
+
+function supportReply() {
+
+  return {
+    text: `Claro, con gusto te ayudamos.
+
+¿Podrías contarme un poco más sobre el problema que estás teniendo con tu equipo?`,
+    media: []
+  };
+
+}
+
+/*
+====================================================
+INFO REPLY
+====================================================
+*/
+
+function infoReply() {
+
+  return {
+    text: `Claro 🙌
+
+Con gusto te doy la información que necesites.
+
+¿Sobre qué equipo o producto te gustaría saber más?`,
+    media: []
+  };
+
+}
+
+/*
+====================================================
+BUY REPLY
+====================================================
+*/
+
+function buyReplyByStage({
+  catalogMatches = [],
+  interestLevel = null,
+  stage = "new"
+}) {
+
+  if (!catalogMatches.length) {
+
+    return {
+      text: `Perfecto 🙌
+
+Cuéntame un poco más qué tipo de equipo estás buscando para poder recomendarte la mejor opción.`,
+      media: []
+    };
+
+  }
+
+  const product = catalogMatches[0];
+
+  const price = formatPrice(product.price_crc);
+
+  const media = extractProductImages(product);
+
+  return {
+
+    text: `Tenemos disponible el ${product.name}.
+
+💰 Precio: ${price}
+
+${product.description || ""}
+
+Si quieres puedo enviarte más detalles o fotos del equipo.`,
+
+    media
+
+  };
+
+}
+
+/*
+====================================================
+FALLBACK REPLY
+====================================================
+*/
+
+function fallbackReply() {
+
+  return {
+    text: `Perfecto 🙌
+
+Cuéntame un poco más sobre lo que necesitas para poder ayudarte mejor.`,
+    media: []
+  };
+
+}
+
+/*
 ====================================================
 REPLY ORCHESTRATOR
 ====================================================
 */
 
-export function generateReply({
+export async function generateReply({
+
   intent = null,
   catalogMatches = [],
   interestLevel = null,
@@ -283,31 +454,72 @@ export function generateReply({
   opportunities = [],
   score = 0,
   stage = "new"
+
 }) {
 
+  let response;
+
+  /*
+  ------------------------------------------------
+  GREETING
+  ------------------------------------------------
+  */
+
   if (intent === "GREETING") {
-    return greetingReply();
+
+    response = greetingReply();
+
   }
 
-  if (intent === "BUY") {
-    return buyReplyByStage({
+  /*
+  ------------------------------------------------
+  BUY
+  ------------------------------------------------
+  */
+
+  else if (intent === "BUY") {
+
+    response = buyReplyByStage({
       catalogMatches,
       interestLevel,
       stage
     });
+
   }
 
-  if (intent === "SUPPORT") {
-    return supportReply();
+  /*
+  ------------------------------------------------
+  SUPPORT
+  ------------------------------------------------
+  */
+
+  else if (intent === "SUPPORT") {
+
+    response = supportReply();
+
   }
 
-  if (intent === "INFO") {
-    return infoReply();
+  /*
+  ------------------------------------------------
+  INFO
+  ------------------------------------------------
+  */
+
+  else if (intent === "INFO") {
+
+    response = infoReply();
+
   }
 
-  if (score >= 85) {
+  /*
+  ------------------------------------------------
+  HIGH SCORE CLOSE
+  ------------------------------------------------
+  */
 
-    return {
+  else if (score >= 85) {
+
+    response = {
       text: `Perfecto 🙌
 
 Ya tengo bastante claro lo que buscas.
@@ -318,6 +530,36 @@ Si quieres te ayudo a avanzar con la mejor opción disponible.`,
 
   }
 
-  return fallbackReply();
+  /*
+  ------------------------------------------------
+  FALLBACK
+  ------------------------------------------------
+  */
+
+  else {
+
+    response = fallbackReply();
+
+  }
+
+  /*
+  ====================================================
+  AI ENHANCEMENT
+  ====================================================
+  */
+
+  try {
+
+    if (response?.text) {
+      response.text = await enhanceReply(response.text);
+    }
+
+  } catch (err) {
+
+    console.error("reply ai enhance error", err);
+
+  }
+
+  return response;
 
 }
