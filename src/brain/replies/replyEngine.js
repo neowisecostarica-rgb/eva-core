@@ -153,6 +153,70 @@ REPLY ORCHESTRATOR
   }
 
   /*
+
+  /*
+----------------------------------------------------
+OBJECTION HANDLING
+----------------------------------------------------
+*/
+
+if (objection === "NEW_OR_USED") {
+
+  return `Buena pregunta 🙌
+
+Estos equipos son **reacondicionados de línea corporativa**.
+
+Eso significa que fueron usados en empresas grandes, luego pasan por revisión técnica completa, se les instala **SSD, Windows y se entregan listos para usar**.
+
+La ventaja es que obtienes una **laptop corporativa de mucha mejor calidad** a un precio mucho más accesible.
+
+Además incluyen **1 año de garantía**.
+
+¿Quieres que te envíe fotos reales del equipo?`;
+
+}
+
+if (objection === "PRICE_OBJECTION") {
+
+  return `Entiendo perfectamente 👍
+
+La diferencia es que estas son **laptops de línea corporativa**, diseñadas para durar muchos años.
+
+Además ya incluyen **SSD, Windows instalado y garantía**, por lo que no tienes que invertir más después.
+
+Por eso muchos clientes las prefieren frente a equipos nuevos de gama baja.
+
+Si quieres puedo enviarte **fotos reales del equipo** para que lo veas mejor.`;
+
+}
+
+if (objection === "CHEAP_SUSPICION") {
+
+  return `Buena observación 👌
+
+El precio es menor porque son **equipos corporativos reacondicionados**, no porque sean de baja calidad.
+
+De hecho son modelos empresariales como **ThinkPad o Latitude**, que normalmente son mucho más resistentes que laptops de consumo.
+
+Además los entregamos **revisados y con garantía**.
+
+Si quieres puedo enviarte **fotos reales del equipo**.`;
+
+}
+
+if (objection === "WARRANTY_REQUEST") {
+
+  return `Sí 🙌
+
+Todos nuestros equipos incluyen **1 año de garantía** para tu tranquilidad.
+
+Antes de entregarlos pasan por **revisión técnica completa**, limpieza y pruebas de funcionamiento.
+
+Así puedes comprar con confianza.
+
+¿Quieres que te envíe **fotos reales del equipo**?`;
+
+}
   ----------------------------------------------------
   BUY
   ----------------------------------------------------
