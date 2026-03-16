@@ -5,8 +5,17 @@ Product Image Delivery
 ====================================================
 
 Responsabilidad:
-Enviar imágenes de productos cuando el cliente
-pide fotos o cuando EVA recomienda un producto.
+
+Extraer imágenes de productos desde el catálogo
+para que EVA pueda enviarlas al cliente cuando
+recomienda un producto.
+
+Este motor NO decide cuándo enviar imágenes.
+Solo extrae URLs válidas desde el producto.
+
+El Reply Engine decide cuándo usar estas imágenes.
+
+====================================================
 */
 
 export function extractProductImages(product) {
@@ -17,9 +26,17 @@ export function extractProductImages(product) {
 
   try {
 
+    /*
+    Si ya es array (PostgreSQL JSONB parseado)
+    */
+
     if (Array.isArray(product.image_urls)) {
       return product.image_urls;
     }
+
+    /*
+    Si viene como string JSON
+    */
 
     return JSON.parse(product.image_urls);
 
