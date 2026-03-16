@@ -840,12 +840,13 @@ export async function handleInbound({ organization_id, payload }) {
     */
 
     if (pipelineEvent) {
-      await savePipelineEvent({
-        organization_id,
-        conversation_id: conversation.id,
-        event_type: pipelineEvent
-      });
-    }
+  await savePipelineEvent({
+    organization_id,
+    conversation_id: conversation.id,
+    lead_phone: phone,
+    event_type: pipelineEvent
+  });
+}
 
     /*
     ----------------------------------------------------
