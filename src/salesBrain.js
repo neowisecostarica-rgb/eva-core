@@ -45,6 +45,15 @@ import { detectInterestLevel } from "./brain/engines/interestEngine.js";
 import { detectObjection } from "./brain/engines/objectionEngine.js";
 import { detectClosingIntent } from "./brain/engines/closingEngine.js";
 import { mergeCustomerMemory } from "./brain/engines/memoryEngine.js";
+
+/*
+====================================================
+SCORE ENGINE
+Calcula score comercial y stage del lead
+====================================================
+*/
+
+import { calculateCommercialState } from "./brain/engines/scoreEngine.js";
 /*
 ====================================================
 BRAIN UTILITIES
@@ -340,6 +349,47 @@ const interestLevel = detectInterestLevel({
 
      const objection = detectObjection(text);
      const closingIntent = detectClosingIntent(text);
+
+   /*
+----------------------------------------------------
+STEP 4.5 — COMMERCIAL SCORING
+----------------------------------------------------
+
+Aquí calculamos el estado comercial del lead.
+
+El Score Engine usa las señales detectadas para calcular:
+
+• score (0 - 100)
+• stage comercial del pipeline
+
+Esto permite que EVA se comporte como un
+vendedor real y no solo como un chatbot.
+
+Ejemplo:
+
+score >= 85 → hot lead
+score >= 70 → considerando compra
+score >= 50 → interesado
+score < 30 → lead nuevo
+
+Este cálculo NO toca la base de datos.
+Solo genera el estado comercial.
+*/
+
+const commercialState = calculateCommercialState({
+  intent,
+  product_interest: productInterest,
+  use_case: useCase,
+  budget,
+  interest_level: interestLevel,
+  objection,
+  closing_intent: closingIntent,
+  pipeline_event: pipelineEvent,
+  text
+});
+
+const leadScore = commercialState.score;
+const leadStage = commercialState.stage;
 
     /*
     ----------------------------------------------------
