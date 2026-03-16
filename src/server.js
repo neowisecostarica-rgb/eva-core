@@ -5,6 +5,7 @@ import messagesRoute from "./routes/messages.js";
 import metricsRoute from "./routes/metrics.js";
 import devChatRoute from "./routes/devChat.js";
 import devChatUIRoute from "./routes/devChatUI.js";
+import whatsappWebhook from "./routes/whatsappWebhook.js";
 
 import { startFollowupWorker } from "./followupWorker.js";
 
@@ -87,7 +88,7 @@ app.use("/v1/messages", messagesRoute);
 app.use("/v1/metrics", metricsRoute);
 app.use("/dev", devChatRoute);
 app.use("/dev", devChatUIRoute);
-
+app.use("/webhook/whatsapp", whatsappWebhook);
 /* ===============================
    TEMP MESSAGE SENDER
 ================================ */
