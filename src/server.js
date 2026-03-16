@@ -3,9 +3,9 @@ import dotenv from "dotenv";
 
 import messagesRoute from "./routes/messages.js";
 import metricsRoute from "./routes/metrics.js";
-import { startFollowupWorker } from "./followupWorker.js";
 import devChatRoute from "./routes/devChat.js";
 import devChatUIRoute from "./routes/devChatUI.js";
+
 import { startFollowupWorker } from "./followupWorker.js";
 
 dotenv.config();
@@ -16,16 +16,15 @@ const app = express();
    BASIC SECURITY
 ================================ */
 
-// limitar tamaño de JSON
 app.use(express.json({ limit: "1mb" }));
 
-// rate limit simple en memoria
-const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minuto
+const RATE_LIMIT_WINDOW = 60 * 1000;
 const RATE_LIMIT_MAX = 120;
 
 const rateMap = new Map();
 
 app.use((req, res, next) => {
+
   const ip =
     req.headers["x-forwarded-for"] ||
     req.socket.remoteAddress ||
@@ -54,6 +53,7 @@ app.use((req, res, next) => {
   }
 
   next();
+
 });
 
 /* ===============================
@@ -89,10 +89,24 @@ app.use("/dev", devChatRoute);
 app.use("/dev", devChatUIRoute);
 
 /* ===============================
-   FOLLOWUP WORKER
+   TEMP MESSAGE SENDER
 ================================ */
 
-startFollowupWorker(sendWhatsAppMessage);
+/*
+Esta función luego se conectará
+a WhatsApp Cloud API.
+
+Por ahora solo imprime en consola
+para pruebas del followup worker.
+*/
+
+function sendWhatsAppMessage({ phone, message }) {
+
+  console.log("FOLLOWUP MESSAGE");
+  console.log("PHONE:", phone);
+  console.log("MESSAGE:", message);
+
+}
 
 /* ===============================
    SERVER START
@@ -101,5 +115,15 @@ startFollowupWorker(sendWhatsAppMessage);
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
+
   console.log(`EVA Core running on port ${PORT}`);
+
+  /*
+  ==============================
+  START FOLLOWUP WORKER
+  ==============================
+  */
+
+  startFollowupWorker(sendWhatsAppMessage);
+
 });
