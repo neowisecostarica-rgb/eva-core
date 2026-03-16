@@ -4,18 +4,21 @@ EVA FOLLOWUP WORKER
 Automated Sales Follow-Up Engine
 ====================================================
 
-Este worker revisa followups pendientes
-y envía mensajes automáticamente.
+Responsabilidades:
 
-Recupera ventas cuando el cliente
-dejó de responder.
+• Revisar followups pendientes
+• Enviar mensajes automáticos
+• Registrar mensajes en CRM
+• Evitar followups innecesarios
+• Mantener estrategia comercial
 
-Estrategia típica:
+Estrategia:
 
 24h → recordatorio suave
 3 días → urgencia ligera
 7 días → último intento
 
+Este worker corre continuamente.
 ====================================================
 */
 
@@ -46,6 +49,54 @@ Si todavía estás buscando laptop o accesorios con gusto puedo ayudarte a encon
 Solo quería saber si todavía necesitas ayuda con lo que estabas consultando.
 
 Estoy aquí para ayudarte.`;
+}
+
+/*
+====================================================
+CHECK IF CLIENT RESPONDED
+====================================================
+*/
+
+async function clientRespondedAfter(conversation_id, scheduled_for) {
+
+  const result = await pool.query(`
+    SELECT id
+    FROM messages
+    WHERE conversation_id = $1
+      AND role = 'user'
+      AND created_at > $2
+    LIMIT 1
+  `, [conversation_id, scheduled_for]);
+
+  return result.rows.length > 0;
+}
+
+/*
+====================================================
+SAVE MESSAGE TO CRM
+====================================================
+*/
+
+async function saveAssistantMessage({
+  organization_id,
+  conversation_id,
+  message
+}) {
+
+  await pool.query(`
+    INSERT INTO messages (
+      organization_id,
+      conversation_id,
+      role,
+      content,
+      created_at
+    )
+    VALUES ($1, $2, 'assistant', $3, NOW())
+  `, [
+    organization_id,
+    conversation_id,
+    message
+  ]);
 
 }
 
@@ -63,7 +114,7 @@ export async function processFollowups(sendMessage) {
       SELECT *
       FROM followups
       WHERE scheduled_for <= NOW()
-      AND sent = false
+      AND status = 'pending'
       ORDER BY scheduled_for ASC
       LIMIT 20
     `);
@@ -75,6 +126,29 @@ export async function processFollowups(sendMessage) {
     }
 
     for (const followup of followups) {
+
+      /*
+      ------------------------------------------------
+      SKIP IF CLIENT ALREADY RESPONDED
+      ------------------------------------------------
+      */
+
+      const clientAnswered = await clientRespondedAfter(
+        followup.conversation_id,
+        followup.scheduled_for
+      );
+
+      if (clientAnswered) {
+
+        await pool.query(`
+          UPDATE followups
+          SET status = 'cancelled'
+          WHERE id = $1
+        `, [followup.id]);
+
+        continue;
+
+      }
 
       const message = buildFollowupMessage(followup.reason);
 
@@ -93,13 +167,25 @@ export async function processFollowups(sendMessage) {
 
         /*
         ------------------------------------------------
-        MARK AS SENT
+        SAVE MESSAGE IN CRM
+        ------------------------------------------------
+        */
+
+        await saveAssistantMessage({
+          organization_id: followup.organization_id,
+          conversation_id: followup.conversation_id,
+          message
+        });
+
+        /*
+        ------------------------------------------------
+        MARK FOLLOWUP AS SENT
         ------------------------------------------------
         */
 
         await pool.query(`
           UPDATE followups
-          SET sent = true,
+          SET status = 'sent',
               sent_at = NOW()
           WHERE id = $1
         `, [followup.id]);
