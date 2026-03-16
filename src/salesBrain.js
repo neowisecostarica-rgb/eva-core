@@ -498,38 +498,27 @@ await pool.query(
       product_interest: productInterest
     });
 
-    /*
-    ----------------------------------------------------
-    STEP 8 — GENERATE REPLY
-    ----------------------------------------------------
-    */
-
-  /*
+   /*
+----------------------------------------------------
+STEP 8 — GENERATE REPLY
 ----------------------------------------------------
 
-PASS SIGNALS TO REPLY ENGINE
-----------------------------------------------------
+Enviamos señales comerciales al Reply Engine.
 
-Aquí enviamos todas las señales comerciales al Reply Engine.
+Ahora EVA también conoce:
 
-Esto permite que EVA adapte la respuesta según:
+• score del lead
+• stage comercial del pipeline
 
-• intent → intención principal
-• interestLevel → nivel de interés del cliente
-• objection → objeciones detectadas
-• closingIntent → intención de cierre o pago
+Esto permite que el Reply Engine adapte la estrategia
+de venta según el momento del cliente.
 
-IMPORTANTE:
-closingIntent se introdujo en BLOQUE 8 (Closing Engine)
-para permitir que EVA intente cerrar la venta cuando
-detecta señales como:
+Ejemplo:
 
-"como pago"
-"sinpe"
-"quiero esa"
-"apartar"
-
-No eliminar este campo.
+stage = new → educar
+stage = interested → mostrar producto
+stage = considering → persuadir
+stage = hot → cerrar venta
 */
 
 const reply = generateReply({
@@ -537,9 +526,10 @@ const reply = generateReply({
   catalogMatches,
   interestLevel,
   objection,
-  closingIntent
+  closingIntent,
+  score: leadScore,
+  stage: leadStage
 });
-
     /*
     ----------------------------------------------------
     STEP 9 — SAVE BOT MESSAGE
@@ -554,26 +544,21 @@ const reply = generateReply({
     });
 
     /*
-    ----------------------------------------------------
-    RESPONSE
-    ----------------------------------------------------
-    */
+----------------------------------------------------
+RESPONSE
+----------------------------------------------------
 
-    return {
-      reply,
-      intent,
-      product_interest: productInterest
-    };
+Devolvemos información útil para debug,
+analytics o dashboards futuros.
 
-  } catch (err) {
+Esto NO se envía al cliente final,
+solo al sistema interno.
+*/
 
-    console.error("salesBrain error", err);
-
-    return {
-      error: "brain_error",
-      details: err.message || "unknown brain error"
-    };
-
-  }
-
-}
+return {
+  reply,
+  intent,
+  product_interest: productInterest,
+  score: leadScore,
+  stage: leadStage
+};
