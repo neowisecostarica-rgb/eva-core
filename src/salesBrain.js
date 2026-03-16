@@ -541,6 +541,54 @@ const reply = generateReply({
   score: leadScore,
   stage: leadStage
 });
+
+   
+
+  /*
+----------------------------------------------------
+STEP 9 — FOLLOWUP SCHEDULING
+----------------------------------------------------
+
+Si el cliente mostró interés pero no cerró,
+programamos un seguimiento automático.
+
+Esto permite recuperar ventas perdidas.
+*/
+
+try {
+
+  const shouldScheduleFollowup =
+    intent === "BUY" ||
+    interestLevel === "HIGH" ||
+    leadStage === "considering";
+
+  if (shouldScheduleFollowup) {
+
+    await pool.query(
+      `
+      INSERT INTO followups (
+        organization_id,
+        conversation_id,
+        lead_phone,
+        scheduled_for,
+        reason
+      )
+      VALUES ($1,$2,$3,NOW() + INTERVAL '24 hours','sales_followup')
+      `,
+      [
+        organizationId,
+        conversationId,
+        phone
+      ]
+    );
+
+  }
+
+} catch (err) {
+
+  console.error("FOLLOWUP SCHEDULING ERROR", err);
+
+}
     /*
     ----------------------------------------------------
     STEP 9 — SAVE BOT MESSAGE
