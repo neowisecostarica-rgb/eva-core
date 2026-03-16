@@ -1,10 +1,11 @@
 /*
 ====================================================
 EVA SALES BRAIN
-Commercial Decision Engine
+Commercial Decision Engine (ORCHESTRATOR)
 ====================================================
 
 Responsabilidades principales:
+
 • Procesar mensajes entrantes
 • Detectar intención comercial
 • Actualizar CRM
@@ -13,406 +14,42 @@ Responsabilidades principales:
 • Registrar eventos de pipeline
 • Crear followups automáticos
 
-Arquitectura futura:
-Este archivo actuará como ORCHESTRATOR.
-La lógica se moverá gradualmente a módulos.
+Arquitectura:
 
 brain/
  ├ utils/
  ├ engines/
  ├ commerce/
  └ replies/
+
+Este archivo SOLO coordina motores.
+NO contiene lógica pesada.
 ====================================================
 */
 
 import pool from "./db.js";
 
-
 /*
 ====================================================
-UTILITIES — NORMALIZATION
+BRAIN ENGINES
 ====================================================
 */
 
-function normalizeText(value = "") {
-  return String(value)
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .trim();
-}
-
-function normalizePhone(phone = "") {
-  return String(phone).replace(/\D/g, "");
-}
-
-function safeJson(value, fallback = {}) {
-  if (!value) return fallback;
-  if (typeof value === "object") return value;
-
-  try {
-    return JSON.parse(value);
-  } catch {
-    return fallback;
-  }
-}
-
-function nowIso() {
-  return new Date().toISOString();
-}
-
-function uniqueStrings(values = []) {
-  return [...new Set(values.filter(Boolean).map((v) => String(v).trim()))];
-}
-
-function addOpportunity(opportunities, value) {
-  if (!value) return opportunities;
-  if (!opportunities.includes(value)) opportunities.push(value);
-  return opportunities;
-}
-
-function formatMoney(value) {
-  return `₡${Number(value || 0).toLocaleString("es-CR")}`;
-}
-
+import { detectIntent } from "./brain/engines/intentEngine.js";
+import { detectPipelineEvent } from "./brain/engines/pipelineEngine.js";
+import { detectUseCase } from "./brain/engines/useCaseEngine.js";
+import { detectProductInterest } from "./brain/engines/productEngine.js";
+import { detectBudget } from "./brain/engines/budgetEngine.js";
 
 /*
 ====================================================
-CONTEXT ENGINE
-Construye texto contextual combinando memoria + mensaje
+BRAIN UTILITIES
 ====================================================
 */
 
-function buildContextText({ text, memory = {} }) {
-
-  const parts = [
-    text,
-    memory?.product_interest,
-    memory?.use_case,
-    memory?.brand_hint,
-    memory?.last_pipeline_event,
-    Array.isArray(memory?.sales_opportunities)
-      ? memory.sales_opportunities.join(" ")
-      : null
-  ];
-
-  return normalizeText(parts.filter(Boolean).join(" "));
-}
-
-
-/*
-====================================================
-CONTEXT INFERENCE
-Inferencia de producto usando memoria + señales
-====================================================
-*/
-
-function inferProductFromContext({ text, useCase, memory = {} }) {
-
-  const t = normalizeText(text);
-  const rememberedProduct = memory?.product_interest || null;
-
-  if (
-    t.includes("universidad") ||
-    t.includes("colegio") ||
-    t.includes("escuela") ||
-    t.includes("clases") ||
-    t.includes("tareas") ||
-    t.includes("office") ||
-    t.includes("excel") ||
-    t.includes("teletrabajo") ||
-    t.includes("portatil") ||
-    t.includes("portátil")
-  ) {
-    return "laptop";
-  }
-
-  if (
-    useCase === "estudio" ||
-    useCase === "trabajo" ||
-    useCase === "diseno" ||
-    useCase === "gaming"
-  ) {
-    return "laptop";
-  }
-
-  if (
-    t.includes("mantenimiento de impresora") ||
-    t.includes("no imprime") ||
-    t.includes("atasco") ||
-    t.includes("tinta") ||
-    t.includes("cartucho")
-  ) {
-    return "impresora";
-  }
-
-  if (
-    t.includes("doble pantalla") ||
-    t.includes("full hd 15.6") ||
-    t.includes("monitor portatil") ||
-    t.includes("monitor portátil")
-  ) {
-    return "monitor";
-  }
-
-  return rememberedProduct;
-}
-
-
-/*
-====================================================
-SIGNAL DETECTION
-Motores heurísticos para interpretar el mensaje
-====================================================
-*/
-
-
-/*
-----------------------------------------------------
-INTENT DETECTION
-----------------------------------------------------
-*/
-
-function detectIntent(text) {
-
-  const t = normalizeText(text);
-
-  if (
-    t.includes("quiero comprar") ||
-    t.includes("la quiero") ||
-    t.includes("me interesa para comprar") ||
-    t.includes("como pago") ||
-    t.includes("sinpe") ||
-    t.includes("tarjeta") ||
-    t.includes("transferencia") ||
-    t.includes("apartar") ||
-    t.includes("apartarla") ||
-    t.includes("se puede apartar") ||
-    t.includes("me la deja") ||
-    t.includes("quiero esa") ||
-    t.includes("me la reservo") ||
-    t.includes("reservarla")
-  ) {
-    return "CLOSE_INTENT";
-  }
-
-  if (
-    t.includes("precio") ||
-    t.includes("cuanto cuesta") ||
-    t.includes("cuanto vale") ||
-    t.includes("disponible") ||
-    t.includes("me interesa") ||
-    t.includes("tienen") ||
-    t.includes("busco") ||
-    t.includes("ocupo") ||
-    t.includes("andan buscando") ||
-    t.includes("tiene disponibles") ||
-    t.includes("quiero una laptop") ||
-    t.includes("quiero laptop") ||
-    t.includes("necesito laptop") ||
-    t.includes("necesito una laptop") ||
-    t.includes("quiero una computadora") ||
-    t.includes("necesito computadora") ||
-    t.includes("quiero comprar laptop") ||
-    t.includes("algo para estudio") ||
-    t.includes("algo para trabajo") ||
-    t.includes("algo barato") ||
-    t.includes("ocupo una compu") ||
-    t.includes("ocupo una computadora")
-  ) {
-    return "BUY";
-  }
-
-  if (
-    t.includes("garantia") ||
-    t.includes("procesador") ||
-    t.includes("ram") ||
-    t.includes("ssd") ||
-    t.includes("especificaciones") ||
-    t.includes("caracteristicas") ||
-    t.includes("informacion") ||
-    t.includes("info") ||
-    t.includes("cuenteme") ||
-    t.includes("detalle")
-  ) {
-    return "INFO";
-  }
-
-  if (
-    t.includes("mantenimiento") ||
-    t.includes("reparacion") ||
-    t.includes("revision") ||
-    t.includes("revisión") ||
-    t.includes("no imprime") ||
-    t.includes("no enciende") ||
-    t.includes("esta lenta") ||
-    t.includes("está lenta") ||
-    t.includes("esta muy lenta") ||
-    t.includes("está muy lenta") ||
-    t.includes("falla")
-  ) {
-    return "SUPPORT";
-  }
-
-  if (
-    t === "hola" ||
-    t === "buenas" ||
-    t.includes("buenos dias") ||
-    t.includes("buen día") ||
-    t.includes("buen dia") ||
-    t.includes("buenas tardes") ||
-    t.includes("buenas noches")
-  ) {
-    return "GREETING";
-  }
-
-  return "UNKNOWN";
-}
-
-
-/*
-----------------------------------------------------
-PIPELINE EVENT DETECTION
-----------------------------------------------------
-*/
-
-function detectPipelineEvent(text) {
-
-  const t = normalizeText(text);
-
-  if (
-    t.includes("como pago") ||
-    t.includes("sinpe") ||
-    t.includes("tarjeta") ||
-    t.includes("transferencia")
-  ) {
-    return "PAYMENT_INTENT";
-  }
-
-  if (
-    t.includes("quiero comprar") ||
-    t.includes("la quiero") ||
-    t.includes("apartar") ||
-    t.includes("apartarla") ||
-    t.includes("me la deja") ||
-    t.includes("reservar") ||
-    t.includes("se puede apartar") ||
-    t.includes("quiero esa")
-  ) {
-    return "READY_TO_BUY";
-  }
-
-  if (
-    t.includes("es nueva") ||
-    t.includes("muy cara") ||
-    t.includes("muy caro") ||
-    t.includes("por que tan barata") ||
-    t.includes("porque tan barata")
-  ) {
-    return "OBJECTION_PRICE";
-  }
-
-  if (t.includes("garantia") || t.includes("tiene garantia")) {
-    return "WARRANTY_REQUEST";
-  }
-
-  if (
-    t.includes("fotos") ||
-    t.includes("imagenes") ||
-    t.includes("imágenes") ||
-    t.includes("imagenes reales") ||
-    t.includes("imágenes reales") ||
-    t.includes("mandeme fotos") ||
-    t.includes("mandame fotos") ||
-    t.includes("fotos reales")
-  ) {
-    return "CATALOG_REQUEST";
-  }
-
-  if (
-    t.includes("precio") ||
-    t.includes("cuanto cuesta") ||
-    t.includes("cuanto vale") ||
-    t.includes("cuanto sale")
-  ) {
-    return "PRICE_REQUEST";
-  }
-
-  if (
-    t.includes("mantenimiento") ||
-    t.includes("servicio tecnico") ||
-    t.includes("servicio técnico") ||
-    t.includes("no imprime") ||
-    t.includes("reparacion")
-  ) {
-    return "SERVICE_REQUEST";
-  }
-
-  if (
-    t === "hola" ||
-    t === "buenas" ||
-    t.includes("buenos dias") ||
-    t.includes("buen dia")
-  ) {
-    return "GREETING";
-  }
-
-  return "QUESTION";
-}
-
-
-/*
-====================================================
-USO / PRODUCTO / PRESUPUESTO
-====================================================
-*/
-
-function detectUseCase(text) { /* ...sin cambios... */ }
-
-function detectProductInterest(text) { /* ...sin cambios... */ }
-
-function detectDeviceType(text) { /* ...sin cambios... */ }
-
-function detectBudget(text) { /* ...sin cambios... */ }
-
-
-/*
-====================================================
-VENTAS — SEÑALES COMERCIALES
-====================================================
-*/
-
-function detectObjection(text) { /* ...sin cambios... */ }
-
-function hasCloseSignal(text) { /* ...sin cambios... */ }
-
-function detectUrgency(text) { /* ...sin cambios... */ }
-
-function detectSalesSignals(text) { /* ...sin cambios... */ }
-
-
-/*
-====================================================
-OPPORTUNITY ENGINE
-Detecta oportunidades de venta cruzada o servicio
-====================================================
-*/
-
-function detectSalesOpportunities({...}) { /* ...sin cambios... */ }
-
-
-/*
-====================================================
-LEAD SCORING
-====================================================
-*/
-
-function calculateLeadScore({...}) { /* ...sin cambios... */ }
-
-function detectStage({...}) { /* ...sin cambios... */ }
-
-function deriveLeadStatus(score, stage) { /* ...sin cambios... */ }
-
+import { normalizeText, normalizePhone } from "./brain/utils/textUtils.js";
+import { safeJson } from "./brain/utils/jsonUtils.js";
+import { nowIso } from "./brain/utils/timeUtils.js";
 
 /*
 ====================================================
@@ -420,80 +57,239 @@ DATABASE HELPERS
 ====================================================
 */
 
-async function findExistingInboundByExternalId({...}) { /* ... */ }
+async function ensureConversation({ organization_id, phone }) {
 
-async function detectDuplicateByContent({...}) { /* ... */ }
+  const result = await pool.query(
+    `
+    SELECT *
+    FROM conversations
+    WHERE organization_id=$1
+    AND external_user_id=$2
+    LIMIT 1
+    `,
+    [organization_id, phone]
+  );
 
-async function ensureConversation({...}) { /* ... */ }
+  if (result.rows.length > 0) {
+    return result.rows[0];
+  }
 
-async function saveMessage({...}) { /* ... */ }
+  const created = await pool.query(
+    `
+    INSERT INTO conversations
+    (
+      organization_id,
+      external_user_id,
+      channel,
+      created_at,
+      updated_at
+    )
+    VALUES ($1,$2,'whatsapp',$3,$3)
+    RETURNING *
+    `,
+    [organization_id, phone, nowIso()]
+  );
 
-async function upsertLead({...}) { /* ... */ }
-
-async function getCustomerProfile({...}) { /* ... */ }
-
-async function upsertCustomerProfile({...}) { /* ... */ }
-
-async function savePipelineEvent({...}) { /* ... */ }
-
-async function updateConversationState({...}) { /* ... */ }
-
-
-/*
-====================================================
-COMMERCE ENGINE
-Búsqueda inteligente de catálogo
-====================================================
-*/
-
-async function searchCatalogSmart({...}) { /* ...sin cambios... */ }
-
-
-/*
-====================================================
-REPLY BUILDERS
-Construcción de respuestas comerciales
-====================================================
-*/
-
-function buildSummary({...}) { /* ... */ }
-
-function formatCatalogList(items = []) { /* ... */ }
-
-function buildObjectionReply({...}) { /* ... */ }
-
-function buildCloseReply({...}) { /* ... */ }
-
-function buildCatalogReply({...}) { /* ... */ }
-
-function buildPrinterMaintenanceReply({...}) { /* ... */ }
-
-function buildPrinterServiceReply({...}) { /* ... */ }
-
-function buildLaptopGuidedReply({...}) { /* ... */ }
-
-function buildAccessoryReply({...}) { /* ... */ }
-
-function buildSmartFallback({...}) { /* ... */ }
-
+  return created.rows[0];
+}
 
 /*
 ====================================================
-REPLY ORCHESTRATOR
+SAVE MESSAGE
 ====================================================
 */
 
-function generateReply({...}) { /* ...sin cambios... */ }
+async function saveMessage({
+  organization_id,
+  conversation_id,
+  role,
+  content,
+  external_message_id
+}) {
 
+  await pool.query(
+    `
+    INSERT INTO messages
+    (
+      organization_id,
+      conversation_id,
+      role,
+      content,
+      external_message_id,
+      created_at
+    )
+    VALUES ($1,$2,$3,$4,$5,$6)
+    `,
+    [
+      organization_id,
+      conversation_id,
+      role,
+      content,
+      external_message_id,
+      nowIso()
+    ]
+  );
+
+}
 
 /*
 ====================================================
-FOLLOWUP ENGINE
+LEAD UPSERT
 ====================================================
 */
 
-async function createFollowupIfNeeded({...}) { /* ... */ }
+async function upsertLead({
+  organization_id,
+  phone,
+  intent,
+  product_interest,
+  use_case,
+  budget
+}) {
 
+  await pool.query(
+    `
+    INSERT INTO leads
+    (
+      organization_id,
+      phone,
+      intent,
+      product_interest,
+      use_case,
+      budget,
+      created_at,
+      updated_at
+    )
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$7)
+    ON CONFLICT (organization_id, phone)
+    DO UPDATE SET
+      intent=EXCLUDED.intent,
+      product_interest=COALESCE(EXCLUDED.product_interest,leads.product_interest),
+      use_case=COALESCE(EXCLUDED.use_case,leads.use_case),
+      budget=COALESCE(EXCLUDED.budget,leads.budget),
+      updated_at=$7
+    `,
+    [
+      organization_id,
+      phone,
+      intent,
+      product_interest,
+      use_case,
+      budget,
+      nowIso()
+    ]
+  );
+
+}
+
+/*
+====================================================
+PIPELINE EVENT LOGGER
+====================================================
+*/
+
+async function savePipelineEvent({
+  organization_id,
+  conversation_id,
+  event_type
+}) {
+
+  await pool.query(
+    `
+    INSERT INTO pipeline_events
+    (
+      organization_id,
+      conversation_id,
+      event_type,
+      created_at
+    )
+    VALUES ($1,$2,$3,$4)
+    `,
+    [
+      organization_id,
+      conversation_id,
+      event_type,
+      nowIso()
+    ]
+  );
+
+}
+
+/*
+====================================================
+CATALOG SEARCH
+====================================================
+*/
+
+async function searchCatalog({
+  organization_id,
+  product_interest
+}) {
+
+  if (!product_interest) return [];
+
+  const result = await pool.query(
+    `
+    SELECT *
+    FROM product_catalog
+    WHERE organization_id=$1
+    AND is_active=true
+    AND category ILIKE $2
+    LIMIT 3
+    `,
+    [organization_id, `%${product_interest}%`]
+  );
+
+  return result.rows;
+
+}
+
+/*
+====================================================
+REPLY BUILDER
+====================================================
+*/
+
+function buildReply({
+  intent,
+  catalogMatches
+}) {
+
+  if (intent === "GREETING") {
+
+    return `Hola 🙌
+
+Te atiende EVA, asistente de ventas.
+
+¿En qué puedo ayudarte hoy?`;
+  }
+
+  if (intent === "BUY" && catalogMatches.length > 0) {
+
+    const item = catalogMatches[0];
+
+    return `Te recomiendo esta opción 👇
+
+💻 ${item.name}
+₡${Number(item.price_crc).toLocaleString("es-CR")}
+
+¿Quieres que te envíe fotos reales del equipo?`;
+  }
+
+  if (intent === "SUPPORT") {
+
+    return `Claro 👨‍🔧
+
+Podemos revisar tu equipo en el taller.
+
+¿El problema es con computadora o impresora?`;
+  }
+
+  return `Perfecto 🙌
+
+Cuéntame un poco más de lo que estás buscando para poder ayudarte mejor.`;
+
+}
 
 /*
 ====================================================
@@ -515,17 +311,34 @@ export async function handleInbound({ organization_id, payload }) {
     const phone = normalizePhone(payload?.phone || "");
     const text = String(payload?.message || "").trim();
 
-    /*
-    ----------------------------------------------------
-    STEP 2 — DUPLICATE CHECK
-    ----------------------------------------------------
-    */
+    if (!phone || !text) {
+      return { error: "invalid_payload" };
+    }
 
     /*
     ----------------------------------------------------
-    STEP 3 — CONTEXT BUILD
+    STEP 2 — CONVERSATION
     ----------------------------------------------------
     */
+
+    const conversation = await ensureConversation({
+      organization_id,
+      phone
+    });
+
+    /*
+    ----------------------------------------------------
+    STEP 3 — SAVE INBOUND MESSAGE
+    ----------------------------------------------------
+    */
+
+    await saveMessage({
+      organization_id,
+      conversation_id: conversation.id,
+      role: "user",
+      content: text,
+      external_message_id: payload?.message_id || null
+    });
 
     /*
     ----------------------------------------------------
@@ -533,29 +346,89 @@ export async function handleInbound({ organization_id, payload }) {
     ----------------------------------------------------
     */
 
-    /*
-    ----------------------------------------------------
-    STEP 5 — CRM UPDATE
-    ----------------------------------------------------
-    */
+    const intent = detectIntent(text);
+    const pipelineEvent = detectPipelineEvent(text);
+    const useCase = detectUseCase(text);
+    const productInterest = detectProductInterest(text);
+    const budget = detectBudget(text);
 
     /*
     ----------------------------------------------------
-    STEP 6 — CATALOG SEARCH
+    STEP 5 — LEAD UPDATE
     ----------------------------------------------------
     */
 
-    /*
-    ----------------------------------------------------
-    STEP 7 — REPLY GENERATION
-    ----------------------------------------------------
-    */
+    await upsertLead({
+      organization_id,
+      phone,
+      intent,
+      product_interest: productInterest,
+      use_case: useCase,
+      budget
+    });
 
     /*
     ----------------------------------------------------
-    STEP 8 — FOLLOWUPS
+    STEP 6 — PIPELINE EVENT
     ----------------------------------------------------
     */
+
+    if (pipelineEvent) {
+
+      await savePipelineEvent({
+        organization_id,
+        conversation_id: conversation.id,
+        event_type: pipelineEvent
+      });
+
+    }
+
+    /*
+    ----------------------------------------------------
+    STEP 7 — CATALOG SEARCH
+    ----------------------------------------------------
+    */
+
+    const catalogMatches = await searchCatalog({
+      organization_id,
+      product_interest: productInterest
+    });
+
+    /*
+    ----------------------------------------------------
+    STEP 8 — GENERATE REPLY
+    ----------------------------------------------------
+    */
+
+    const reply = buildReply({
+      intent,
+      catalogMatches
+    });
+
+    /*
+    ----------------------------------------------------
+    STEP 9 — SAVE BOT MESSAGE
+    ----------------------------------------------------
+    */
+
+    await saveMessage({
+      organization_id,
+      conversation_id: conversation.id,
+      role: "assistant",
+      content: reply
+    });
+
+    /*
+    ----------------------------------------------------
+    RESPONSE
+    ----------------------------------------------------
+    */
+
+    return {
+      reply,
+      intent,
+      product_interest: productInterest
+    };
 
   } catch (err) {
 
@@ -567,4 +440,5 @@ export async function handleInbound({ organization_id, payload }) {
     };
 
   }
+
 }
