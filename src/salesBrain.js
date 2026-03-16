@@ -307,10 +307,11 @@ let existingMemory = {};
 if (profileResult.rows.length > 0) {
   existingMemory = safeJson(profileResult.rows[0].profile_json, {});
 }
-    ----------------------------------------------------
-    STEP 3 — SAVE INBOUND MESSAGE
-    ----------------------------------------------------
-    */
+   /*
+----------------------------------------------------
+STEP 3 — SAVE INBOUND MESSAGE
+----------------------------------------------------
+*/
 
     await saveMessage({
       organization_id,
