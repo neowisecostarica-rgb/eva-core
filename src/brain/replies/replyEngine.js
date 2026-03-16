@@ -138,9 +138,9 @@ REPLY ORCHESTRATOR
   export function generateReply({
   intent,
   catalogMatches,
-  interestLevel
+  interestLevel,
+  objection
 })
-}) {
 
   /*
   ----------------------------------------------------
