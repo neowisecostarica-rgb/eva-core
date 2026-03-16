@@ -1,11 +1,33 @@
+/*
+====================================================
+EVA AUTOMATION — FOLLOWUP WORKER
+====================================================
+
+Responsabilidad:
+Automatizar mensajes de seguimiento para leads que
+no respondieron después de una conversación.
+
+Este worker:
+• detecta followups vencidos
+• verifica si el cliente respondió
+• envía recordatorios
+• programa nuevos followups
+
+Arquitectura futura:
+automation/followupEngine.js
+====================================================
+*/
+
 import pool from "./db.js";
 
 const MAX_ATTEMPTS = 3;
 
+
 /*
------------------------------------
-GET FOLLOWUPS DUE
------------------------------------
+====================================================
+FOLLOWUP QUERY
+Obtiene followups pendientes que ya vencieron
+====================================================
 */
 
 async function getDueFollowups() {
@@ -22,10 +44,12 @@ async function getDueFollowups() {
 
 }
 
+
 /*
------------------------------------
-CHECK IF USER REPLIED
------------------------------------
+====================================================
+REPLY DETECTION
+Verifica si el cliente respondió después del followup
+====================================================
 */
 
 async function userRepliedAfterFollowup(followup) {
@@ -46,10 +70,11 @@ async function userRepliedAfterFollowup(followup) {
 
 }
 
+
 /*
------------------------------------
-GENERATE FOLLOWUP MESSAGE
------------------------------------
+====================================================
+FOLLOWUP MESSAGE GENERATOR
+====================================================
 */
 
 function generateFollowupMessage(followup) {
@@ -74,10 +99,12 @@ function generateFollowupMessage(followup) {
 
 }
 
+
 /*
------------------------------------
-SCHEDULE NEXT FOLLOWUP
------------------------------------
+====================================================
+FOLLOWUP SCHEDULER
+Programa el siguiente intento de followup
+====================================================
 */
 
 async function scheduleNextFollowup(followup) {
@@ -118,10 +145,12 @@ async function scheduleNextFollowup(followup) {
 
 }
 
+
 /*
------------------------------------
-MARK FOLLOWUP SENT
------------------------------------
+====================================================
+FOLLOWUP STATE UPDATE
+Marca followup como enviado
+====================================================
 */
 
 async function markFollowupSent(id) {
@@ -138,10 +167,12 @@ async function markFollowupSent(id) {
 
 }
 
+
 /*
------------------------------------
-PROCESS FOLLOWUPS
------------------------------------
+====================================================
+FOLLOWUP PROCESSOR
+Motor principal del worker
+====================================================
 */
 
 async function processFollowups() {
@@ -153,6 +184,12 @@ async function processFollowups() {
   for (const f of followups) {
 
     try {
+
+      /*
+      ------------------------------------------------
+      STEP 1 — CHECK USER RESPONSE
+      ------------------------------------------------
+      */
 
       const replied = await userRepliedAfterFollowup(f);
 
@@ -176,7 +213,21 @@ async function processFollowups() {
 
       }
 
+
+      /*
+      ------------------------------------------------
+      STEP 2 — GENERATE MESSAGE
+      ------------------------------------------------
+      */
+
       const message = generateFollowupMessage(f);
+
+
+      /*
+      ------------------------------------------------
+      STEP 3 — SEND MESSAGE
+      ------------------------------------------------
+      */
 
       console.log("FOLLOWUP TRIGGERED", {
         phone: f.lead_phone,
@@ -187,10 +238,28 @@ async function processFollowups() {
 
       /*
       AQUÍ irá WhatsApp Cloud API
-      await sendWhatsAppMessage(f.lead_phone, message);
+
+      await sendWhatsAppMessage(
+        f.lead_phone,
+        message
+      );
+      */
+
+
+      /*
+      ------------------------------------------------
+      STEP 4 — UPDATE STATE
+      ------------------------------------------------
       */
 
       await markFollowupSent(f.id);
+
+
+      /*
+      ------------------------------------------------
+      STEP 5 — SCHEDULE NEXT FOLLOWUP
+      ------------------------------------------------
+      */
 
       await scheduleNextFollowup(f);
 
@@ -204,10 +273,11 @@ async function processFollowups() {
 
 }
 
+
 /*
------------------------------------
+====================================================
 WORKER LOOP
------------------------------------
+====================================================
 */
 
 export function startFollowupWorker() {
