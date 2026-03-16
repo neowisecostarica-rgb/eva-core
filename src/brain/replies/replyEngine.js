@@ -23,6 +23,7 @@ como una vendedora experta.
 HELPERS
 ====================================================
 */
+import { extractProductImages } from "../engines/mediaEngine.js";
 
 /*
 Formatea el precio de forma segura.
@@ -61,11 +62,19 @@ Devuelve un objeto consistente:
   media: []
 }
 */
-function buildProductResponse(text) {
+function buildProductResponse(text, product = null) {
+
+  let media = [];
+
+  if (product) {
+    media = extractProductImages(product);
+  }
+
   return {
     text,
-    media: []
+    media
   };
+
 }
 
 /*
