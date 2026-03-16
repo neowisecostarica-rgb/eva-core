@@ -72,13 +72,12 @@ DATABASE HELPERS
 */
 
 async function ensureConversation({ organization_id, phone }) {
-
   const result = await pool.query(
     `
     SELECT *
     FROM conversations
-    WHERE organization_id=$1
-    AND external_user_id=$2
+    WHERE organization_id = $1
+      AND external_user_id = $2
     LIMIT 1
     `,
     [organization_id, phone]
@@ -98,14 +97,13 @@ async function ensureConversation({ organization_id, phone }) {
       created_at,
       updated_at
     )
-    VALUES ($1,$2,'whatsapp',$3,$3)
+    VALUES ($1, $2, 'whatsapp', $3, $3)
     RETURNING *
     `,
     [organization_id, phone, nowIso()]
   );
 
   return created.rows[0];
-
 }
 
 /*
@@ -121,7 +119,6 @@ async function saveMessage({
   content,
   external_message_id
 }) {
-
   await pool.query(
     `
     INSERT INTO messages
@@ -133,7 +130,7 @@ async function saveMessage({
       external_message_id,
       created_at
     )
-    VALUES ($1,$2,$3,$4,$5,$6)
+    VALUES ($1, $2, $3, $4, $5, $6)
     `,
     [
       organization_id,
@@ -144,13 +141,15 @@ async function saveMessage({
       nowIso()
     ]
   );
-
 }
 
 /*
 ====================================================
 LEAD UPSERT
 ====================================================
+
+Crea o actualiza un lead en el CRM.
+También guarda score y stage.
 */
 
 async function upsertLead({
@@ -163,7 +162,6 @@ async function upsertLead({
   score,
   stage
 }) {
-
   await pool.query(
     `
     INSERT INTO leads
@@ -179,17 +177,16 @@ async function upsertLead({
       created_at,
       updated_at
     )
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9)
-
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)
     ON CONFLICT (organization_id, phone)
     DO UPDATE SET
-      intent=EXCLUDED.intent,
-      product_interest=COALESCE(EXCLUDED.product_interest,leads.product_interest),
-      use_case=COALESCE(EXCLUDED.use_case,leads.use_case),
-      budget=COALESCE(EXCLUDED.budget,leads.budget),
-      score=EXCLUDED.score,
-      stage=EXCLUDED.stage,
-      updated_at=$9
+      intent = EXCLUDED.intent,
+      product_interest = COALESCE(EXCLUDED.product_interest, leads.product_interest),
+      use_case = COALESCE(EXCLUDED.use_case, leads.use_case),
+      budget = COALESCE(EXCLUDED.budget, leads.budget),
+      score = EXCLUDED.score,
+      stage = EXCLUDED.stage,
+      updated_at = $9
     `,
     [
       organization_id,
@@ -203,7 +200,6 @@ async function upsertLead({
       nowIso()
     ]
   );
-
 }
 
 /*
@@ -217,7 +213,6 @@ async function savePipelineEvent({
   conversation_id,
   event_type
 }) {
-
   await pool.query(
     `
     INSERT INTO pipeline_events
@@ -227,7 +222,7 @@ async function savePipelineEvent({
       event_type,
       created_at
     )
-    VALUES ($1,$2,$3,$4)
+    VALUES ($1, $2, $3, $4)
     `,
     [
       organization_id,
@@ -236,50 +231,234 @@ async function savePipelineEvent({
       nowIso()
     ]
   );
-
 }
 
 /*
 ====================================================
-CATALOG SEARCH
+READ CUSTOMER MEMORY
 ====================================================
 */
 
-async function searchCatalog({
+async function readCustomerMemory({ organization_id, phone }) {
+  const profileResult = await pool.query(
+    `
+    SELECT profile_json
+    FROM customer_profiles
+    WHERE organization_id = $1
+      AND external_user_id = $2
+    LIMIT 1
+    `,
+    [organization_id, phone]
+  );
+
+  if (profileResult.rows.length === 0) {
+    return {};
+  }
+
+  return safeJson(profileResult.rows[0].profile_json, {});
+}
+
+/*
+====================================================
+UPDATE CUSTOMER MEMORY
+====================================================
+*/
+
+async function updateCustomerMemory({
   organization_id,
-  product_interest
+  phone,
+  profile
 }) {
+  await pool.query(
+    `
+    INSERT INTO customer_profiles
+    (
+      organization_id,
+      external_user_id,
+      profile_json,
+      updated_at
+    )
+    VALUES ($1, $2, $3, $4)
+    ON CONFLICT (organization_id, external_user_id)
+    DO UPDATE SET
+      profile_json = $3,
+      updated_at = $4
+    `,
+    [
+      organization_id,
+      phone,
+      JSON.stringify(profile),
+      nowIso()
+    ]
+  );
+}
 
-  if (!product_interest) return [];
+/*
+====================================================
+PRODUCT INTELLIGENCE SEARCH
+====================================================
 
-  const result = await pool.query(
+Busca productos de forma más humana.
+
+Se apoya en:
+• product_interest
+• use_case
+• budget
+• text del cliente
+
+Busca por:
+• category
+• name
+• description
+
+Si existe budget, intenta priorizar opciones dentro
+o cerca del rango detectado.
+*/
+
+async function searchCatalogSmart({
+  organization_id,
+  product_interest,
+  use_case,
+  budget,
+  text
+}) {
+  const searchTerms = [
+    product_interest,
+    use_case,
+    text
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+
+  if (!searchTerms) {
+    return [];
+  }
+
+  /*
+  ----------------------------------------------------
+  QUERY BASE
+  ----------------------------------------------------
+  */
+
+  if (budget) {
+    const result = await pool.query(
+      `
+      SELECT *
+      FROM product_catalog
+      WHERE organization_id = $1
+        AND is_active = true
+        AND (
+          category ILIKE $2
+          OR name ILIKE $2
+          OR description ILIKE $2
+        )
+        AND (
+          price_crc IS NULL
+          OR price_crc <= $3
+          OR price_crc <= ($3 + 30000)
+        )
+      ORDER BY
+        CASE
+          WHEN price_crc IS NOT NULL AND price_crc <= $3 THEN 0
+          WHEN price_crc IS NOT NULL AND price_crc <= ($3 + 30000) THEN 1
+          ELSE 2
+        END,
+        price_crc ASC NULLS LAST,
+        updated_at DESC NULLS LAST
+      LIMIT 5
+      `,
+      [organization_id, `%${searchTerms}%`, budget]
+    );
+
+    if (result.rows.length > 0) {
+      return result.rows;
+    }
+  }
+
+  /*
+  ----------------------------------------------------
+  FALLBACK SEARCH
+  ----------------------------------------------------
+  */
+
+  const fallback = await pool.query(
     `
     SELECT *
     FROM product_catalog
-    WHERE organization_id=$1
-    AND is_active=true
-    AND category ILIKE $2
-    LIMIT 3
+    WHERE organization_id = $1
+      AND is_active = true
+      AND (
+        category ILIKE $2
+        OR name ILIKE $2
+        OR description ILIKE $2
+      )
+    ORDER BY updated_at DESC NULLS LAST
+    LIMIT 5
     `,
-    [organization_id, `%${product_interest}%`]
+    [organization_id, `%${searchTerms}%`]
   );
 
-  return result.rows;
+  return fallback.rows;
+}
 
+/*
+====================================================
+FOLLOWUP SCHEDULING
+====================================================
+*/
+
+async function scheduleFollowupIfNeeded({
+  organization_id,
+  conversation_id,
+  phone,
+  intent,
+  interestLevel,
+  leadStage
+}) {
+  const shouldScheduleFollowup =
+    intent === "BUY" ||
+    interestLevel === "HIGH" ||
+    leadStage === "considering";
+
+  if (!shouldScheduleFollowup) {
+    return;
+  }
+
+  try {
+    await pool.query(
+      `
+      INSERT INTO followups
+      (
+        organization_id,
+        conversation_id,
+        lead_phone,
+        scheduled_for,
+        reason
+      )
+      VALUES ($1, $2, $3, NOW() + INTERVAL '24 hours', 'sales_followup')
+      ON CONFLICT DO NOTHING
+      `,
+      [organization_id, conversation_id, phone]
+    );
+  } catch (err) {
+    console.error("FOLLOWUP SCHEDULING ERROR", err);
+  }
 }
 
 /*
 ====================================================
 MAIN ORCHESTRATOR
+HANDLE INBOUND MESSAGE
 ====================================================
 */
 
 export async function handleInbound({ organization_id, payload }) {
-
   try {
-
     /*
+    ----------------------------------------------------
     STEP 1 — VALIDATION
+    ----------------------------------------------------
     */
 
     const phone = normalizePhone(payload?.phone || "");
@@ -290,7 +469,9 @@ export async function handleInbound({ organization_id, payload }) {
     }
 
     /*
-    STEP 2 — CONVERSATION
+    ----------------------------------------------------
+    STEP 2 — ENSURE CONVERSATION
+    ----------------------------------------------------
     */
 
     const conversation = await ensureConversation({
@@ -299,7 +480,20 @@ export async function handleInbound({ organization_id, payload }) {
     });
 
     /*
-    STEP 3 — SAVE USER MESSAGE
+    ----------------------------------------------------
+    STEP 3 — READ CUSTOMER MEMORY
+    ----------------------------------------------------
+    */
+
+    const existingMemory = await readCustomerMemory({
+      organization_id,
+      phone
+    });
+
+    /*
+    ----------------------------------------------------
+    STEP 4 — SAVE INBOUND MESSAGE
+    ----------------------------------------------------
     */
 
     await saveMessage({
@@ -311,14 +505,19 @@ export async function handleInbound({ organization_id, payload }) {
     });
 
     /*
-    STEP 4 — SIGNAL DETECTION
+    ----------------------------------------------------
+    STEP 5 — SIGNAL DETECTION
+    ----------------------------------------------------
     */
 
     const intent = detectIntent(text);
     const pipelineEvent = detectPipelineEvent(text);
-    const useCase = detectUseCase(text);
-    const productInterest = detectProductInterest(text);
-    const budget = detectBudget(text);
+    const useCase = detectUseCase(text) || existingMemory.use_case || null;
+    const productInterest =
+      detectProductInterest(text) ||
+      existingMemory.product_interest ||
+      null;
+    const budget = detectBudget(text) || existingMemory.budget || null;
 
     const interestLevel = detectInterestLevel({
       intent,
@@ -331,7 +530,9 @@ export async function handleInbound({ organization_id, payload }) {
     const opportunities = detectOpportunities(text);
 
     /*
-    STEP 5 — COMMERCIAL SCORING
+    ----------------------------------------------------
+    STEP 6 — COMMERCIAL SCORING
+    ----------------------------------------------------
     */
 
     const commercialState = calculateCommercialState({
@@ -350,7 +551,9 @@ export async function handleInbound({ organization_id, payload }) {
     const leadStage = commercialState.stage;
 
     /*
-    STEP 6 — UPDATE LEAD
+    ----------------------------------------------------
+    STEP 7 — UPDATE LEAD
+    ----------------------------------------------------
     */
 
     await upsertLead({
@@ -365,19 +568,60 @@ export async function handleInbound({ organization_id, payload }) {
     });
 
     /*
-    STEP 7 — CATALOG SEARCH
+    ----------------------------------------------------
+    STEP 8 — UPDATE CUSTOMER MEMORY
+    ----------------------------------------------------
     */
 
-    const catalogMatches = await searchCatalog({
+    const updatedMemory = mergeCustomerMemory({
+      memory: existingMemory,
+      product_interest: productInterest,
+      use_case: useCase,
+      budget,
+      pipeline_event: pipelineEvent
+    });
+
+    await updateCustomerMemory({
       organization_id,
-      product_interest: productInterest
+      phone,
+      profile: updatedMemory
     });
 
     /*
-    STEP 8 — GENERATE REPLY
+    ----------------------------------------------------
+    STEP 9 — SAVE PIPELINE EVENT
+    ----------------------------------------------------
     */
 
-    const reply = generateReply({
+    if (pipelineEvent) {
+      await savePipelineEvent({
+        organization_id,
+        conversation_id: conversation.id,
+        event_type: pipelineEvent
+      });
+    }
+
+    /*
+    ----------------------------------------------------
+    STEP 10 — SMART CATALOG SEARCH
+    ----------------------------------------------------
+    */
+
+    const catalogMatches = await searchCatalogSmart({
+      organization_id,
+      product_interest: productInterest,
+      use_case: useCase,
+      budget,
+      text
+    });
+
+    /*
+    ----------------------------------------------------
+    STEP 11 — GENERATE REPLY
+    ----------------------------------------------------
+    */
+
+    const replyResult = generateReply({
       intent,
       catalogMatches,
       interestLevel,
@@ -389,36 +633,53 @@ export async function handleInbound({ organization_id, payload }) {
     });
 
     /*
-    STEP 9 — SAVE BOT MESSAGE
+    ----------------------------------------------------
+    STEP 12 — SCHEDULE FOLLOWUP
+    ----------------------------------------------------
+    */
+
+    await scheduleFollowupIfNeeded({
+      organization_id,
+      conversation_id: conversation.id,
+      phone,
+      intent,
+      interestLevel,
+      leadStage
+    });
+
+    /*
+    ----------------------------------------------------
+    STEP 13 — SAVE BOT MESSAGE
+    ----------------------------------------------------
     */
 
     await saveMessage({
       organization_id,
       conversation_id: conversation.id,
       role: "assistant",
-      content: reply
+      content: replyResult.text
     });
 
     /*
+    ----------------------------------------------------
     RESPONSE
+    ----------------------------------------------------
     */
 
     return {
-      reply,
+      reply: replyResult.text,
+      media: replyResult.media || [],
       intent,
       product_interest: productInterest,
       score: leadScore,
       stage: leadStage
     };
-
   } catch (err) {
-
-    console.error("EVA ERROR", err);
+    console.error("EVA SALES BRAIN ERROR", err);
 
     return {
-      error: "internal_error"
+      error: "brain_error",
+      details: err.message || "unknown brain error"
     };
-
   }
-
 }
