@@ -3,6 +3,22 @@
 EVA VALIDATORS
 Protección de entrada para endpoints públicos
 ====================================================
+
+Este módulo valida los payloads entrantes
+antes de que entren al SalesBrain.
+
+Evita:
+
+• payloads corruptos
+• ataques simples
+• mensajes inválidos
+• errores de integración
+
+Usado por:
+
+POST /v1/messages/inbound
+
+====================================================
 */
 
 export function validateInbound(payload = {}) {
@@ -17,7 +33,9 @@ export function validateInbound(payload = {}) {
   ----------------------------------------------------
   */
 
-  const phone = String(payload.phone || payload.from || "").trim();
+  const phone = String(payload.phone || payload.from || "")
+    .replace(/\s+/g, "")
+    .trim();
 
   if (!phone) {
     return { valid: false, error: "missing_phone" };
@@ -33,7 +51,8 @@ export function validateInbound(payload = {}) {
   ----------------------------------------------------
   */
 
-  const message = String(payload.message || payload.text || "").trim();
+  const message = String(payload.message || payload.text || "")
+    .trim();
 
   if (!message) {
     return { valid: false, error: "missing_message" };
@@ -60,7 +79,9 @@ export function validateInbound(payload = {}) {
   ----------------------------------------------------
   */
 
-  const channel = String(payload.channel || "whatsapp").toLowerCase();
+  const channel = String(payload.channel || "whatsapp")
+    .toLowerCase()
+    .trim();
 
   /*
   ----------------------------------------------------
@@ -77,4 +98,5 @@ export function validateInbound(payload = {}) {
       channel
     }
   };
+
 }
