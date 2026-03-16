@@ -364,7 +364,34 @@ export async function handleInbound({ organization_id, payload }) {
     ----------------------------------------------------
     */
 
-  const reply = generateReply({
+  /*
+----------------------------------------------------
+PASS SIGNALS TO REPLY ENGINE
+----------------------------------------------------
+
+Aquí enviamos todas las señales comerciales al Reply Engine.
+
+Esto permite que EVA adapte la respuesta según:
+
+• intent → intención principal
+• interestLevel → nivel de interés del cliente
+• objection → objeciones detectadas
+• closingIntent → intención de cierre o pago
+
+IMPORTANTE:
+closingIntent se introdujo en BLOQUE 8 (Closing Engine)
+para permitir que EVA intente cerrar la venta cuando
+detecta señales como:
+
+"como pago"
+"sinpe"
+"quiero esa"
+"apartar"
+
+No eliminar este campo.
+*/
+
+const reply = generateReply({
   intent,
   catalogMatches,
   interestLevel,
