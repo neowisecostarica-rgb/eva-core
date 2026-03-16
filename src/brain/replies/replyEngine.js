@@ -3,21 +3,10 @@
 EVA REPLY ENGINE
 Motor de respuestas comerciales
 ====================================================
-
-Responsabilidades:
-
-• Generar respuestas humanas
-• Recomendar productos
-• Guiar conversación comercial
-• Adaptarse a la intención del cliente
-• Ajustar estrategia según stage del pipeline
-• Incluir imágenes de productos cuando existen
-
-Este módulo hace que EVA suene
-como una vendedora experta.
-
-====================================================
 */
+
+import { extractProductImages } from "../engines/mediaEngine.js";
+import { enhanceReply } from "../engines/aiEnhancer.js";
 
 /*
 ====================================================
@@ -25,11 +14,6 @@ HELPERS
 ====================================================
 */
 
-import { extractProductImages } from "../engines/mediaEngine.js";
-import { enhanceReply } from "../engines/aiEnhancer.js";
-/*
-Formatea el precio de forma segura.
-*/
 function formatPrice(value) {
 
   if (value === null || value === undefined || value === "") {
@@ -46,9 +30,6 @@ function formatPrice(value) {
 
 }
 
-/*
-Obtiene el primer producto encontrado.
-*/
 function getMainCatalogItem(catalogMatches = []) {
 
   if (!Array.isArray(catalogMatches) || !catalogMatches.length) {
@@ -59,9 +40,6 @@ function getMainCatalogItem(catalogMatches = []) {
 
 }
 
-/*
-Construye respuesta con media opcional
-*/
 function buildProductResponse(text, product = null) {
 
   let media = [];
@@ -171,8 +149,6 @@ function supportReply() {
 
 Podemos ayudarte a revisar tu equipo en el taller.
 
-Para orientarte mejor:
-
 ¿El problema es con **una computadora o una impresora**?`,
     media: []
   };
@@ -209,7 +185,7 @@ function fallbackReply() {
   return {
     text: `Perfecto 🙌
 
-Cuéntame un poco más sobre lo que estás buscando y con gusto te ayudo a encontrar la mejor opción.`,
+Cuéntame un poco más sobre lo que estás buscando y con gusto te ayudo.`,
     media: []
   };
 
@@ -269,176 +245,6 @@ Es una **laptop de línea corporativa**, diseñada para durar muchos años.
 }
 
 /*
-/*
-====================================================
-EVA REPLY ENGINE
-Motor de respuestas comerciales
-====================================================
-
-Responsabilidades:
-
-• Generar respuestas humanas
-• Recomendar productos
-• Guiar conversación comercial
-• Adaptarse a la intención del cliente
-• Ajustar estrategia según stage del pipeline
-• Prepararse para devolver media (fotos)
-
-Arquitectura:
-
-salesBrain
-   ↓
-replyEngine
-   ↓
-AI enhancer
-   ↓
-cliente
-
-====================================================
-*/
-
-
-import { enhanceReply } from "../engines/aiEnhancer.js";
-
-/*
-====================================================
-HELPERS
-====================================================
-*/
-
-function formatPrice(value) {
-
-  if (value === null || value === undefined || value === "") {
-    return "Consultar precio";
-  }
-
-  const numberValue = Number(value);
-
-  if (Number.isNaN(numberValue)) {
-    return "Consultar precio";
-  }
-
-  return `₡${numberValue.toLocaleString()}`;
-}
-
-/*
-====================================================
-GREETING REPLY
-====================================================
-*/
-
-function greetingReply() {
-
-  return {
-    text: `Hola 👋
-
-Soy Eva, asistente de Compu Store.
-
-¿En qué puedo ayudarte hoy?`,
-    media: []
-  };
-
-}
-
-/*
-====================================================
-SUPPORT REPLY
-====================================================
-*/
-
-function supportReply() {
-
-  return {
-    text: `Claro, con gusto te ayudamos.
-
-¿Podrías contarme un poco más sobre el problema que estás teniendo con tu equipo?`,
-    media: []
-  };
-
-}
-
-/*
-====================================================
-INFO REPLY
-====================================================
-*/
-
-function infoReply() {
-
-  return {
-    text: `Claro 🙌
-
-Con gusto te doy la información que necesites.
-
-¿Sobre qué equipo o producto te gustaría saber más?`,
-    media: []
-  };
-
-}
-
-/*
-====================================================
-BUY REPLY
-====================================================
-*/
-
-function buyReplyByStage({
-  catalogMatches = [],
-  interestLevel = null,
-  stage = "new"
-}) {
-
-  if (!catalogMatches.length) {
-
-    return {
-      text: `Perfecto 🙌
-
-Cuéntame un poco más qué tipo de equipo estás buscando para poder recomendarte la mejor opción.`,
-      media: []
-    };
-
-  }
-
-  const product = catalogMatches[0];
-
-  const price = formatPrice(product.price_crc);
-
-  const media = extractProductImages(product);
-
-  return {
-
-    text: `Tenemos disponible el ${product.name}.
-
-💰 Precio: ${price}
-
-${product.description || ""}
-
-Si quieres puedo enviarte más detalles o fotos del equipo.`,
-
-    media
-
-  };
-
-}
-
-/*
-====================================================
-FALLBACK REPLY
-====================================================
-*/
-
-function fallbackReply() {
-
-  return {
-    text: `Perfecto 🙌
-
-Cuéntame un poco más sobre lo que necesitas para poder ayudarte mejor.`,
-    media: []
-  };
-
-}
-
-/*
 ====================================================
 REPLY ORCHESTRATOR
 ====================================================
@@ -459,23 +265,11 @@ export async function generateReply({
 
   let response;
 
-  /*
-  ------------------------------------------------
-  GREETING
-  ------------------------------------------------
-  */
-
   if (intent === "GREETING") {
 
     response = greetingReply();
 
   }
-
-  /*
-  ------------------------------------------------
-  BUY
-  ------------------------------------------------
-  */
 
   else if (intent === "BUY") {
 
@@ -487,35 +281,17 @@ export async function generateReply({
 
   }
 
-  /*
-  ------------------------------------------------
-  SUPPORT
-  ------------------------------------------------
-  */
-
   else if (intent === "SUPPORT") {
 
     response = supportReply();
 
   }
 
-  /*
-  ------------------------------------------------
-  INFO
-  ------------------------------------------------
-  */
-
   else if (intent === "INFO") {
 
     response = infoReply();
 
   }
-
-  /*
-  ------------------------------------------------
-  HIGH SCORE CLOSE
-  ------------------------------------------------
-  */
 
   else if (score >= 85) {
 
@@ -530,12 +306,6 @@ Si quieres te ayudo a avanzar con la mejor opción disponible.`,
 
   }
 
-  /*
-  ------------------------------------------------
-  FALLBACK
-  ------------------------------------------------
-  */
-
   else {
 
     response = fallbackReply();
@@ -543,9 +313,7 @@ Si quieres te ayudo a avanzar con la mejor opción disponible.`,
   }
 
   /*
-  ====================================================
-  AI ENHANCEMENT
-  ====================================================
+  AI Enhancement
   */
 
   try {
