@@ -31,7 +31,7 @@ COMMERCE ENGINE
 ====================================================
 */
 
-import { searchCatalog } from "./catalogEngine.js";
+import { searchCatalog } from "./brain/commerce/catalogEngine.js";
 
 /*
 ====================================================
