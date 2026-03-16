@@ -333,6 +333,8 @@ async function savePipelineEvent({
   organization_id,
   conversation_id,
   lead_phone,
+  from_stage,
+  to_stage,
   event_type
 }) {
   await pool.query(
@@ -342,15 +344,19 @@ async function savePipelineEvent({
       organization_id,
       conversation_id,
       lead_phone,
+      from_stage,
+      to_stage,
       event_type,
       created_at
     )
-    VALUES ($1, $2, $3, $4, $5)
+    VALUES ($1,$2,$3,$4,$5,$6,$7)
     `,
     [
       organization_id,
       conversation_id,
       lead_phone,
+      from_stage,
+      to_stage,
       event_type,
       nowIso()
     ]
@@ -844,6 +850,8 @@ export async function handleInbound({ organization_id, payload }) {
     organization_id,
     conversation_id: conversation.id,
     lead_phone: phone,
+    from_stage: conversation.stage || "new",
+    to_stage: leadStage,
     event_type: pipelineEvent
   });
 }
