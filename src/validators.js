@@ -1,44 +1,80 @@
-function isString(value) {
-  return typeof value === "string" && value.trim().length > 0;
-}
+/*
+====================================================
+EVA VALIDATORS
+Protección de entrada para endpoints públicos
+====================================================
+*/
 
-function normalizePhone(phone) {
-  return phone.replace(/\D/g, "");
-}
+export function validateInbound(payload = {}) {
 
-export function validateInbound(body) {
-
-  if (!body || typeof body !== "object") {
-    throw new Error("invalid payload");
+  if (!payload) {
+    return { valid: false, error: "missing_payload" };
   }
 
-  const { organization_id, phone, message } = body;
+  /*
+  ----------------------------------------------------
+  PHONE
+  ----------------------------------------------------
+  */
 
-  if (!isString(organization_id)) {
-    throw new Error("organization_id is required");
+  const phone = String(payload.phone || payload.from || "").trim();
+
+  if (!phone) {
+    return { valid: false, error: "missing_phone" };
   }
 
-  if (!isString(phone)) {
-    throw new Error("phone is required");
+  if (phone.length < 6) {
+    return { valid: false, error: "invalid_phone" };
   }
 
-  if (!isString(message)) {
-    throw new Error("message is required");
+  /*
+  ----------------------------------------------------
+  MESSAGE
+  ----------------------------------------------------
+  */
+
+  const message = String(payload.message || payload.text || "").trim();
+
+  if (!message) {
+    return { valid: false, error: "missing_message" };
   }
 
-  const normalizedPhone = normalizePhone(phone);
-
-  if (normalizedPhone.length < 8) {
-    throw new Error("invalid phone");
+  if (message.length > 5000) {
+    return { valid: false, error: "message_too_long" };
   }
+
+  /*
+  ----------------------------------------------------
+  MESSAGE ID
+  ----------------------------------------------------
+  */
+
+  const messageId =
+    payload.message_id ||
+    payload.external_message_id ||
+    null;
+
+  /*
+  ----------------------------------------------------
+  CHANNEL
+  ----------------------------------------------------
+  */
+
+  const channel = String(payload.channel || "whatsapp").toLowerCase();
+
+  /*
+  ----------------------------------------------------
+  SAFE PAYLOAD
+  ----------------------------------------------------
+  */
 
   return {
-    organization_id: organization_id.trim(),
-    phone: normalizedPhone,
-    message: message.trim(),
-    channel: body.channel || "whatsapp",
-    external_message_id: body.external_message_id || null,
-    metadata: body.metadata || null
+    valid: true,
+    data: {
+      phone,
+      message,
+      message_id: messageId,
+      channel
+    }
   };
-
 }
