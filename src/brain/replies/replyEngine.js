@@ -43,27 +43,40 @@ PRODUCT REPLIES
 ====================================================
 */
 
-function productReply({ catalogMatches }) {
-
-  if (!catalogMatches || catalogMatches.length === 0) {
-    return null;
-  }
-
-  const item = catalogMatches[0];
-
-  const price = `₡${Number(item.price_crc || item.price || 0).toLocaleString("es-CR")}`;
+if (interestLevel === "HIGH") {
 
   return `Te recomiendo esta opción 👇
 
 💻 ${item.name}
 💰 ${price}
 
-Es una opción que muchos clientes eligen porque ofrece muy buen rendimiento para el precio.
+Es una de las más buscadas porque funciona muy bien y tiene excelente relación precio-rendimiento.
 
-¿Quieres que te envíe *fotos reales del equipo* para que lo puedas ver mejor?`;
+Si quieres podemos **apartar una unidad ahora mismo** para que no se agoten.
+
+¿Te gustaría ver fotos reales del equipo?`;
 
 }
 
+if (interestLevel === "MEDIUM") {
+
+  return `Te recomiendo esta opción 👇
+
+💻 ${item.name}
+💰 ${price}
+
+Es una laptop corporativa muy buscada porque ofrece muy buen rendimiento para estudio o trabajo.
+
+¿Quieres que te envíe **fotos reales del equipo**?`;
+
+}
+
+return `Te puedo recomendar esta opción 👇
+
+💻 ${item.name}
+💰 ${price}
+
+Si quieres puedo enviarte más detalles o fotos del equipo.`;
 
 /*
 ====================================================
@@ -122,9 +135,11 @@ REPLY ORCHESTRATOR
 ====================================================
 */
 
-export function generateReply({
+  export function generateReply({
   intent,
-  catalogMatches
+  catalogMatches,
+  interestLevel
+})
 }) {
 
   /*
@@ -145,7 +160,7 @@ export function generateReply({
 
   if (intent === "BUY") {
 
-    const product = productReply({ catalogMatches });
+    function productReply({ catalogMatches, interestLevel })
 
     if (product) {
       return product;
