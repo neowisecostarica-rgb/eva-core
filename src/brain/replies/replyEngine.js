@@ -253,13 +253,73 @@ Así puedes comprar con confianza.
 ¿Quieres que te envíe **fotos reales del equipo**?`;
 
 }
-  /*
+ /*
 ----------------------------------------------------
 BUY
 ----------------------------------------------------
 */
 
 if (intent === "BUY") {
+
+  /*
+  HOT LEADS → intentar cerrar venta
+  */
+
+  if (stage === "hot") {
+
+    const item = catalogMatches?.[0];
+
+    if (item) {
+
+      const price = item.price_crc
+        ? `₡${Number(item.price_crc).toLocaleString()}`
+        : "Consultar precio";
+
+      return `Perfecto 🙌
+
+Tenemos disponible esta opción:
+
+💻 ${item.name}
+💰 ${price}
+
+Si quieres podemos **apartar una unidad ahora mismo con ₡20.000** y así te aseguras el equipo.
+
+¿Te paso los datos para hacer el apartado?`;
+
+    }
+
+  }
+
+  /*
+  CONSIDERING → persuadir
+  */
+
+  if (stage === "considering") {
+
+    const item = catalogMatches?.[0];
+
+    if (item) {
+
+      const price = item.price_crc
+        ? `₡${Number(item.price_crc).toLocaleString()}`
+        : "Consultar precio";
+
+      return `Esta opción suele gustarle mucho a nuestros clientes 👇
+
+💻 ${item.name}
+💰 ${price}
+
+Es una **laptop de línea corporativa**, lo que significa que está diseñada para durar muchos años y tener muy buen rendimiento.
+
+¿Te gustaría ver **fotos reales del equipo**?`;
+
+    }
+
+  }
+
+  /*
+  INTERESTED / DEFAULT → recomendación normal
+  */
 
   return productReply({
     catalogMatches,
