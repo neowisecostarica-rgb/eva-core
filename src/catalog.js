@@ -1,4 +1,29 @@
+/*
+====================================================
+EVA COMMERCE — CATALOG SEARCH
+====================================================
+
+Responsabilidad:
+Buscar productos en el catálogo usando texto libre.
+
+Este módulo será utilizado por:
+• salesBrain
+• productAdvisorEngine
+• futuras APIs de catálogo
+
+Arquitectura futura:
+brain/commerce/catalogEngine.js
+====================================================
+*/
+
 import pool from "./db.js";
+
+
+/*
+====================================================
+UTILITIES — NORMALIZATION
+====================================================
+*/
 
 function normalizeText(value) {
   return (value || "")
@@ -8,7 +33,16 @@ function normalizeText(value) {
     .trim();
 }
 
+
+/*
+====================================================
+SEARCH TERM EXTRACTION
+Extrae palabras relevantes del mensaje del cliente
+====================================================
+*/
+
 function extractSearchTerms(text) {
+
   const normalized = normalizeText(text);
 
   const dictionary = [
@@ -29,7 +63,9 @@ function extractSearchTerms(text) {
     "excel"
   ];
 
-  const matchedTerms = dictionary.filter(term => normalized.includes(term));
+  const matchedTerms = dictionary.filter(term =>
+    normalized.includes(term)
+  );
 
   if (matchedTerms.length > 0) {
     return matchedTerms;
@@ -42,32 +78,76 @@ function extractSearchTerms(text) {
     .slice(0, 5);
 }
 
+
+/*
+====================================================
+SQL BUILDER
+Construye el WHERE dinámico para búsqueda
+====================================================
+*/
+
 function buildWhereClause(terms, startIndex = 2) {
+
   const conditions = [];
   const values = [];
 
   let paramIndex = startIndex;
 
   for (const term of terms) {
+
     conditions.push(`(
       LOWER(p.name) LIKE $${paramIndex}
       OR LOWER(p.category) LIKE $${paramIndex}
       OR LOWER(p.description) LIKE $${paramIndex}
     )`);
+
     values.push(`%${term}%`);
     paramIndex += 1;
+
   }
 
   return {
-    clause: conditions.length > 0 ? conditions.join(" OR ") : "TRUE",
+    clause: conditions.length > 0
+      ? conditions.join(" OR ")
+      : "TRUE",
     values
   };
+
 }
 
+
+/*
+====================================================
+CATALOG SEARCH
+Motor principal de búsqueda de productos
+====================================================
+*/
+
 export async function searchCatalog({ organization_id, text }) {
+
+  /*
+  ----------------------------------------------------
+  STEP 1 — EXTRAER TÉRMINOS DE BÚSQUEDA
+  ----------------------------------------------------
+  */
+
   const terms = extractSearchTerms(text);
 
+
+  /*
+  ----------------------------------------------------
+  STEP 2 — CONSTRUIR CLAUSULA SQL
+  ----------------------------------------------------
+  */
+
   const { clause, values } = buildWhereClause(terms);
+
+
+  /*
+  ----------------------------------------------------
+  STEP 3 — CONSULTAR CATALOGO
+  ----------------------------------------------------
+  */
 
   const result = await pool.query(
     `
@@ -80,6 +160,7 @@ export async function searchCatalog({ organization_id, text }) {
       p.stock,
       p.is_active,
       p.updated_at,
+
       (
         SELECT pa.url
         FROM product_assets pa
@@ -87,10 +168,13 @@ export async function searchCatalog({ organization_id, text }) {
         ORDER BY pa.sort_order ASC NULLS LAST, pa.created_at ASC
         LIMIT 1
       ) AS image
+
     FROM product_catalog p
+
     WHERE p.organization_id = $1
       AND p.is_active = true
       AND (${clause})
+
     ORDER BY
       CASE
         WHEN LOWER(p.name) LIKE '%thinkpad%' THEN 1
@@ -98,10 +182,19 @@ export async function searchCatalog({ organization_id, text }) {
         ELSE 3
       END,
       p.updated_at DESC NULLS LAST
+
     LIMIT 3
     `,
     [organization_id, ...values]
   );
 
+
+  /*
+  ----------------------------------------------------
+  STEP 4 — RETORNAR RESULTADOS
+  ----------------------------------------------------
+  */
+
   return result.rows;
+
 }
