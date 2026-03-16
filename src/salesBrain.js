@@ -13,6 +13,8 @@ Responsabilidades principales:
 • Generar respuesta comercial
 • Registrar eventos de pipeline
 • Crear followups automáticos
+• Evitar duplicados inbound
+• Registrar execution logs
 
 Arquitectura:
 
@@ -67,25 +69,122 @@ import { nowIso } from "./brain/utils/timeUtils.js";
 
 /*
 ====================================================
+LOCAL HELPERS
+====================================================
+*/
+
+function normalizeSearchText(value = "") {
+  return String(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function buildKeywordPatterns({ product_interest, use_case, text }) {
+  const raw = [product_interest, use_case, text].filter(Boolean).join(" ");
+  const normalized = normalizeSearchText(raw);
+
+  if (!normalized) return [];
+
+  const stopwords = new Set([
+    "hola",
+    "buenas",
+    "buenos",
+    "buenas tardes",
+    "buenos dias",
+    "gracias",
+    "quiero",
+    "ocupo",
+    "necesito",
+    "para",
+    "con",
+    "una",
+    "uno",
+    "unas",
+    "unos",
+    "del",
+    "las",
+    "los",
+    "por",
+    "que",
+    "me",
+    "de",
+    "la",
+    "el",
+    "un",
+    "es",
+    "en",
+    "y",
+    "o",
+    "a"
+  ]);
+
+  const tokens = [
+    ...new Set(
+      normalized
+        .split(/[^a-z0-9]+/i)
+        .map((value) => value.trim())
+        .filter((value) => value.length >= 2 && !stopwords.has(value))
+    )
+  ];
+
+  return tokens.slice(0, 8).map((token) => `%${token}%`);
+}
+
+function safeReplyText(replyResult) {
+  const text = String(replyResult?.text || "").trim();
+
+  if (text) {
+    return text;
+  }
+
+  return "Hola 👋 Con gusto te ayudo. Cuéntame un poco más sobre lo que necesitas y te asesoro.";
+}
+
+/*
+====================================================
 DATABASE HELPERS
 ====================================================
 */
 
-async function ensureConversation({ organization_id, phone }) {
+async function hasProcessedMessage({ organization_id, external_message_id }) {
+  if (!external_message_id) {
+    return false;
+  }
+
+  const result = await pool.query(
+    `
+    SELECT id
+    FROM messages
+    WHERE organization_id = $1
+      AND external_message_id = $2
+    LIMIT 1
+    `,
+    [organization_id, external_message_id]
+  );
+
+  return result.rows.length > 0;
+}
+
+async function ensureConversation({ organization_id, phone, channel = "whatsapp" }) {
   const result = await pool.query(
     `
     SELECT *
     FROM conversations
     WHERE organization_id = $1
       AND external_user_id = $2
+      AND channel = $3
     LIMIT 1
     `,
-    [organization_id, phone]
+    [organization_id, phone, channel]
   );
 
   if (result.rows.length > 0) {
     return result.rows[0];
   }
+
+  const timestamp = nowIso();
 
   const created = await pool.query(
     `
@@ -95,15 +194,30 @@ async function ensureConversation({ organization_id, phone }) {
       external_user_id,
       channel,
       created_at,
-      updated_at
+      updated_at,
+      last_message_at
     )
-    VALUES ($1, $2, 'whatsapp', $3, $3)
+    VALUES ($1, $2, $3, $4, $4, $4)
     RETURNING *
     `,
-    [organization_id, phone, nowIso()]
+    [organization_id, phone, channel, timestamp]
   );
 
   return created.rows[0];
+}
+
+async function touchConversation({ conversation_id }) {
+  const timestamp = nowIso();
+
+  await pool.query(
+    `
+    UPDATE conversations
+    SET updated_at = $2,
+        last_message_at = $2
+    WHERE id = $1
+    `,
+    [conversation_id, timestamp]
+  );
 }
 
 /*
@@ -117,9 +231,9 @@ async function saveMessage({
   conversation_id,
   role,
   content,
-  external_message_id
+  external_message_id = null
 }) {
-  await pool.query(
+  const result = await pool.query(
     `
     INSERT INTO messages
     (
@@ -131,6 +245,7 @@ async function saveMessage({
       created_at
     )
     VALUES ($1, $2, $3, $4, $5, $6)
+    RETURNING *
     `,
     [
       organization_id,
@@ -141,6 +256,10 @@ async function saveMessage({
       nowIso()
     ]
   );
+
+  await touchConversation({ conversation_id });
+
+  return result.rows[0];
 }
 
 /*
@@ -175,9 +294,10 @@ async function upsertLead({
       score,
       stage,
       created_at,
-      updated_at
+      updated_at,
+      last_contact_at
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9, $9)
     ON CONFLICT (organization_id, phone)
     DO UPDATE SET
       intent = EXCLUDED.intent,
@@ -186,7 +306,8 @@ async function upsertLead({
       budget = COALESCE(EXCLUDED.budget, leads.budget),
       score = EXCLUDED.score,
       stage = EXCLUDED.stage,
-      updated_at = $9
+      updated_at = $9,
+      last_contact_at = $9
     `,
     [
       organization_id,
@@ -276,9 +397,10 @@ async function updateCustomerMemory({
       organization_id,
       external_user_id,
       profile_json,
+      created_at,
       updated_at
     )
-    VALUES ($1, $2, $3, $4)
+    VALUES ($1, $2, $3, $4, $4)
     ON CONFLICT (organization_id, external_user_id)
     DO UPDATE SET
       profile_json = $3,
@@ -322,22 +444,19 @@ async function searchCatalogSmart({
   budget,
   text
 }) {
-  const searchTerms = [
+  const patterns = buildKeywordPatterns({
     product_interest,
     use_case,
     text
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .trim();
+  });
 
-  if (!searchTerms) {
+  if (patterns.length === 0) {
     return [];
   }
 
   /*
   ----------------------------------------------------
-  QUERY BASE
+  QUERY BASE CON BUDGET
   ----------------------------------------------------
   */
 
@@ -349,9 +468,9 @@ async function searchCatalogSmart({
       WHERE organization_id = $1
         AND is_active = true
         AND (
-          category ILIKE $2
-          OR name ILIKE $2
-          OR description ILIKE $2
+          category ILIKE ANY($2::text[])
+          OR name ILIKE ANY($2::text[])
+          OR description ILIKE ANY($2::text[])
         )
         AND (
           price_crc IS NULL
@@ -365,10 +484,11 @@ async function searchCatalogSmart({
           ELSE 2
         END,
         price_crc ASC NULLS LAST,
+        featured DESC NULLS LAST,
         updated_at DESC NULLS LAST
       LIMIT 5
       `,
-      [organization_id, `%${searchTerms}%`, budget]
+      [organization_id, patterns, budget]
     );
 
     if (result.rows.length > 0) {
@@ -389,14 +509,16 @@ async function searchCatalogSmart({
     WHERE organization_id = $1
       AND is_active = true
       AND (
-        category ILIKE $2
-        OR name ILIKE $2
-        OR description ILIKE $2
+        category ILIKE ANY($2::text[])
+        OR name ILIKE ANY($2::text[])
+        OR description ILIKE ANY($2::text[])
       )
-    ORDER BY updated_at DESC NULLS LAST
+    ORDER BY
+      featured DESC NULLS LAST,
+      updated_at DESC NULLS LAST
     LIMIT 5
     `,
-    [organization_id, `%${searchTerms}%`]
+    [organization_id, patterns]
   );
 
   return fallback.rows;
@@ -419,13 +541,33 @@ async function scheduleFollowupIfNeeded({
   const shouldScheduleFollowup =
     intent === "BUY" ||
     interestLevel === "HIGH" ||
-    leadStage === "considering";
+    leadStage === "considering" ||
+    leadStage === "offer_made" ||
+    leadStage === "closing";
 
   if (!shouldScheduleFollowup) {
     return;
   }
 
   try {
+    const existing = await pool.query(
+      `
+      SELECT id
+      FROM followups
+      WHERE organization_id = $1
+        AND conversation_id = $2
+        AND lead_phone = $3
+        AND reason = 'sales_followup'
+        AND scheduled_for >= NOW() - INTERVAL '24 hours'
+      LIMIT 1
+      `,
+      [organization_id, conversation_id, phone]
+    );
+
+    if (existing.rows.length > 0) {
+      return;
+    }
+
     await pool.query(
       `
       INSERT INTO followups
@@ -434,15 +576,85 @@ async function scheduleFollowupIfNeeded({
         conversation_id,
         lead_phone,
         scheduled_for,
-        reason
+        reason,
+        status,
+        created_at
       )
-      VALUES ($1, $2, $3, NOW() + INTERVAL '24 hours', 'sales_followup')
-      ON CONFLICT DO NOTHING
+      VALUES
+      (
+        $1,
+        $2,
+        $3,
+        NOW() + INTERVAL '24 hours',
+        'sales_followup',
+        'pending',
+        $4
+      )
       `,
-      [organization_id, conversation_id, phone]
+      [organization_id, conversation_id, phone, nowIso()]
     );
   } catch (err) {
     console.error("FOLLOWUP SCHEDULING ERROR", err);
+  }
+}
+
+/*
+====================================================
+EXECUTION LOG
+====================================================
+*/
+
+async function saveExecutionLog({
+  organization_id,
+  conversation_id,
+  inbound_message_id = null,
+  mode_used = "RULE",
+  intent = null,
+  score = null,
+  stage = null,
+  reply = null,
+  objection = null,
+  closing_intent = null,
+  product_interest = null,
+  actions = {}
+}) {
+  try {
+    await pool.query(
+      `
+      INSERT INTO eva_execution_log
+      (
+        organization_id,
+        conversation_id,
+        message_id_in,
+        mode_used,
+        ai_intent,
+        ai_confidence,
+        ai_reply,
+        actions_executed,
+        created_at
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `,
+      [
+        organization_id,
+        conversation_id,
+        inbound_message_id,
+        mode_used,
+        intent,
+        score,
+        reply,
+        JSON.stringify({
+          stage,
+          objection,
+          closing_intent,
+          product_interest,
+          ...actions
+        }),
+        nowIso()
+      ]
+    );
+  } catch (err) {
+    console.error("EXECUTION LOG ERROR", err);
   }
 }
 
@@ -461,8 +673,14 @@ export async function handleInbound({ organization_id, payload }) {
     ----------------------------------------------------
     */
 
-    const phone = normalizePhone(payload?.phone || "");
-    const text = String(payload?.message || "").trim();
+    const phone = normalizePhone(payload?.phone || payload?.from || "");
+    const text = String(payload?.message || payload?.text || "").trim();
+    const channel = String(payload?.channel || "whatsapp").trim().toLowerCase();
+    const externalMessageId = payload?.message_id || payload?.external_message_id || null;
+
+    if (!organization_id) {
+      return { error: "missing_organization_id" };
+    }
 
     if (!phone || !text) {
       return { error: "invalid_payload" };
@@ -470,18 +688,43 @@ export async function handleInbound({ organization_id, payload }) {
 
     /*
     ----------------------------------------------------
-    STEP 2 — ENSURE CONVERSATION
+    STEP 2 — IDEMPOTENCY CHECK
+    ----------------------------------------------------
+    */
+
+    const alreadyProcessed = await hasProcessedMessage({
+      organization_id,
+      external_message_id: externalMessageId
+    });
+
+    if (alreadyProcessed) {
+      return {
+        ok: true,
+        duplicate: true,
+        reply: null,
+        media: [],
+        intent: null,
+        product_interest: null,
+        score: null,
+        stage: null
+      };
+    }
+
+    /*
+    ----------------------------------------------------
+    STEP 3 — ENSURE CONVERSATION
     ----------------------------------------------------
     */
 
     const conversation = await ensureConversation({
       organization_id,
-      phone
+      phone,
+      channel
     });
 
     /*
     ----------------------------------------------------
-    STEP 3 — READ CUSTOMER MEMORY
+    STEP 4 — READ CUSTOMER MEMORY
     ----------------------------------------------------
     */
 
@@ -492,21 +735,21 @@ export async function handleInbound({ organization_id, payload }) {
 
     /*
     ----------------------------------------------------
-    STEP 4 — SAVE INBOUND MESSAGE
+    STEP 5 — SAVE INBOUND MESSAGE
     ----------------------------------------------------
     */
 
-    await saveMessage({
+    const inboundMessage = await saveMessage({
       organization_id,
       conversation_id: conversation.id,
       role: "user",
       content: text,
-      external_message_id: payload?.message_id || null
+      external_message_id: externalMessageId
     });
 
     /*
     ----------------------------------------------------
-    STEP 5 — SIGNAL DETECTION
+    STEP 6 — SIGNAL DETECTION
     ----------------------------------------------------
     */
 
@@ -531,7 +774,7 @@ export async function handleInbound({ organization_id, payload }) {
 
     /*
     ----------------------------------------------------
-    STEP 6 — COMMERCIAL SCORING
+    STEP 7 — COMMERCIAL SCORING
     ----------------------------------------------------
     */
 
@@ -547,12 +790,12 @@ export async function handleInbound({ organization_id, payload }) {
       text
     });
 
-    const leadScore = commercialState.score;
-    const leadStage = commercialState.stage;
+    const leadScore = commercialState?.score ?? 0;
+    const leadStage = commercialState?.stage ?? "new";
 
     /*
     ----------------------------------------------------
-    STEP 7 — UPDATE LEAD
+    STEP 8 — UPDATE LEAD
     ----------------------------------------------------
     */
 
@@ -569,7 +812,7 @@ export async function handleInbound({ organization_id, payload }) {
 
     /*
     ----------------------------------------------------
-    STEP 8 — UPDATE CUSTOMER MEMORY
+    STEP 9 — UPDATE CUSTOMER MEMORY
     ----------------------------------------------------
     */
 
@@ -589,7 +832,7 @@ export async function handleInbound({ organization_id, payload }) {
 
     /*
     ----------------------------------------------------
-    STEP 9 — SAVE PIPELINE EVENT
+    STEP 10 — SAVE PIPELINE EVENT
     ----------------------------------------------------
     */
 
@@ -603,7 +846,7 @@ export async function handleInbound({ organization_id, payload }) {
 
     /*
     ----------------------------------------------------
-    STEP 10 — SMART CATALOG SEARCH
+    STEP 11 — SMART CATALOG SEARCH
     ----------------------------------------------------
     */
 
@@ -617,7 +860,7 @@ export async function handleInbound({ organization_id, payload }) {
 
     /*
     ----------------------------------------------------
-    STEP 11 — GENERATE REPLY
+    STEP 12 — GENERATE REPLY
     ----------------------------------------------------
     */
 
@@ -632,9 +875,11 @@ export async function handleInbound({ organization_id, payload }) {
       stage: leadStage
     });
 
+    const replyText = safeReplyText(replyResult);
+
     /*
     ----------------------------------------------------
-    STEP 12 — SCHEDULE FOLLOWUP
+    STEP 13 — SCHEDULE FOLLOWUP
     ----------------------------------------------------
     */
 
@@ -649,7 +894,7 @@ export async function handleInbound({ organization_id, payload }) {
 
     /*
     ----------------------------------------------------
-    STEP 13 — SAVE BOT MESSAGE
+    STEP 14 — SAVE BOT MESSAGE
     ----------------------------------------------------
     */
 
@@ -657,7 +902,34 @@ export async function handleInbound({ organization_id, payload }) {
       organization_id,
       conversation_id: conversation.id,
       role: "assistant",
-      content: replyResult.text
+      content: replyText
+    });
+
+    /*
+    ----------------------------------------------------
+    STEP 15 — EXECUTION LOG
+    ----------------------------------------------------
+    */
+
+    await saveExecutionLog({
+      organization_id,
+      conversation_id: conversation.id,
+      inbound_message_id: inboundMessage?.id || null,
+      mode_used: "RULE",
+      intent,
+      score: leadScore,
+      stage: leadStage,
+      reply: replyText,
+      objection,
+      closing_intent: closingIntent,
+      product_interest: productInterest,
+      actions: {
+        pipeline_event: pipelineEvent,
+        interest_level: interestLevel,
+        opportunities,
+        catalog_match_count: catalogMatches.length,
+        followup_considered: true
+      }
     });
 
     /*
@@ -667,12 +939,15 @@ export async function handleInbound({ organization_id, payload }) {
     */
 
     return {
-      reply: replyResult.text,
-      media: replyResult.media || [],
+      ok: true,
+      reply: replyText,
+      media: replyResult?.media || [],
       intent,
       product_interest: productInterest,
       score: leadScore,
-      stage: leadStage
+      stage: leadStage,
+      objection,
+      closing_intent: closingIntent
     };
   } catch (err) {
     console.error("EVA SALES BRAIN ERROR", err);
