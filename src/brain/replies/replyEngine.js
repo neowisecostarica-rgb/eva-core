@@ -43,9 +43,23 @@ PRODUCT REPLIES
 ====================================================
 */
 
-if (interestLevel === "HIGH") {
+function productReply({ catalogMatches = [], interestLevel }) {
 
-  return `Te recomiendo esta opción 👇
+  if (!catalogMatches.length) {
+    return `En este momento no encontré un producto exacto con esa descripción.
+
+Si quieres puedes contarme un poco más sobre lo que necesitas y te ayudo a encontrar la mejor opción.`;
+  }
+
+  const item = catalogMatches[0];
+
+  const price = item.price_crc
+    ? `₡${Number(item.price_crc).toLocaleString()}`
+    : "Consultar precio";
+
+  if (interestLevel === "HIGH") {
+
+    return `Te recomiendo esta opción 👇
 
 💻 ${item.name}
 💰 ${price}
@@ -56,11 +70,11 @@ Si quieres podemos **apartar una unidad ahora mismo** para que no se agoten.
 
 ¿Te gustaría ver fotos reales del equipo?`;
 
-}
+  }
 
-if (interestLevel === "MEDIUM") {
+  if (interestLevel === "MEDIUM") {
 
-  return `Te recomiendo esta opción 👇
+    return `Te recomiendo esta opción 👇
 
 💻 ${item.name}
 💰 ${price}
@@ -69,16 +83,16 @@ Es una laptop corporativa muy buscada porque ofrece muy buen rendimiento para es
 
 ¿Quieres que te envíe **fotos reales del equipo**?`;
 
-}
+  }
 
-return `Te puedo recomendar esta opción 👇
+  return `Te puedo recomendar esta opción 👇
 
 💻 ${item.name}
 💰 ${price}
 
 Si quieres puedo enviarte más detalles o fotos del equipo.`;
 
-/*
+}
 ====================================================
 SUPPORT REPLIES
 ====================================================
