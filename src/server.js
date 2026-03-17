@@ -7,7 +7,8 @@ import devChatRoute from "./routes/devChat.js";
 import devChatUIRoute from "./routes/devChatUI.js";
 import whatsappWebhook from "./routes/whatsappWebhook.js";
 
-import { startFollowupWorker } from "./followupWorker.js";
+// 🔴 WORKER DESACTIVADO TEMPORALMENTE
+// import { startFollowupWorker } from "./followupWorker.js";
 
 dotenv.config();
 
@@ -89,24 +90,16 @@ app.use("/v1/metrics", metricsRoute);
 app.use("/dev", devChatRoute);
 app.use("/dev", devChatUIRoute);
 app.use("/webhook/whatsapp", whatsappWebhook);
+
 /* ===============================
-   TEMP MESSAGE SENDER
+   TEMP MESSAGE SENDER (NO USADO)
 ================================ */
 
-/*
-Esta función luego se conectará
-a WhatsApp Cloud API.
-
-Por ahora solo imprime en consola
-para pruebas del followup worker.
-*/
-
+// ⚠️ Esto se deja pero no se usa porque el worker está apagado
 function sendWhatsAppMessage({ phone, message }) {
-
   console.log("FOLLOWUP MESSAGE");
   console.log("PHONE:", phone);
   console.log("MESSAGE:", message);
-
 }
 
 /* ===============================
@@ -121,10 +114,10 @@ app.listen(PORT, () => {
 
   /*
   ==============================
-  START FOLLOWUP WORKER
+  FOLLOWUP WORKER DESACTIVADO
   ==============================
   */
 
-  startFollowupWorker(sendWhatsAppMessage);
+  // startFollowupWorker(sendWhatsAppMessage);
 
 });
