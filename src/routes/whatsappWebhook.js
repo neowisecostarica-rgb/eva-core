@@ -7,6 +7,7 @@ Meta Cloud API Integration
 
 import express from "express";
 import axios from "axios";
+import { handleInbound } from "../salesBrain.js"; // 🔥 IMPORT DIRECTO
 
 const router = express.Router();
 
@@ -45,35 +46,34 @@ router.post("/", async (req, res) => {
 
     const message = value?.messages?.[0];
 
-if (!message) {
-  return res.sendStatus(200);
-}
+    if (!message) {
+      return res.sendStatus(200);
+    }
 
-/*
-IGNORE NON TEXT MESSAGES
-PREVENT LOOP
-*/
-
-if (!message.text || !message.text.body) {
-  return res.sendStatus(200);
-}
-
-const phone = message.from;
-const text = message.text.body;
     /*
-    SEND TO EVA CORE
+    IGNORE NON TEXT MESSAGES
+    PREVENT LOOP
     */
 
-    const response = await axios.post(
-      `${process.env.EVA_API_URL}/v1/messages/inbound`,
-      {
-        phone,
-       text: text,
-        organization_id: process.env.DEFAULT_ORGANIZATION_ID
-      }
-    );
+    if (!message.text || !message.text.body) {
+      return res.sendStatus(200);
+    }
 
-    const reply = response.data?.reply || "Gracias por escribirnos.";
+    const phone = message.from;
+    const text = message.text.body;
+
+    /*
+    SEND TO EVA CORE (DIRECT)
+    */
+
+    const result = await handleInbound({
+      phone,
+      text,
+      organization_id: process.env.DEFAULT_ORGANIZATION_ID,
+      channel: "whatsapp"
+    });
+
+    const reply = result?.reply || "Gracias por escribirnos.";
 
     /*
     SEND REPLY BACK TO WHATSAPP
@@ -94,13 +94,13 @@ const text = message.text.body;
       }
     );
 
-    res.sendStatus(200);
+    return res.sendStatus(200);
 
   } catch (err) {
 
-    console.error("WHATSAPP WEBHOOK ERROR", err);
+    console.error("WHATSAPP WEBHOOK ERROR", err?.response?.data || err.message);
 
-    res.sendStatus(500);
+    return res.sendStatus(500);
 
   }
 
