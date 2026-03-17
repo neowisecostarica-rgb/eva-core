@@ -389,7 +389,8 @@ export async function handleInbound({ organization_id, payload }) {
       organization_id,
       text
     });
-
+console.log("INPUT TEXT:", text);
+console.log("CATALOG RESULT:", products);
     /*
     ================================================
     LEAD UPSERT
