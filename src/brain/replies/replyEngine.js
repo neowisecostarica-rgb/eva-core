@@ -138,6 +138,97 @@ Si quieres puedo enviarte más detalles o fotos del equipo.`, item);
 
 /*
 ====================================================
+OBJECTION HANDLING
+====================================================
+*/
+
+function objectionReply({ objection = null, catalogMatches = [] }) {
+
+  const item = getMainCatalogItem(catalogMatches);
+
+  if (objection === "PRICE") {
+
+    return {
+      text: `Entiendo perfectamente 🙌
+
+Estos equipos son **línea corporativa**, diseñados para durar muchos años.
+
+Además incluyen **SSD, revisión técnica completa y garantía**, por eso tienen mucho mejor rendimiento que equipos básicos.
+
+Muchos clientes los prefieren precisamente por esa relación **precio–durabilidad**.`,
+      media: []
+    };
+
+  }
+
+  if (objection === "NEW_OR_USED") {
+
+    return {
+      text: `Son **equipos corporativos reacondicionados**.
+
+Se revisan completamente antes de entregarlos para asegurar que funcionen perfecto.
+
+Además incluyen **garantía**, por lo que puedes usarlos con tranquilidad.`,
+      media: []
+    };
+
+  }
+
+  if (objection === "TRUST") {
+
+    return {
+      text: `Claro 🙌
+
+Trabajamos con **equipos corporativos revisados**, y todos incluyen **garantía**.
+
+Además puedes coordinar entrega o retiro para mayor tranquilidad.`,
+      media: []
+    };
+
+  }
+
+  return null;
+
+}
+
+/*
+====================================================
+CLOSING INTENT
+====================================================
+*/
+
+function closingReply({ catalogMatches = [] }) {
+
+  const item = getMainCatalogItem(catalogMatches);
+
+  if (!item) {
+
+    return {
+      text: `Perfecto 🙌
+
+Si quieres te puedo explicar cómo realizar la compra o coordinar la entrega.`,
+      media: []
+    };
+
+  }
+
+  const price = formatPrice(item.price_crc);
+
+  return buildProductResponse(`Perfecto 🙌
+
+Tenemos disponible:
+
+💻 ${item.name}
+💰 ${price}
+
+Si quieres podemos **apartar una unidad con ₡20.000** para asegurarte disponibilidad.
+
+¿Te paso los datos para el apartado?`, item);
+
+}
+
+/*
+====================================================
 SUPPORT
 ====================================================
 */
@@ -265,11 +356,48 @@ export async function generateReply({
 
   let response;
 
+  /*
+  GREETING
+  */
+
   if (intent === "GREETING") {
 
     response = greetingReply();
 
   }
+
+  /*
+  OBJECTION HANDLING
+  */
+
+  else if (objection) {
+
+    const objectionResponse = objectionReply({
+      objection,
+      catalogMatches
+    });
+
+    if (objectionResponse) {
+      response = objectionResponse;
+    }
+
+  }
+
+  /*
+  CLOSING INTENT
+  */
+
+  else if (closingIntent) {
+
+    response = closingReply({
+      catalogMatches
+    });
+
+  }
+
+  /*
+  BUY INTENT
+  */
 
   else if (intent === "BUY") {
 
@@ -281,17 +409,29 @@ export async function generateReply({
 
   }
 
+  /*
+  SUPPORT
+  */
+
   else if (intent === "SUPPORT") {
 
     response = supportReply();
 
   }
 
+  /*
+  INFO
+  */
+
   else if (intent === "INFO") {
 
     response = infoReply();
 
   }
+
+  /*
+  HIGH SCORE PUSH
+  */
 
   else if (score >= 85) {
 
@@ -300,11 +440,15 @@ export async function generateReply({
 
 Ya tengo bastante claro lo que buscas.
 
-Si quieres te ayudo a avanzar con la mejor opción disponible.`,
+Si quieres puedo ayudarte a avanzar con la mejor opción disponible y mostrarte algunas recomendaciones.`,
       media: []
     };
 
   }
+
+  /*
+  FALLBACK
+  */
 
   else {
 
