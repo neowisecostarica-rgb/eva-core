@@ -1,7 +1,6 @@
 /*
 ====================================================
-EVA CATALOG ENGINE
-Búsqueda de productos (FINAL FIX REAL DB)
+EVA CATALOG ENGINE (FIXED - ALIGNED WITH REAL DB)
 ====================================================
 */
 
@@ -22,11 +21,10 @@ export async function searchCatalog({ organization_id, text }) {
         name,
         description,
         price_crc,
-        images
+        image_urls
       FROM product_catalog
       WHERE organization_id = $1
-      AND active = true
-      AND deleted = false
+      AND is_active = true
       AND (
         name ILIKE '%' || $2 || '%'
         OR description ILIKE '%' || $2 || '%'
@@ -43,6 +41,8 @@ export async function searchCatalog({ organization_id, text }) {
   } catch (err) {
 
     console.error("catalog search error", err.message);
+
+    // 🔥 IMPORTANTE: NO romper flujo
     return [];
 
   }
