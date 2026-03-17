@@ -162,8 +162,10 @@ export async function generateReply({
 
   let response;
 
-  if (intent === "GREETING") {
-    response = greetingReply();
+  // SOLO saludar si NO hay productos detectados
+if (intent === "GREETING" && (!catalogMatches || catalogMatches.length === 0)) {
+  response = greetingReply();
+}
   }
 
   else if (intent === "BUY") {
