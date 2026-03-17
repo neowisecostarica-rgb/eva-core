@@ -43,17 +43,16 @@ router.post("/", async (req, res) => {
     const entry = req.body.entry?.[0];
     const changes = entry?.changes?.[0];
     const value = changes?.value;
+
     /*
-====================================================
-IGNORE STATUS EVENTS (IMPORTANT)
-====================================================
-*/
+    ====================================================
+    IGNORE STATUS EVENTS (CRITICAL)
+    ====================================================
+    */
 
-if (value?.statuses) {
-  return res.sendStatus(200);
-}
-
-    
+    if (value?.statuses) {
+      return res.sendStatus(200);
+    }
 
     const message = value?.messages?.[0];
 
@@ -63,7 +62,6 @@ if (value?.statuses) {
 
     /*
     IGNORE NON TEXT MESSAGES
-    PREVENT LOOP
     */
 
     if (!message.text || !message.text.body) {
@@ -74,27 +72,37 @@ if (value?.statuses) {
     const text = message.text.body;
 
     /*
-    SEND TO EVA CORE (CORRECT PAYLOAD)
+    ====================================================
+    IDEMPOTENCY ID
+    ====================================================
     */
 
-   const messageId = message.id || `${message.from}-${Date.now()}`;
+    const messageId = message.id || `${message.from}-${Date.now()}`;
 
-const result = await handleInbound({
-  organization_id: process.env.DEFAULT_ORGANIZATION_ID,
-  payload: {
-    phone,
-    text,
-    channel: "whatsapp",
-    external_message_id: messageId
-  }
-});
+    /*
+    ====================================================
+    SEND TO EVA CORE
+    ====================================================
+    */
+
+    const result = await handleInbound({
+      organization_id: process.env.DEFAULT_ORGANIZATION_ID,
+      payload: {
+        phone,
+        text,
+        channel: "whatsapp",
+        external_message_id: messageId
       }
     });
 
-    const reply = result?.reply || "Hola 👋 Soy EVA de Compu Store Costa Rica, ¿en qué puedo ayudarte hoy?";
+    const reply =
+      result?.reply ||
+      "Hola 👋 Soy EVA de Compu Store Costa Rica, ¿en qué puedo ayudarte hoy?";
 
     /*
+    ====================================================
     SEND REPLY BACK TO WHATSAPP
+    ====================================================
     */
 
     await axios.post(
