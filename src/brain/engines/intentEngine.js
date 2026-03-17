@@ -30,34 +30,24 @@ export function detectIntent(text) {
   const t = normalizeText(text);
 
   /*
-  ----------------------------------------------------
   CLOSE INTENT
-  ----------------------------------------------------
   */
 
   if (
     t.includes("quiero comprar") ||
     t.includes("la quiero") ||
-    t.includes("me interesa para comprar") ||
     t.includes("como pago") ||
     t.includes("sinpe") ||
     t.includes("tarjeta") ||
     t.includes("transferencia") ||
     t.includes("apartar") ||
-    t.includes("apartarla") ||
-    t.includes("se puede apartar") ||
-    t.includes("me la deja") ||
-    t.includes("quiero esa") ||
-    t.includes("me la reservo") ||
-    t.includes("reservarla")
+    t.includes("reservar")
   ) {
     return "CLOSE_INTENT";
   }
 
   /*
-  ----------------------------------------------------
   BUY INTENT
-  ----------------------------------------------------
   */
 
   if (
@@ -68,15 +58,20 @@ export function detectIntent(text) {
     t.includes("me interesa") ||
     t.includes("tienen") ||
     t.includes("busco") ||
-    t.includes("ocupo")
+    t.includes("ocupo") ||
+
+    /* PRODUCT KEYWORDS */
+    t.includes("laptop") ||
+    t.includes("computadora") ||
+    t.includes("pc") ||
+    t.includes("impresora") ||
+    t.includes("monitor")
   ) {
     return "BUY";
   }
 
   /*
-  ----------------------------------------------------
   INFO
-  ----------------------------------------------------
   */
 
   if (
@@ -91,14 +86,13 @@ export function detectIntent(text) {
   }
 
   /*
-  ----------------------------------------------------
   SUPPORT
-  ----------------------------------------------------
   */
 
   if (
     t.includes("mantenimiento") ||
     t.includes("reparacion") ||
+    t.includes("reparar") ||
     t.includes("no imprime") ||
     t.includes("no enciende") ||
     t.includes("esta lenta") ||
@@ -108,14 +102,11 @@ export function detectIntent(text) {
   }
 
   /*
-  ----------------------------------------------------
   GREETING
-  ----------------------------------------------------
   */
 
   if (
     t === "hola" ||
-    t === "buenas" ||
     t.includes("buenos dias") ||
     t.includes("buenas tardes") ||
     t.includes("buenas noches")
