@@ -45,13 +45,21 @@ router.post("/", async (req, res) => {
 
     const message = value?.messages?.[0];
 
-    if (!message) {
-      return res.sendStatus(200);
-    }
+if (!message) {
+  return res.sendStatus(200);
+}
 
-    const phone = message.from;
-    const text = message.text?.body || "";
+/*
+IGNORE NON TEXT MESSAGES
+PREVENT LOOP
+*/
 
+if (!message.text || !message.text.body) {
+  return res.sendStatus(200);
+}
+
+const phone = message.from;
+const text = message.text.body;
     /*
     SEND TO EVA CORE
     */
