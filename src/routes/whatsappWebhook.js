@@ -66,9 +66,7 @@ router.post("/", async (req, res) => {
     SEND TO EVA CORE (CORRECT PAYLOAD)
     */
 
-    const messageId =
-  message.id ||
-  `${message.from}-${message.timestamp || Date.now()}-${message.text?.body}`;
+    const messageId = message.id || `${message.from}-${Date.now()}`;
 
 const result = await handleInbound({
   organization_id: process.env.DEFAULT_ORGANIZATION_ID,
