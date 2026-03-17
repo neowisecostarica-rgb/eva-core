@@ -1,7 +1,7 @@
 /*
 ====================================================
 EVA CATALOG ENGINE
-Búsqueda de productos (optimizada y segura)
+Búsqueda de productos (FIXED)
 ====================================================
 */
 
@@ -9,7 +9,6 @@ import pool from "../../db.js";
 
 export async function searchCatalog({ organization_id, text }) {
 
-  // Validación básica
   if (!organization_id || !text) {
     return [];
   }
@@ -22,7 +21,7 @@ export async function searchCatalog({ organization_id, text }) {
         id,
         name,
         description,
-        price,
+        price_crc,
         image_url
       FROM product_catalog
       WHERE organization_id = $1
