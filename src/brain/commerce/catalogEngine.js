@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CATALOG ENGINE (SMART + DB REAL FIX)
+EVA CATALOG ENGINE (FIX REAL + SMART SEARCH)
 ====================================================
 */
 
@@ -8,12 +8,12 @@ import pool from "../../db.js";
 
 /*
 ====================================================
-NORMALIZATION
+NORMALIZE TEXT
 ====================================================
 */
 
-function normalizeText(value) {
-  return (value || "")
+function normalizeText(value = "") {
+  return String(value)
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
@@ -22,12 +22,11 @@ function normalizeText(value) {
 
 /*
 ====================================================
-SEARCH TERMS
+EXTRACT SEARCH TERMS
 ====================================================
 */
 
 function extractSearchTerms(text) {
-
   const normalized = normalizeText(text);
 
   const dictionary = [
@@ -36,11 +35,15 @@ function extractSearchTerms(text) {
     "dell",
     "latitude",
     "laptop",
+    "laptops",
     "computadora",
     "pc",
     "equipo",
     "estudio",
-    "trabajo"
+    "trabajo",
+    "oficina",
+    "universidad",
+    "colegio"
   ];
 
   const matchedTerms = dictionary.filter(term =>
@@ -60,19 +63,17 @@ function extractSearchTerms(text) {
 
 /*
 ====================================================
-SQL BUILDER
+BUILD WHERE CLAUSE
 ====================================================
 */
 
 function buildWhereClause(terms, startIndex = 2) {
-
   const conditions = [];
   const values = [];
 
   let paramIndex = startIndex;
 
   for (const term of terms) {
-
     conditions.push(`(
       LOWER(p.name) LIKE $${paramIndex}
       OR LOWER(p.category) LIKE $${paramIndex}
@@ -80,25 +81,26 @@ function buildWhereClause(terms, startIndex = 2) {
     )`);
 
     values.push(`%${term}%`);
-    paramIndex++;
-
+    paramIndex += 1;
   }
 
   return {
-    clause: conditions.length > 0
-      ? conditions.join(" OR ")
-      : "TRUE",
+    clause: conditions.length > 0 ? conditions.join(" OR ") : "TRUE",
     values
   };
 }
 
 /*
 ====================================================
-MAIN SEARCH
+SEARCH CATALOG
 ====================================================
 */
 
 export async function searchCatalog({ organization_id, text }) {
+
+  if (!organization_id || !text) {
+    return [];
+  }
 
   try {
 
@@ -120,13 +122,7 @@ export async function searchCatalog({ organization_id, text }) {
       WHERE p.organization_id = $1
         AND p.is_active = true
         AND (${clause})
-      ORDER BY
-        CASE
-          WHEN LOWER(p.name) LIKE '%thinkpad%' THEN 1
-          WHEN LOWER(p.name) LIKE '%latitude%' THEN 2
-          ELSE 3
-        END,
-        p.updated_at DESC NULLS LAST
+      ORDER BY p.updated_at DESC NULLS LAST
       LIMIT 3
       `,
       [organization_id, ...values]
