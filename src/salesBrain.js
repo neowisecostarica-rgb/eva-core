@@ -57,11 +57,26 @@ HELPERS
 ====================================================
 */
 
-function safeReplyText(replyResult) {
+function safeReplyText(replyResult, products = []) {
+
   const text = String(replyResult?.text || "").trim();
 
   if (text) return text;
 
+  // 🔥 SI HAY PRODUCTOS, RESPONDE CON PRODUCTO
+  if (products.length > 0) {
+
+    const product = products[0];
+
+    return `Claro 🙌 tenemos opciones disponibles.
+
+💻 ${product.name}
+💰 ₡${Number(product.price_crc || 0).toLocaleString()}
+
+¿La necesitas para estudio o trabajo?`;
+  }
+
+  // fallback normal
   return "Hola 👋 Soy EVA, asistente de ventas. Cuéntame qué producto estás buscando y con gusto te ayudo.";
 }
 
@@ -443,7 +458,7 @@ console.log("CATALOG RESULT:", products);
   catalogMatches: products
 });
 
-    const replyText = safeReplyText(replyResult);
+    const replyText = safeReplyText(replyResult, products);
 
     await saveMessage({
       organization_id,
