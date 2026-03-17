@@ -1,10 +1,33 @@
 /*
 ====================================================
-EVA CATALOG ENGINE (FIXED - ALIGNED WITH REAL DB)
+EVA CATALOG ENGINE (SMART SEARCH VERSION)
 ====================================================
 */
 
 import pool from "../../db.js";
+
+/*
+====================================================
+TEXT NORMALIZATION
+====================================================
+*/
+
+function normalizeSearchText(text = "") {
+  const clean = text.toLowerCase();
+
+  // sinónimos básicos (puedes expandir después)
+  if (clean.includes("laptop") || clean.includes("computadora") || clean.includes("pc") || clean.includes("compu")) {
+    return "laptop";
+  }
+
+  return clean;
+}
+
+/*
+====================================================
+MAIN SEARCH
+====================================================
+*/
 
 export async function searchCatalog({ organization_id, text }) {
 
@@ -13,6 +36,8 @@ export async function searchCatalog({ organization_id, text }) {
   }
 
   try {
+
+    const normalized = normalizeSearchText(text);
 
     const result = await pool.query(
       `
@@ -30,10 +55,10 @@ export async function searchCatalog({ organization_id, text }) {
         OR description ILIKE '%' || $2 || '%'
         OR category ILIKE '%' || $2 || '%'
       )
-      ORDER BY name ASC
+      ORDER BY featured DESC, name ASC
       LIMIT 5
       `,
-      [organization_id, text]
+      [organization_id, normalized]
     );
 
     return result.rows || [];
@@ -41,8 +66,6 @@ export async function searchCatalog({ organization_id, text }) {
   } catch (err) {
 
     console.error("catalog search error", err.message);
-
-    // 🔥 IMPORTANTE: NO romper flujo
     return [];
 
   }
