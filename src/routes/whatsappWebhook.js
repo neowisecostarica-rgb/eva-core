@@ -65,7 +65,7 @@ router.post("/", async (req, res) => {
       }
     );
 
-    const reply = response.data?.text || "Gracias por escribirnos.";
+    const reply = response.data?.reply || "Gracias por escribirnos.";
 
     /*
     SEND REPLY BACK TO WHATSAPP
