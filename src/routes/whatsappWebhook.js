@@ -60,7 +60,7 @@ router.post("/", async (req, res) => {
       `${process.env.EVA_API_URL}/v1/messages/inbound`,
       {
         phone,
-        message: text,
+       text: text,
         organization_id: process.env.DEFAULT_ORGANIZATION_ID
       }
     );
