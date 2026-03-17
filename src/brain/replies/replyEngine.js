@@ -162,17 +162,15 @@ export async function generateReply({
 
   let response;
 
-  // SOLO saludar si NO hay productos detectados
-if (intent === "GREETING" && (!catalogMatches || catalogMatches.length === 0)) {
-  response = greetingReply();
-}
+  // ✅ GREETING SOLO SI NO HAY PRODUCTOS
+  if (intent === "GREETING" && (!catalogMatches || catalogMatches.length === 0)) {
+    response = greetingReply();
   }
 
   else if (intent === "BUY") {
     response = buyReplyByStage({ catalogMatches, stage });
   }
 
-  // 🔥 CLAVE: SI HAY PRODUCTOS → USARLOS
   else if (catalogMatches && catalogMatches.length > 0) {
     response = productReply({ catalogMatches, interestLevel });
   }
