@@ -57,19 +57,22 @@ router.post("/", async (req, res) => {
       "Hola 👋 Soy EVA de Compu Store Costa Rica, ¿en qué puedo ayudarte hoy?";
 
     await axios.post(
-      `https://graph.facebook.com/v18.0/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`,
-      {
-        messaging_product: "whatsapp",
-        to: phone,
-        text: { body: reply }
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
-          "Content-Type": "application/json"
-        }
-      }
-    );
+  `https://graph.facebook.com/v18.0/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`,
+  {
+    messaging_product: "whatsapp",
+    to: phone,
+    type: "text",
+    text: {
+      body: reply
+    }
+  },
+  {
+    headers: {
+      Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
+      "Content-Type": "application/json"
+    }
+  }
+);
 
     return res.sendStatus(200);
 
