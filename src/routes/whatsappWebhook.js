@@ -66,17 +66,23 @@ router.post("/", async (req, res) => {
     SEND TO EVA CORE (CORRECT PAYLOAD)
     */
 
-    const result = await handleInbound({
-      organization_id: process.env.DEFAULT_ORGANIZATION_ID,
-      payload: {
-        phone,
-        text,
-        channel: "whatsapp",
-        external_message_id: message.id // 🔥 clave para idempotencia
+    const messageId =
+  message.id ||
+  `${message.from}-${message.timestamp || Date.now()}-${message.text?.body}`;
+
+const result = await handleInbound({
+  organization_id: process.env.DEFAULT_ORGANIZATION_ID,
+  payload: {
+    phone,
+    text,
+    channel: "whatsapp",
+    external_message_id: messageId
+  }
+});
       }
     });
 
-    const reply = result?.reply || "Hola 👋 Soy EVA, ¿en qué puedo ayudarte hoy?";
+    const reply = result?.reply || "Hola 👋 Soy EVA de Compu Store Costa Rica, ¿en qué puedo ayudarte hoy?";
 
     /*
     SEND REPLY BACK TO WHATSAPP
