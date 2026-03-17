@@ -1,24 +1,10 @@
-/*
-====================================================
-EVA WHATSAPP WEBHOOK
-Meta Cloud API Integration
-====================================================
-*/
-
 import express from "express";
 import axios from "axios";
 import { handleInbound } from "../salesBrain.js";
 
 const router = express.Router();
 
-/*
-====================================================
-VERIFY WEBHOOK
-====================================================
-*/
-
 router.get("/", (req, res) => {
-
   const mode = req.query["hub.mode"];
   const token = req.query["hub.verify_token"];
   const challenge = req.query["hub.challenge"];
@@ -30,26 +16,13 @@ router.get("/", (req, res) => {
   return res.sendStatus(403);
 });
 
-/*
-====================================================
-RECEIVE MESSAGES
-====================================================
-*/
-
 router.post("/", async (req, res) => {
-
   try {
-
     const entry = req.body.entry?.[0];
     const changes = entry?.changes?.[0];
     const value = changes?.value;
 
-    /*
-    ====================================================
-    IGNORE STATUS EVENTS (CRITICAL)
-    ====================================================
-    */
-
+    // IGNORE STATUS EVENTS
     if (value?.statuses) {
       return res.sendStatus(200);
     }
@@ -60,30 +33,14 @@ router.post("/", async (req, res) => {
       return res.sendStatus(200);
     }
 
-    /*
-    IGNORE NON TEXT MESSAGES
-    */
-
-    if (!message.text || !message.text.body) {
+    if (!message.text?.body) {
       return res.sendStatus(200);
     }
 
     const phone = message.from;
     const text = message.text.body;
 
-    /*
-    ====================================================
-    IDEMPOTENCY ID
-    ====================================================
-    */
-
     const messageId = message.id || `${message.from}-${Date.now()}`;
-
-    /*
-    ====================================================
-    SEND TO EVA CORE
-    ====================================================
-    */
 
     const result = await handleInbound({
       organization_id: process.env.DEFAULT_ORGANIZATION_ID,
@@ -98,12 +55,6 @@ router.post("/", async (req, res) => {
     const reply =
       result?.reply ||
       "Hola 👋 Soy EVA de Compu Store Costa Rica, ¿en qué puedo ayudarte hoy?";
-
-    /*
-    ====================================================
-    SEND REPLY BACK TO WHATSAPP
-    ====================================================
-    */
 
     await axios.post(
       `https://graph.facebook.com/v18.0/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`,
@@ -123,16 +74,13 @@ router.post("/", async (req, res) => {
     return res.sendStatus(200);
 
   } catch (err) {
-
     console.error("WHATSAPP WEBHOOK ERROR", {
       message: err.message,
       response: err?.response?.data
     });
 
     return res.sendStatus(500);
-
   }
-
 });
 
 export default router;
