@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CATALOG ENGINE (SMART SEARCH VERSION)
+EVA CATALOG ENGINE (SMART + DB REAL FIX)
 ====================================================
 */
 
@@ -8,19 +8,88 @@ import pool from "../../db.js";
 
 /*
 ====================================================
-TEXT NORMALIZATION
+NORMALIZATION
 ====================================================
 */
 
-function normalizeSearchText(text = "") {
-  const clean = text.toLowerCase();
+function normalizeText(value) {
+  return (value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+}
 
-  // sinónimos básicos (puedes expandir después)
-  if (clean.includes("laptop") || clean.includes("computadora") || clean.includes("pc") || clean.includes("compu")) {
-    return "laptop";
+/*
+====================================================
+SEARCH TERMS
+====================================================
+*/
+
+function extractSearchTerms(text) {
+
+  const normalized = normalizeText(text);
+
+  const dictionary = [
+    "thinkpad",
+    "lenovo",
+    "dell",
+    "latitude",
+    "laptop",
+    "computadora",
+    "pc",
+    "equipo",
+    "estudio",
+    "trabajo"
+  ];
+
+  const matchedTerms = dictionary.filter(term =>
+    normalized.includes(term)
+  );
+
+  if (matchedTerms.length > 0) {
+    return matchedTerms;
   }
 
-  return clean;
+  return normalized
+    .split(/\s+/)
+    .map(word => word.trim())
+    .filter(word => word.length >= 3)
+    .slice(0, 5);
+}
+
+/*
+====================================================
+SQL BUILDER
+====================================================
+*/
+
+function buildWhereClause(terms, startIndex = 2) {
+
+  const conditions = [];
+  const values = [];
+
+  let paramIndex = startIndex;
+
+  for (const term of terms) {
+
+    conditions.push(`(
+      LOWER(p.name) LIKE $${paramIndex}
+      OR LOWER(p.category) LIKE $${paramIndex}
+      OR LOWER(p.description) LIKE $${paramIndex}
+    )`);
+
+    values.push(`%${term}%`);
+    paramIndex++;
+
+  }
+
+  return {
+    clause: conditions.length > 0
+      ? conditions.join(" OR ")
+      : "TRUE",
+    values
+  };
 }
 
 /*
@@ -31,34 +100,36 @@ MAIN SEARCH
 
 export async function searchCatalog({ organization_id, text }) {
 
-  if (!organization_id || !text) {
-    return [];
-  }
-
   try {
 
-    const normalized = normalizeSearchText(text);
+    const terms = extractSearchTerms(text);
+
+    const { clause, values } = buildWhereClause(terms);
 
     const result = await pool.query(
       `
       SELECT
-        id,
-        name,
-        description,
-        price_crc,
-        image_urls
-      FROM product_catalog
-      WHERE organization_id = $1
-      AND is_active = true
-      AND (
-        name ILIKE '%' || $2 || '%'
-        OR description ILIKE '%' || $2 || '%'
-        OR category ILIKE '%' || $2 || '%'
-      )
-      ORDER BY featured DESC, name ASC
-      LIMIT 5
+        p.id,
+        p.name,
+        p.category,
+        p.description,
+        p.price_crc,
+        p.stock,
+        p.image_urls
+      FROM product_catalog p
+      WHERE p.organization_id = $1
+        AND p.is_active = true
+        AND (${clause})
+      ORDER BY
+        CASE
+          WHEN LOWER(p.name) LIKE '%thinkpad%' THEN 1
+          WHEN LOWER(p.name) LIKE '%latitude%' THEN 2
+          ELSE 3
+        END,
+        p.updated_at DESC NULLS LAST
+      LIMIT 3
       `,
-      [organization_id, normalized]
+      [organization_id, ...values]
     );
 
     return result.rows || [];
