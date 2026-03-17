@@ -7,7 +7,7 @@ Meta Cloud API Integration
 
 import express from "express";
 import axios from "axios";
-import { handleInbound } from "../salesBrain.js"; // 🔥 IMPORT DIRECTO
+import { handleInbound } from "../salesBrain.js";
 
 const router = express.Router();
 
@@ -63,17 +63,20 @@ router.post("/", async (req, res) => {
     const text = message.text.body;
 
     /*
-    SEND TO EVA CORE (DIRECT)
+    SEND TO EVA CORE (CORRECT PAYLOAD)
     */
 
     const result = await handleInbound({
-      phone,
-      text,
       organization_id: process.env.DEFAULT_ORGANIZATION_ID,
-      channel: "whatsapp"
+      payload: {
+        phone,
+        text,
+        channel: "whatsapp",
+        external_message_id: message.id // 🔥 clave para idempotencia
+      }
     });
 
-    const reply = result?.reply || "Gracias por escribirnos.";
+    const reply = result?.reply || "Hola 👋 Soy EVA, ¿en qué puedo ayudarte hoy?";
 
     /*
     SEND REPLY BACK TO WHATSAPP
@@ -98,7 +101,10 @@ router.post("/", async (req, res) => {
 
   } catch (err) {
 
-    console.error("WHATSAPP WEBHOOK ERROR", err?.response?.data || err.message);
+    console.error("WHATSAPP WEBHOOK ERROR", {
+      message: err.message,
+      response: err?.response?.data
+    });
 
     return res.sendStatus(500);
 
