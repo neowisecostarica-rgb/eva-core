@@ -1,7 +1,6 @@
 /*
 ====================================================
-EVA REPLY ENGINE
-Motor de respuestas comerciales
+EVA REPLY ENGINE (CLOSING VERSION)
 ====================================================
 */
 
@@ -15,70 +14,45 @@ HELPERS
 */
 
 function formatPrice(value) {
-
-  if (value === null || value === undefined || value === "") {
-    return "Consultar precio";
-  }
-
+  if (!value) return "Consultar precio";
   const numberValue = Number(value);
-
-  if (Number.isNaN(numberValue)) {
-    return "Consultar precio";
-  }
-
+  if (Number.isNaN(numberValue)) return "Consultar precio";
   return `₡${numberValue.toLocaleString()}`;
-
 }
 
 function getMainCatalogItem(catalogMatches = []) {
-
-  if (!Array.isArray(catalogMatches) || !catalogMatches.length) {
-    return null;
-  }
-
-  return catalogMatches[0];
-
+  return catalogMatches?.[0] || null;
 }
 
 function buildProductResponse(text, product = null) {
-
-  let media = [];
-
-  if (product) {
-    media = extractProductImages(product);
-  }
-
   return {
     text,
-    media
+    media: product ? extractProductImages(product) : []
   };
-
 }
 
 /*
 ====================================================
-GREETING
+GREETING (AHORA CALIFICA)
 ====================================================
 */
 
 function greetingReply() {
-
   return {
     text: `Hola 🙌
 
-Te atiende *EVA*, asistente de ventas.
+Te atiende *Eva de Compu Store Costa Rica*.
 
-Estoy aquí para ayudarte a encontrar la mejor opción según lo que necesites.
+Tenemos laptops de línea corporativa con excelente rendimiento y garantía 👌
 
-¿En qué te puedo ayudar hoy?`,
+¿La necesitas para *estudio o trabajo*?`,
     media: []
   };
-
 }
 
 /*
 ====================================================
-PRODUCT REPLY
+PRODUCT REPLY (VENDEDOR REAL)
 ====================================================
 */
 
@@ -87,33 +61,37 @@ function productReply({ catalogMatches = [], interestLevel = null }) {
   const item = getMainCatalogItem(catalogMatches);
 
   if (!item) {
-
     return {
-      text: `En este momento no encontré un producto exacto con esa descripción.
+      text: `En este momento no encontré exactamente ese modelo 🙌
 
-Si quieres puedes contarme un poco más sobre lo que necesitas y te ayudo a encontrar la mejor opción.`,
+Cuéntame para qué la necesitas (estudio, trabajo, diseño, etc.) y te recomiendo la mejor opción.`,
       media: []
     };
-
   }
 
   const price = formatPrice(item.price_crc);
 
+  // 🔥 ALTO INTERÉS → EMPUJA CIERRE
   if (interestLevel === "HIGH") {
 
-    return buildProductResponse(`Te recomiendo esta opción 👇
+    return buildProductResponse(`Esta opción es de las más buscadas 👇
 
 💻 ${item.name}
 💰 ${price}
 
-Es una de las más buscadas porque funciona muy bien y tiene excelente relación precio-rendimiento.
+✅ Línea corporativa
+✅ SSD rápido
+✅ 1 año de garantía
 
-Si quieres podemos **apartar una unidad ahora mismo** para que no se agoten.
+Ahorita tenemos pocas unidades disponibles.
 
-¿Te gustaría ver fotos reales del equipo?`, item);
+Podemos apartarla con ₡20.000 para asegurártela 🙌
+
+¿Te gustaría que te la reserve?`, item);
 
   }
 
+  // 🟡 INTERÉS MEDIO → GUÍA + AVANZA
   if (interestLevel === "MEDIUM") {
 
     return buildProductResponse(`Te recomiendo esta opción 👇
@@ -121,79 +99,79 @@ Si quieres podemos **apartar una unidad ahora mismo** para que no se agoten.
 💻 ${item.name}
 💰 ${price}
 
-Es una laptop corporativa muy buscada porque ofrece muy buen rendimiento para estudio o trabajo.
+Es una laptop corporativa muy buena para uso diario 👌
 
-¿Quieres que te envíe **fotos reales del equipo**?`, item);
+Si quieres te envío fotos reales y te explico todo.
+
+¿La necesitas para estudio o trabajo?`, item);
 
   }
 
+  // 🔵 FRÍO → CALIFICA
   return buildProductResponse(`Te puedo recomendar esta opción 👇
 
 💻 ${item.name}
 💰 ${price}
 
-Si quieres puedo enviarte más detalles o fotos del equipo.`, item);
+¿La necesitas para estudio o trabajo? Así te guío mejor 👌`, item);
 
 }
 
 /*
 ====================================================
-OBJECTION HANDLING
+OBJECTIONS (REDIRIGE A CIERRE)
 ====================================================
 */
 
-function objectionReply({ objection = null, catalogMatches = [] }) {
-
-  const item = getMainCatalogItem(catalogMatches);
+function objectionReply({ objection = null }) {
 
   if (objection === "PRICE") {
-
     return {
-      text: `Entiendo perfectamente 🙌
+      text: `Entiendo 🙌
 
-Estos equipos son **línea corporativa**, diseñados para durar muchos años.
+Estos equipos son línea corporativa, diseñados para durar muchos años.
 
-Además incluyen **SSD, revisión técnica completa y garantía**, por eso tienen mucho mejor rendimiento que equipos básicos.
+Incluyen SSD, revisión completa y garantía, por eso rinden mucho mejor que equipos básicos.
 
-Muchos clientes los prefieren precisamente por esa relación **precio–durabilidad**.`,
+Muchos clientes los prefieren por eso 👌
+
+Si quieres puedo ayudarte a encontrar una opción dentro de tu presupuesto.`,
       media: []
     };
-
   }
 
   if (objection === "NEW_OR_USED") {
-
     return {
-      text: `Son **equipos corporativos reacondicionados**.
+      text: `Son equipos corporativos reacondicionados 🙌
 
-Se revisan completamente antes de entregarlos para asegurar que funcionen perfecto.
+Se revisan completamente antes de entregarlos y funcionan perfecto.
 
-Además incluyen **garantía**, por lo que puedes usarlos con tranquilidad.`,
+Además incluyen garantía para que compres con tranquilidad.
+
+¿Para qué uso la necesitas?`,
       media: []
     };
-
   }
 
   if (objection === "TRUST") {
-
     return {
       text: `Claro 🙌
 
-Trabajamos con **equipos corporativos revisados**, y todos incluyen **garantía**.
+Todos los equipos se revisan antes de entregarse y tienen garantía.
 
-Además puedes coordinar entrega o retiro para mayor tranquilidad.`,
+También puedes coordinar entrega o retiro sin problema.
+
+Si quieres te envío fotos reales del equipo 👌`,
       media: []
     };
-
   }
 
   return null;
-
 }
 
 /*
 ====================================================
-CLOSING INTENT
+CLOSING
 ====================================================
 */
 
@@ -202,66 +180,56 @@ function closingReply({ catalogMatches = [] }) {
   const item = getMainCatalogItem(catalogMatches);
 
   if (!item) {
-
     return {
       text: `Perfecto 🙌
 
-Si quieres te puedo explicar cómo realizar la compra o coordinar la entrega.`,
+Te ayudo con el proceso de compra o apartado.
+
+¿Prefieres SINPE, transferencia o tarjeta?`,
       media: []
     };
-
   }
 
   const price = formatPrice(item.price_crc);
 
   return buildProductResponse(`Perfecto 🙌
 
-Tenemos disponible:
+💻 ${item.name}
+💰 ${price}
+
+Para asegurarlo puedes apartarlo con ₡20.000.
+
+¿Te paso los datos para hacer el apartado?`, item);
+
+}
+
+/*
+====================================================
+BUY FLOW
+====================================================
+*/
+
+function buyReplyByStage({ catalogMatches = [], stage = "new" }) {
+
+  const item = getMainCatalogItem(catalogMatches);
+  if (!item) return productReply({ catalogMatches });
+
+  const price = formatPrice(item.price_crc);
+
+  if (stage === "hot") {
+    return buildProductResponse(`Perfecto 🙌
 
 💻 ${item.name}
 💰 ${price}
 
-Si quieres podemos **apartar una unidad con ₡20.000** para asegurarte disponibilidad.
+Es la última disponible en este momento.
 
-¿Te paso los datos para el apartado?`, item);
+Puedes apartarla con ₡20.000 para asegurarla.
 
-}
+¿Te paso los datos?`, item);
+  }
 
-/*
-====================================================
-SUPPORT
-====================================================
-*/
-
-function supportReply() {
-
-  return {
-    text: `Claro 👨‍🔧
-
-Podemos ayudarte a revisar tu equipo en el taller.
-
-¿El problema es con **una computadora o una impresora**?`,
-    media: []
-  };
-
-}
-
-/*
-====================================================
-INFO
-====================================================
-*/
-
-function infoReply() {
-
-  return {
-    text: `Perfecto 🙌
-
-Con gusto te doy más información.
-
-Cuéntame un poco más sobre lo que necesitas y así puedo recomendarte la mejor opción.`,
-    media: []
-  };
+  return productReply({ catalogMatches });
 
 }
 
@@ -272,204 +240,62 @@ FALLBACK
 */
 
 function fallbackReply() {
-
   return {
     text: `Perfecto 🙌
 
-Cuéntame un poco más sobre lo que estás buscando y con gusto te ayudo.`,
+Cuéntame qué estás buscando y te ayudo a encontrar la mejor opción 👌`,
     media: []
   };
-
 }
 
 /*
 ====================================================
-BUY RESPONSES BY STAGE
-====================================================
-*/
-
-function buyReplyByStage({
-  catalogMatches = [],
-  interestLevel = null,
-  stage = "new"
-}) {
-
-  const item = getMainCatalogItem(catalogMatches);
-
-  if (stage === "hot" && item) {
-
-    const price = formatPrice(item.price_crc);
-
-    return buildProductResponse(`Perfecto 🙌
-
-Tenemos disponible esta opción:
-
-💻 ${item.name}
-💰 ${price}
-
-Si quieres podemos **apartar una unidad ahora mismo con ₡20.000**.
-
-¿Te paso los datos para hacer el apartado?`, item);
-
-  }
-
-  if (stage === "considering" && item) {
-
-    const price = formatPrice(item.price_crc);
-
-    return buildProductResponse(`Esta opción suele gustarle mucho a nuestros clientes 👇
-
-💻 ${item.name}
-💰 ${price}
-
-Es una **laptop de línea corporativa**, diseñada para durar muchos años.
-
-¿Te gustaría ver **fotos reales del equipo**?`, item);
-
-  }
-
-  return productReply({
-    catalogMatches,
-    interestLevel
-  });
-
-}
-
-/*
-====================================================
-REPLY ORCHESTRATOR
+MAIN
 ====================================================
 */
 
 export async function generateReply({
-
-  intent = null,
-  catalogMatches = [],
-  interestLevel = null,
-  objection = null,
-  closingIntent = null,
-  opportunities = [],
-  score = 0,
-  stage = "new"
-
+  intent,
+  catalogMatches,
+  interestLevel,
+  objection,
+  closingIntent,
+  score,
+  stage
 }) {
 
   let response;
 
-  /*
-  GREETING
-  */
-
   if (intent === "GREETING") {
-
     response = greetingReply();
-
   }
-
-  /*
-  OBJECTION HANDLING
-  */
 
   else if (objection) {
-
-    const objectionResponse = objectionReply({
-      objection,
-      catalogMatches
-    });
-
-    if (objectionResponse) {
-      response = objectionResponse;
-    }
-
+    response = objectionReply({ objection }) || fallbackReply();
   }
-
-  /*
-  CLOSING INTENT
-  */
 
   else if (closingIntent) {
-
-    response = closingReply({
-      catalogMatches
-    });
-
+    response = closingReply({ catalogMatches });
   }
-
-  /*
-  BUY INTENT
-  */
 
   else if (intent === "BUY") {
-
-    response = buyReplyByStage({
-      catalogMatches,
-      interestLevel,
-      stage
-    });
-
+    response = buyReplyByStage({ catalogMatches, stage });
   }
-
-  /*
-  SUPPORT
-  */
-
-  else if (intent === "SUPPORT") {
-
-    response = supportReply();
-
-  }
-
-  /*
-  INFO
-  */
-
-  else if (intent === "INFO") {
-
-    response = infoReply();
-
-  }
-
-  /*
-  HIGH SCORE PUSH
-  */
 
   else if (score >= 85) {
-
-    response = {
-      text: `Perfecto 🙌
-
-Ya tengo bastante claro lo que buscas.
-
-Si quieres puedo ayudarte a avanzar con la mejor opción disponible y mostrarte algunas recomendaciones.`,
-      media: []
-    };
-
+    response = closingReply({ catalogMatches });
   }
-
-  /*
-  FALLBACK
-  */
 
   else {
-
     response = fallbackReply();
-
   }
 
-  /*
-  AI Enhancement
-  */
-
   try {
-
     if (response?.text) {
       response.text = await enhanceReply(response.text);
     }
-
   } catch (err) {
-
     console.error("reply ai enhance error", err);
-
   }
 
   return response;
