@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA REPLY ENGINE (FIXED VERSION)
+EVA REPLY ENGINE (HARDENED VERSION)
 ====================================================
 */
 
@@ -21,13 +21,32 @@ function formatPrice(value) {
 }
 
 function getMainCatalogItem(catalogMatches = []) {
-  return catalogMatches?.[0] || null;
+  return Array.isArray(catalogMatches) && catalogMatches.length > 0
+    ? catalogMatches[0]
+    : null;
 }
 
 function buildProductResponse(text, product = null) {
   return {
     text,
     media: product ? extractProductImages(product) : []
+  };
+}
+
+/*
+====================================================
+SMART FALLBACK (CRÍTICO)
+====================================================
+*/
+
+function smartFallbackReply() {
+  return {
+    text: `Buenísima pregunta 🙌
+
+Permitime un minuto para revisarlo bien y darte una respuesta precisa 👀
+
+Ya te confirmo en breve.`,
+    media: []
   };
 }
 
@@ -61,12 +80,7 @@ function productReply({ catalogMatches = [], interestLevel = null }) {
   const item = getMainCatalogItem(catalogMatches);
 
   if (!item) {
-    return {
-      text: `En este momento no encontré exactamente ese modelo 🙌
-
-Cuéntame para qué la necesitas y te recomiendo la mejor opción.`,
-      media: []
-    };
+    return smartFallbackReply();
   }
 
   const price = formatPrice(item.price_crc);
@@ -108,12 +122,7 @@ function buyReplyByStage({ catalogMatches = [], stage = "new" }) {
   const item = getMainCatalogItem(catalogMatches);
 
   if (!item) {
-    return {
-      text: `Perfecto 🙌
-
-¿La necesitas para estudio o trabajo?`,
-      media: []
-    };
+    return smartFallbackReply();
   }
 
   const price = formatPrice(item.price_crc);
@@ -131,7 +140,7 @@ Puedes apartarla con ₡20.000.
 
 /*
 ====================================================
-FALLBACK
+FALLBACK (CONTROLADO)
 ====================================================
 */
 
@@ -162,22 +171,47 @@ export async function generateReply({
 
   let response;
 
-  // ✅ GREETING SOLO SI NO HAY PRODUCTOS
-  if (intent === "GREETING" && (!catalogMatches || catalogMatches.length === 0)) {
-    response = greetingReply();
+  try {
+
+    // 🟢 GREETING SOLO SI NO HAY CONTEXTO
+    if (intent === "GREETING" && (!catalogMatches || catalogMatches.length === 0)) {
+      response = greetingReply();
+    }
+
+    // 🟢 COMPRA
+    else if (intent === "BUY") {
+      response = buyReplyByStage({ catalogMatches, stage });
+    }
+
+    // 🟢 PRODUCTO ENCONTRADO
+    else if (Array.isArray(catalogMatches) && catalogMatches.length > 0) {
+      response = productReply({ catalogMatches, interestLevel });
+    }
+
+    // 🔴 CATALOGO VACÍO → fallback inteligente
+    else if (Array.isArray(catalogMatches) && catalogMatches.length === 0) {
+      console.log("CATALOG EMPTY → SMART FALLBACK");
+      response = smartFallbackReply();
+    }
+
+    // 🔴 cualquier otro caso raro
+    else {
+      console.log("UNKNOWN CASE → FALLBACK");
+      response = fallbackReply();
+    }
+
+  } catch (err) {
+    console.error("REPLY ENGINE HARD ERROR:", err);
+
+    // 🔥 fallback crítico de sistema
+    response = smartFallbackReply();
   }
 
-  else if (intent === "BUY") {
-    response = buyReplyByStage({ catalogMatches, stage });
-  }
-
-  else if (catalogMatches && catalogMatches.length > 0) {
-    response = productReply({ catalogMatches, interestLevel });
-  }
-
-  else {
-    response = fallbackReply();
-  }
+  /*
+  ====================================================
+  AI ENHANCEMENT (NO ROMPE EL SISTEMA)
+  ====================================================
+  */
 
   try {
     if (response?.text) {
