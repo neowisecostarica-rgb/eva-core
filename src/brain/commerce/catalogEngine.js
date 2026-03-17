@@ -1,7 +1,7 @@
 /*
 ====================================================
 EVA CATALOG ENGINE
-Búsqueda de productos (FIXED)
+Búsqueda de productos (FINAL FIX REAL DB)
 ====================================================
 */
 
@@ -22,12 +22,15 @@ export async function searchCatalog({ organization_id, text }) {
         name,
         description,
         price_crc,
-        image_url
+        images
       FROM product_catalog
       WHERE organization_id = $1
+      AND active = true
+      AND deleted = false
       AND (
         name ILIKE '%' || $2 || '%'
         OR description ILIKE '%' || $2 || '%'
+        OR category ILIKE '%' || $2 || '%'
       )
       ORDER BY name ASC
       LIMIT 5
