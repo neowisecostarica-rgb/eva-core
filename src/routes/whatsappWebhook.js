@@ -43,6 +43,17 @@ router.post("/", async (req, res) => {
     const entry = req.body.entry?.[0];
     const changes = entry?.changes?.[0];
     const value = changes?.value;
+    /*
+====================================================
+IGNORE STATUS EVENTS (IMPORTANT)
+====================================================
+*/
+
+if (value?.statuses) {
+  return res.sendStatus(200);
+}
+
+    
 
     const message = value?.messages?.[0];
 
@@ -66,7 +77,7 @@ router.post("/", async (req, res) => {
     SEND TO EVA CORE (CORRECT PAYLOAD)
     */
 
-    const messageId = message.id || `${message.from}-${Date.now()}`;
+   const messageId = message.id || `${message.from}-${Date.now()}`;
 
 const result = await handleInbound({
   organization_id: process.env.DEFAULT_ORGANIZATION_ID,
