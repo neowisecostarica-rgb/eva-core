@@ -1,11 +1,12 @@
 /*
 ====================================================
-EVA MESSAGES API (FULL HARDENED VERSION)
+EVA MESSAGES API (FOLLOWUP ENABLED)
 ====================================================
 */
 
 import express from "express";
 import { handleInbound } from "../salesBrain.js";
+import pool from "../db.js";
 
 /*
 AUTH
@@ -30,7 +31,7 @@ const router = express.Router();
 
 /*
 ====================================================
-GLOBAL MIDDLEWARE STACK (ORDEN CRÍTICO)
+GLOBAL MIDDLEWARE
 ====================================================
 */
 
@@ -54,13 +55,7 @@ router.post("/", async (req, res) => {
 
   try {
 
-    const { phone, text } = req.body;
-
-    /*
-    ====================================================
-    VALIDACIÓN
-    ====================================================
-    */
+    const { phone, text, conversation_id } = req.body;
 
     if (!text || typeof text !== "string") {
       return res.status(400).json({
@@ -70,52 +65,47 @@ router.post("/", async (req, res) => {
     }
 
     const organization_id = req.organization_id;
-
-    if (!organization_id) {
-      return res.status(400).json({
-        success: false,
-        error: "organization_not_resolved"
-      });
-    }
-
     const userPhone = phone || "unknown";
 
     /*
     ====================================================
-    LOG CONTROLADO
+    🔥 CANCELAR FOLLOWUPS ACTIVOS
     ====================================================
     */
 
-    console.log("📩 inbound (secure):", {
-      org: organization_id,
-      phone: userPhone,
-      text_length: text.length,
-      api_key: req.auth?.api_key_name
-    });
+    try {
+      await pool.query(
+        `
+        UPDATE followups
+        SET status = 'CANCELLED',
+            updated_at = NOW()
+        WHERE organization_id = $1
+        AND lead_phone = $2
+        AND status = 'PENDING'
+        `,
+        [organization_id, userPhone]
+      );
+    } catch (err) {
+      console.warn("⚠️ cancel followups error", err.message);
+    }
 
     /*
     ====================================================
-    CORE EXECUTION
+    CORE
     ====================================================
     */
 
     const result = await handleInbound({
       organization_id,
       phone: userPhone,
-      text
+      text,
+      conversation_id
     });
-
-    /*
-    ====================================================
-    RESPONSE
-    ====================================================
-    */
 
     return res.json({
       success: true,
       reply: result.reply,
       meta: {
-        ...result.meta,
         organization_id
       }
     });
