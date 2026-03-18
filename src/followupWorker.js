@@ -127,7 +127,62 @@ export async function processFollowups(sendMessage) {
         if (!lock.rowCount) continue;
 
         const followup = lock.rows[0];
+/*
+------------------------------------------------
+ANTI-SPAM / ACTIVIDAD RECIENTE
+------------------------------------------------
+*/
 
+try {
+
+  // evitar followup si ya fue enviado recientemente
+  if (followup.sent === true) {
+    await pool.query(
+      `
+      UPDATE followups
+      SET status = 'CANCELLED',
+          updated_at = NOW()
+      WHERE id = $1
+      `,
+      [followup.id]
+    );
+    continue;
+  }
+
+  // evitar followup si hay otro followup pendiente más reciente
+  const newer = await pool.query(
+    `
+    SELECT id FROM followups
+    WHERE organization_id = $1
+    AND lead_phone = $2
+    AND status = 'PENDING'
+    AND scheduled_for > $3
+    LIMIT 1
+    `,
+    [
+      followup.organization_id,
+      followup.lead_phone,
+      followup.scheduled_for
+    ]
+  );
+
+  if (newer.rowCount) {
+    await pool.query(
+      `
+      UPDATE followups
+      SET status = 'CANCELLED',
+          updated_at = NOW()
+      WHERE id = $1
+      `,
+      [followup.id]
+    );
+    continue;
+  }
+
+} catch (err) {
+  console.warn("⚠️ anti-spam check error", err.message);
+}
+        
         /*
         ------------------------------------------------
         VALIDATION
@@ -200,14 +255,16 @@ export async function processFollowups(sendMessage) {
         */
 
         await pool.query(
-          `
-          UPDATE followups
-          SET status = 'DONE',
-              updated_at = NOW()
-          WHERE id = $1
-        `,
-          [followup.id]
-        );
+  `
+  UPDATE followups
+  SET status = 'DONE',
+      sent = true,
+      sent_at = NOW(),
+      updated_at = NOW()
+  WHERE id = $1
+`,
+  [followup.id]
+);
 
         /*
         ------------------------------------------------
