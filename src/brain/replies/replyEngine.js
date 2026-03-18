@@ -37,21 +37,7 @@ function buildProductResponse(text, product = null) {
 }
 
 /*
-====================================================
-SMART FALLBACK (CRÍTICO)
-====================================================
-*/
 
-function smartFallbackReply() {
-  return {
-    text: `Buenísima pregunta 🙌
-
-Permitime un minuto para revisarlo bien y darte una respuesta precisa 👀
-
-Ya te confirmo en breve.`,
-    media: []
-  };
-}
 
 /*
 ====================================================
@@ -83,8 +69,11 @@ function productReply({ catalogMatches = [], interestLevel = null }) {
   const item = getMainCatalogItem(catalogMatches);
 
   if (!item) {
-    return smartFallbackReply();
-  }
+  return smartFallbackReply({
+    stage,
+    products: catalogMatches
+  });
+}
 
   const price = formatPrice(item.price_crc);
 
