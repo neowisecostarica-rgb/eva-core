@@ -143,47 +143,74 @@ export async function handleInbound({
     });
 
     /*
-    ====================================================
-    GENERAR RESPUESTA (ÚNICA FUENTE)
-    ====================================================
-    */
+====================================================
+GENERAR RESPUESTA (ÚNICA FUENTE)
+====================================================
+*/
 
-    const reply = await generateReply({
-      text,
-      intent,
-      stage,
-      catalogMatches,
-      interestLevel
-    });
+const reply = await generateReply({
+  text,
+  intent,
+  stage,
+  catalogMatches,
+  interestLevel
+});
 
-    /*
-    ====================================================
-    RESPUESTA FINAL
-    ====================================================
-    */
+/*
+====================================================
+CREATE FOLLOWUP (P0)
+====================================================
+*/
 
-    return {
-      reply,
-      meta: {
-        intent,
-        stage,
-        products_found: catalogMatches.length
-      }
-    };
+try {
 
-  } catch (err) {
+  const shouldCreateFollowup =
+    catalogMatches.length > 0 ||
+    intent === "BUY";
 
-    console.error("❌ salesBrain error:", err.message);
+  if (shouldCreateFollowup) {
 
-    return {
-      reply: {
-        text: "Hubo un problema 🙏 pero con gusto te ayudo.\n\n¿Buscas laptop para estudio o trabajo?",
-        media: []
-      },
-      meta: {
-        error: true
-      }
-    };
+    const scheduledFor = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+    await pool.query(
+      `
+      INSERT INTO followups (
+        organization_id,
+        lead_phone,
+        reason,
+        scheduled_for,
+        status,
+        attempt_count,
+        created_at,
+        updated_at
+      )
+      VALUES ($1, $2, $3, $4, 'PENDING', 0, NOW(), NOW())
+    `,
+      [
+        organization_id,
+        phone,
+        "sales_followup",
+        scheduledFor
+      ]
+    );
 
   }
+
+} catch (err) {
+  console.error("FOLLOWUP CREATE ERROR", err.message);
 }
+
+/*
+====================================================
+RESPUESTA FINAL
+====================================================
+*/
+
+return {
+  reply,
+  meta: {
+    intent,
+    stage,
+    products_found: catalogMatches.length
+  }
+};
