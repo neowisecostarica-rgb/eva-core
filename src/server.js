@@ -7,8 +7,7 @@ import devChatRoute from "./routes/devChat.js";
 import devChatUIRoute from "./routes/devChatUI.js";
 import whatsappWebhook from "./routes/whatsappWebhook.js";
 
-// 🔴 WORKER DESACTIVADO TEMPORALMENTE
-// import { startFollowupWorker } from "./followupWorker.js";
+import { startFollowupWorker } from "./followupWorker.js"; // ✅ ACTIVADO
 
 dotenv.config();
 
@@ -27,10 +26,15 @@ const rateMap = new Map();
 
 app.use((req, res, next) => {
 
-  const ip =
+  let ip =
     req.headers["x-forwarded-for"] ||
     req.socket.remoteAddress ||
     "unknown";
+
+  // 🔥 FIX: tomar solo el primer IP
+  if (typeof ip === "string" && ip.includes(",")) {
+    ip = ip.split(",")[0].trim();
+  }
 
   const now = Date.now();
 
@@ -92,14 +96,16 @@ app.use("/dev", devChatUIRoute);
 app.use("/webhook/whatsapp", whatsappWebhook);
 
 /* ===============================
-   TEMP MESSAGE SENDER (NO USADO)
+   FOLLOWUP MESSAGE SENDER
 ================================ */
 
-// ⚠️ Esto se deja pero no se usa porque el worker está apagado
-function sendWhatsAppMessage({ phone, message }) {
-  console.log("FOLLOWUP MESSAGE");
+async function sendWhatsAppMessage({ phone, message }) {
+  console.log("📩 FOLLOWUP MESSAGE");
   console.log("PHONE:", phone);
   console.log("MESSAGE:", message);
+
+  // 🔥 FUTURO:
+  // aquí va integración real con WhatsApp API
 }
 
 /* ===============================
@@ -114,10 +120,10 @@ app.listen(PORT, () => {
 
   /*
   ==============================
-  FOLLOWUP WORKER DESACTIVADO
+  START FOLLOWUP WORKER 🔥
   ==============================
   */
 
-  // startFollowupWorker(sendWhatsAppMessage);
+  startFollowupWorker(sendWhatsAppMessage);
 
 });
