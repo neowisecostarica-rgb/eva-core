@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA SALES BRAIN (ORCHESTRATOR CLEAN)
+EVA SALES BRAIN (ORCHESTRATOR CLEAN + FOLLOWUPS)
 ====================================================
 */
 
@@ -28,7 +28,7 @@ function normalizeText(value = "") {
 
 /*
 ====================================================
-INTENT (BÁSICO Y ESTABLE)
+INTENT
 ====================================================
 */
 
@@ -54,7 +54,7 @@ function detectIntent(text = "") {
 
 /*
 ====================================================
-INTEREST LEVEL (BÁSICO)
+INTEREST LEVEL
 ====================================================
 */
 
@@ -73,18 +73,14 @@ function detectInterestLevel(text = "") {
 
 /*
 ====================================================
-STAGE (MVP SIMPLE)
+STAGE
 ====================================================
 */
 
 function resolveStage({ intent, hasProducts }) {
-
   if (intent === "GREETING") return "new";
-
   if (hasProducts) return "catalog_shown";
-
   if (intent === "BUY") return "considering";
-
   return "new";
 }
 
@@ -106,7 +102,29 @@ export async function handleInbound({
 
     /*
     ====================================================
-    DETECCIÓN BÁSICA
+    CANCEL PENDING FOLLOWUPS (SI CLIENTE RESPONDE)
+    ====================================================
+    */
+
+    try {
+      await pool.query(
+        `
+        UPDATE followups
+        SET status = 'CANCELLED',
+            updated_at = NOW()
+        WHERE organization_id = $1
+        AND lead_phone = $2
+        AND status = 'PENDING'
+      `,
+        [organization_id, phone]
+      );
+    } catch (err) {
+      console.error("FOLLOWUP CANCEL ERROR", err.message);
+    }
+
+    /*
+    ====================================================
+    DETECCIÓN
     ====================================================
     */
 
@@ -143,74 +161,108 @@ export async function handleInbound({
     });
 
     /*
-====================================================
-GENERAR RESPUESTA (ÚNICA FUENTE)
-====================================================
-*/
+    ====================================================
+    GENERAR RESPUESTA
+    ====================================================
+    */
 
-const reply = await generateReply({
-  text,
-  intent,
-  stage,
-  catalogMatches,
-  interestLevel
-});
+    const reply = await generateReply({
+      text,
+      intent,
+      stage,
+      catalogMatches,
+      interestLevel
+    });
 
-/*
-====================================================
-CREATE FOLLOWUP (P0)
-====================================================
-*/
+    /*
+    ====================================================
+    CREATE FOLLOWUP (ANTI DUPLICADOS)
+    ====================================================
+    */
 
-try {
+    try {
 
-  const shouldCreateFollowup =
-    catalogMatches.length > 0 ||
-    intent === "BUY";
+      const shouldCreateFollowup =
+        catalogMatches.length > 0 ||
+        intent === "BUY";
 
-  if (shouldCreateFollowup) {
+      if (shouldCreateFollowup) {
 
-    const scheduledFor = new Date(Date.now() + 24 * 60 * 60 * 1000);
+        const existing = await pool.query(
+          `
+          SELECT id
+          FROM followups
+          WHERE organization_id = $1
+          AND lead_phone = $2
+          AND status = 'PENDING'
+          LIMIT 1
+        `,
+          [organization_id, phone]
+        );
 
-    await pool.query(
-      `
-      INSERT INTO followups (
-        organization_id,
-        lead_phone,
-        reason,
-        scheduled_for,
-        status,
-        attempt_count,
-        created_at,
-        updated_at
-      )
-      VALUES ($1, $2, $3, $4, 'PENDING', 0, NOW(), NOW())
-    `,
-      [
-        organization_id,
-        phone,
-        "sales_followup",
-        scheduledFor
-      ]
-    );
+        if (existing.rowCount === 0) {
+
+          const scheduledFor = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+          await pool.query(
+            `
+            INSERT INTO followups (
+              organization_id,
+              lead_phone,
+              reason,
+              scheduled_for,
+              status,
+              attempt_count,
+              created_at,
+              updated_at
+            )
+            VALUES ($1, $2, $3, $4, 'PENDING', 0, NOW(), NOW())
+          `,
+            [
+              organization_id,
+              phone,
+              "sales_followup",
+              scheduledFor
+            ]
+          );
+
+        }
+
+      }
+
+    } catch (err) {
+      console.error("FOLLOWUP CREATE ERROR", err.message);
+    }
+
+    /*
+    ====================================================
+    RESPUESTA FINAL
+    ====================================================
+    */
+
+    return {
+      reply,
+      meta: {
+        intent,
+        stage,
+        products_found: catalogMatches.length
+      }
+    };
+
+  } catch (err) {
+
+    console.error("❌ salesBrain error:", err.message);
+
+    return {
+      reply: {
+        text: "Hubo un problema 🙏 pero con gusto te ayudo.\n\n¿Buscas laptop para estudio o trabajo?",
+        media: []
+      },
+      meta: {
+        error: true
+      }
+    };
 
   }
 
-} catch (err) {
-  console.error("FOLLOWUP CREATE ERROR", err.message);
 }
-
-/*
-====================================================
-RESPUESTA FINAL
-====================================================
-*/
-
-return {
-  reply,
-  meta: {
-    intent,
-    stage,
-    products_found: catalogMatches.length
-  }
-};
