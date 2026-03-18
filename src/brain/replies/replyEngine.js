@@ -115,7 +115,6 @@ function productReply({
 
   const price = formatPrice(item.price_crc);
 
-  // 🔥 Si ya estamos en flujo comercial, no reiniciar la conversación
   if (
     stage === "catalog_shown" ||
     stage === "qualified_work" ||
@@ -143,11 +142,9 @@ Es una excelente opción según lo que buscas.
 
 Tenemos pocas unidades.
 
-Puedes apartarla con ₡20.000 🙌
-
 Es de las que más rápido se van.
 
-Si quieres, te la puedo apartar con ₡20.000 para asegurártela 🙌
+Puedes apartarla con ₡20.000 para asegurártela 🙌
 
 ¿Te la reservo?`, item);
   }
@@ -182,7 +179,8 @@ function buyReplyByStage({ catalogMatches = [], stage = "new" }) {
 
 La puedes apartar con ₡20.000 y asegurarla.
 
-¿Prefieres SINPE, transferencia o tarjeta?
+¿Prefieres SINPE, transferencia o tarjeta?`, item);
+}
 
 /*
 ====================================================
@@ -217,44 +215,32 @@ export async function generateReply({
   let response;
 
   try {
-    // 🟢 Greeting solo si no hay contexto
     if (intent === "GREETING" && (!catalogMatches || catalogMatches.length === 0)) {
       response = greetingReply();
     }
 
-    // 🟢 Compra
     else if (intent === "BUY") {
       response = buyReplyByStage({ catalogMatches, stage });
     }
 
-    // 🟢 Producto encontrado
     else if (Array.isArray(catalogMatches) && catalogMatches.length > 0) {
       response = productReply({ catalogMatches, interestLevel, stage });
     }
 
-    // 🔴 Catálogo vacío → fallback inteligente
     else if (Array.isArray(catalogMatches) && catalogMatches.length === 0) {
       console.log("CATALOG EMPTY → SMART FALLBACK");
       response = smartFallbackReply({ stage, products: catalogMatches });
     }
 
-    // 🔴 Cualquier otro caso raro
     else {
       console.log("UNKNOWN CASE → FALLBACK");
       response = fallbackReply();
     }
+
   } catch (err) {
     console.error("REPLY ENGINE HARD ERROR:", err);
-
-    // 🔥 fallback crítico de sistema
     response = smartFallbackReply({ stage, products: catalogMatches });
   }
-
-  /*
-  ====================================================
-  AI ENHANCEMENT (NO ROMPE EL SISTEMA)
-  ====================================================
-  */
 
   try {
     if (response?.text) {
