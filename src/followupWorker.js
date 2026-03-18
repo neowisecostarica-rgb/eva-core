@@ -119,23 +119,74 @@ export async function processFollowups(sendMessage) {
           message
         });
 
-        /*
-        ------------------------------------------------
-        SUCCESS
-        ------------------------------------------------
-        */
+   /*
+------------------------------------------------
+SUCCESS
+------------------------------------------------
+*/
 
-        await pool.query(
-          `
-          UPDATE followups
-          SET status = 'DONE',
-              updated_at = NOW()
-          WHERE id = $1
-        `,
-          [followup.id]
-        );
-      } catch (err) {
-        console.error("FOLLOWUP ERROR", err);
+await pool.query(
+  `
+  UPDATE followups
+  SET status = 'DONE',
+      updated_at = NOW()
+  WHERE id = $1
+`,
+  [followup.id]
+);
+
+/*
+------------------------------------------------
+SEQUENCE ENGINE
+------------------------------------------------
+*/
+
+try {
+
+  let nextDelay = null;
+  let nextReason = null;
+
+  if (followup.reason === "sales_followup") {
+    nextDelay = 3 * 24 * 60 * 60 * 1000; // +3 días
+    nextReason = "sales_followup_2";
+  }
+
+  else if (followup.reason === "sales_followup_2") {
+    nextDelay = 7 * 24 * 60 * 60 * 1000; // +7 días
+    nextReason = "sales_followup_3";
+  }
+
+  if (nextDelay && nextReason) {
+
+    const scheduledFor = new Date(Date.now() + nextDelay);
+
+    await pool.query(
+      `
+      INSERT INTO followups (
+        organization_id,
+        lead_phone,
+        reason,
+        scheduled_for,
+        status,
+        attempt_count,
+        created_at,
+        updated_at
+      )
+      VALUES ($1, $2, $3, $4, 'PENDING', 0, NOW(), NOW())
+    `,
+      [
+        followup.organization_id,
+        followup.lead_phone,
+        nextReason,
+        scheduledFor
+      ]
+    );
+
+  }
+
+} catch (err) {
+  console.error("FOLLOWUP SEQUENCE ERROR", err.message);
+}
 
         /*
         ------------------------------------------------
