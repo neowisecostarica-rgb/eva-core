@@ -1,13 +1,28 @@
 /*
 ====================================================
-EVA MESSAGES API (INBOUND STABLE)
+EVA MESSAGES API (SECURE MULTI-TENANT)
 ====================================================
 */
 
 import express from "express";
 import { handleInbound } from "../salesBrain.js";
+import {
+  authenticateApiKey,
+  requireOrganizationMatch,
+  allowLabOrganizationFallback
+} from "../lib/auth.js";
 
 const router = express.Router();
+
+/*
+====================================================
+MIDDLEWARE STACK (ORDEN IMPORTANTE)
+====================================================
+*/
+
+router.use(authenticateApiKey);
+router.use(requireOrganizationMatch);
+router.use(allowLabOrganizationFallback);
 
 /*
 ====================================================
@@ -19,44 +34,37 @@ router.post("/", async (req, res) => {
 
   try {
 
-    const {
-      organization_id,
-      phone,
-      text
-    } = req.body;
+    const { phone, text } = req.body;
 
     /*
     ====================================================
-    VALIDACIÓN MÍNIMA (NO BLOQUEANTE)
+    VALIDACIÓN MÍNIMA
     ====================================================
     */
 
     if (!text || typeof text !== "string") {
       return res.status(400).json({
-        error: "text is required"
+        success: false,
+        error: "text_required"
       });
     }
 
-    /*
-    organization_id fallback (solo para laboratorio)
-    */
-    const orgId =
-      organization_id ||
-      req.headers["x-organization-id"] ||
-      process.env.DEFAULT_ORGANIZATION_ID;
+    const organization_id = req.organization_id;
 
-    if (!orgId) {
+    if (!organization_id) {
       return res.status(400).json({
-        error: "organization_id is required"
+        success: false,
+        error: "organization_not_resolved"
       });
     }
 
     const userPhone = phone || "unknown";
 
-    console.log("📩 API inbound:", {
-      orgId,
+    console.log("🔐 API inbound (secure):", {
+      organization_id,
       phone: userPhone,
-      text
+      text,
+      api_key: req.auth?.api_key_name
     });
 
     /*
@@ -66,7 +74,7 @@ router.post("/", async (req, res) => {
     */
 
     const result = await handleInbound({
-      organization_id: orgId,
+      organization_id,
       phone: userPhone,
       text
     });
@@ -80,7 +88,10 @@ router.post("/", async (req, res) => {
     return res.json({
       success: true,
       reply: result.reply,
-      meta: result.meta
+      meta: {
+        ...result.meta,
+        organization_id
+      }
     });
 
   } catch (err) {
