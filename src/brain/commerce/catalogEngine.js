@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CATALOG ENGINE (FIX REAL + SMART SEARCH)
+EVA CATALOG ENGINE (HARDENED VERSION)
 ====================================================
 */
 
@@ -29,6 +29,7 @@ EXTRACT SEARCH TERMS
 function extractSearchTerms(text) {
   const normalized = normalizeText(text);
 
+  // Caso fuerte: computadoras
   if (
     normalized.includes("compu") ||
     normalized.includes("computadora") ||
@@ -50,6 +51,16 @@ function extractSearchTerms(text) {
 
 /*
 ====================================================
+SAFE COLUMN (ANTI-SCHEMA BREAK)
+====================================================
+*/
+
+function safeColumn(columnName) {
+  return `COALESCE(p.${columnName}, '')`;
+}
+
+/*
+====================================================
 BUILD WHERE CLAUSE
 ====================================================
 */
@@ -62,9 +73,9 @@ function buildWhereClause(terms, startIndex = 2) {
 
   for (const term of terms) {
     conditions.push(`(
-      LOWER(p.name) LIKE $${paramIndex}
-      OR LOWER(p.category) LIKE $${paramIndex}
-      OR LOWER(p.description) LIKE $${paramIndex}
+      LOWER(${safeColumn("name")}) LIKE $${paramIndex}
+      OR LOWER(${safeColumn("category")}) LIKE $${paramIndex}
+      OR LOWER(${safeColumn("description")}) LIKE $${paramIndex}
     )`);
 
     values.push(`%${term}%`);
@@ -85,7 +96,8 @@ SEARCH CATALOG
 
 export async function searchCatalog({ organization_id, text }) {
 
-  console.log("ORG ID QUE USA EVA:", organization_id);
+  console.log("🧠 EVA SEARCH ORG:", organization_id);
+  console.log("🧠 EVA SEARCH TEXT:", text);
 
   if (!organization_id || !text) {
     return [];
@@ -106,7 +118,7 @@ export async function searchCatalog({ organization_id, text }) {
         p.description,
         p.price_crc,
         p.stock,
-        p.image_urls
+        COALESCE(p.image_urls, p.images_url) AS image_urls
       FROM product_catalog p
       WHERE p.organization_id = $1
         AND p.is_active = true
@@ -121,7 +133,7 @@ export async function searchCatalog({ organization_id, text }) {
 
   } catch (err) {
 
-    console.error("catalog search error", err.message);
+    console.error("❌ catalog search error:", err.message);
     return [];
 
   }
