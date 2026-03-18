@@ -242,6 +242,33 @@ export async function handleInbound({
     */
 
     const intent = detectIntent(text);
+    /*
+====================================================
+SALES RADAR
+====================================================
+*/
+
+const signals = detectSalesSignals(text, intent);
+
+console.log("🧠 SIGNALS:", signals);
+
+await saveSalesSignals({
+  organization_id,
+  phone,
+  signals
+});
+    const signals = detectSalesSignals(text, intent);
+
+// DEBUG
+console.log("🧠 SIGNALS:", signals);
+
+console.log("💾 SAVING SIGNALS...");
+
+await saveSalesSignals({
+  organization_id,
+  phone,
+  signals
+});
 
     // ====================================================
 // SALES SIGNALS (RADAR)
@@ -481,4 +508,49 @@ try {
 
   }
 
+}
+/*
+====================================================
+SAVE SALES SIGNALS (RADAR)
+====================================================
+*/
+
+async function saveSalesSignals({ organization_id, phone, signals = [] }) {
+  if (!signals.length) return;
+
+  try {
+    const values = [];
+    const placeholders = [];
+
+    let index = 1;
+
+    for (const s of signals) {
+      placeholders.push(`($${index++}, $${index++}, $${index++}, $${index++}, NOW())`);
+      values.push(
+        organization_id,
+        phone,
+        s.type,
+        s.value
+      );
+    }
+
+    await pool.query(
+      `
+      INSERT INTO sales_intelligence_events (
+        organization_id,
+        lead_phone,
+        event_type,
+        event_value,
+        created_at
+      )
+      VALUES ${placeholders.join(",")}
+    `,
+      values
+    );
+
+    console.log("✅ SIGNALS SAVED:", signals);
+
+  } catch (err) {
+    console.error("❌ SAVE SALES SIGNALS ERROR FULL:", err);
+  }
 }
