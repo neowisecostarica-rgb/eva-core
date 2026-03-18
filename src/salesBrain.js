@@ -242,6 +242,19 @@ export async function handleInbound({
     */
 
     const intent = detectIntent(text);
+
+    // ====================================================
+// SALES SIGNALS (RADAR)
+// ====================================================
+
+const signals = detectSalesSignals(text, intent);
+
+await saveSalesSignals({
+  organization_id,
+  phone,
+  signals
+});
+    
     const interestLevel = detectInterestLevel(text);
     const salesSignals = detectSalesSignals(text, intent);
     /*
