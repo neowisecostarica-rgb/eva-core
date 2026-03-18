@@ -164,6 +164,8 @@ export async function handleInbound({
     const intent = detectIntent(text);
     const signals = detectSalesSignals(text, intent);
     const isHotLead = signals.some(s => s.type === "BUY_INTENT") || intent === "BUY";
+    const hasPriceObjection = signals.some(s => s.type === "PRICE_OBJECTION");
+    const isLookingCheap = signals.some(s => s.type === "LOW_PRICE_SEARCH");
     
     console.log("🧠 INTENT:", intent);
     console.log("🧠 SIGNALS:", signals);
@@ -205,6 +207,40 @@ export async function handleInbound({
   products
 });
 
+    /*
+====================================================
+🔥 OBJECIÓN DE PRECIO
+====================================================
+*/
+
+if ((hasPriceObjection || isLookingCheap) && Array.isArray(products) && products.length > 0) {
+
+  const product = products[0];
+
+  const price = product?.price_crc
+    ? `₡${Number(product.price_crc).toLocaleString()}`
+    : "Consultar precio";
+
+  reply = {
+    text: `Entiendo completamente 🙌
+
+Estos equipos son línea corporativa, diseñados para durar más que una laptop convencional.
+
+💻 ${product.name}
+💰 ${price}
+
+Incluyen SSD rápido, buen rendimiento y 1 año de garantía.
+
+Muchas veces lo barato sale caro cuando empiezan a fallar.
+
+Si quieres, puedo recomendarte la mejor opción según tu presupuesto 👍`,
+    media: reply.media || []
+  };
+
+  console.log("💰 PRICE OBJECTION HANDLED");
+
+}
+    
 /*
 ====================================================
 🔥 HOT LEAD → CIERRE
