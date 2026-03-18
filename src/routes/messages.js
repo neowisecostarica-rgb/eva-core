@@ -1,105 +1,97 @@
+/*
+====================================================
+EVA MESSAGES API (INBOUND STABLE)
+====================================================
+*/
+
 import express from "express";
 import { handleInbound } from "../salesBrain.js";
-import { validateInbound } from "../validators.js";
-import { securityGuard } from "../lib/security.js";
 
 const router = express.Router();
 
 /*
 ====================================================
 POST /v1/messages/inbound
-Main EVA message entrypoint
 ====================================================
 */
 
-router.post("/inbound", securityGuard, async (req, res) => {
+router.post("/", async (req, res) => {
 
   try {
 
+    const {
+      organization_id,
+      phone,
+      text
+    } = req.body;
+
     /*
-    ------------------------------------------------
-    VALIDATE PAYLOAD
-    ------------------------------------------------
+    ====================================================
+    VALIDACIÓN MÍNIMA (NO BLOQUEANTE)
+    ====================================================
     */
 
-    const validated = validateInbound(req.body);
-
-    if (!validated.valid) {
+    if (!text || typeof text !== "string") {
       return res.status(400).json({
-        error: validated.error
+        error: "text is required"
       });
     }
 
     /*
-    ------------------------------------------------
-    RESOLVE ORGANIZATION
-    ------------------------------------------------
+    organization_id fallback (solo para laboratorio)
     */
-
-    const organization_id =
-      req.body?.organization_id ||
+    const orgId =
+      organization_id ||
       req.headers["x-organization-id"] ||
-      null;
+      process.env.DEFAULT_ORGANIZATION_ID;
 
-    if (!organization_id) {
+    if (!orgId) {
       return res.status(400).json({
-        error: "missing_organization_id"
+        error: "organization_id is required"
       });
     }
 
+    const userPhone = phone || "unknown";
+
+    console.log("📩 API inbound:", {
+      orgId,
+      phone: userPhone,
+      text
+    });
+
     /*
-    ------------------------------------------------
-    HANDLE MESSAGE
-    ------------------------------------------------
+    ====================================================
+    CORE
+    ====================================================
     */
 
     const result = await handleInbound({
-
-      organization_id,
-
-      payload: {
-        ...validated.data,
-
-        channel: String(req.body?.channel || "whatsapp")
-          .trim()
-          .toLowerCase(),
-
-        external_message_id: req.body?.external_message_id
-          ? String(req.body.external_message_id).trim()
-          : null,
-
-        metadata:
-          req.body?.metadata && typeof req.body.metadata === "object"
-            ? req.body.metadata
-            : null
-
-      }
-
+      organization_id: orgId,
+      phone: userPhone,
+      text
     });
 
     /*
-    ------------------------------------------------
-    HANDLE BRAIN ERRORS
-    ------------------------------------------------
+    ====================================================
+    RESPONSE
+    ====================================================
     */
 
-    if (result?.error === "brain_error") {
-      return res.status(500).json(result);
-    }
-
-    return res.json(result);
+    return res.json({
+      success: true,
+      reply: result.reply,
+      meta: result.meta
+    });
 
   } catch (err) {
 
-    console.error("INBOUND ERROR", err);
+    console.error("❌ messages API error:", err.message);
 
-    return res.status(400).json({
-      error: "bad_request",
-      message: err.message || "invalid payload"
+    return res.status(500).json({
+      success: false,
+      error: "internal_error"
     });
-
   }
-
 });
 
 export default router;
