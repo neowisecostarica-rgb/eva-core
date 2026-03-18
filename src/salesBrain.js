@@ -1,3 +1,5 @@
+console.log("🔥🔥🔥 SALES BRAIN NUEVO ACTIVO 🔥🔥🔥");
+
 /*
 ====================================================
 EVA SALES BRAIN (FIXED + VENTAS ACTIVAS)
