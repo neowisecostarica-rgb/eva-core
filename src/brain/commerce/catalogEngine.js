@@ -29,12 +29,6 @@ EXTRACT SEARCH TERMS
 function extractSearchTerms(text) {
   const normalized = normalizeText(text);
 
-  /*
-  ============================================
-  INTENT MAPPING (CLAVE DEL ÉXITO)
-  ============================================
-  */
-
   if (
     normalized.includes("compu") ||
     normalized.includes("computadora") ||
@@ -43,19 +37,8 @@ function extractSearchTerms(text) {
     normalized.includes("laptops") ||
     normalized.includes("equipo")
   ) {
-    return [
-      "thinkpad",
-      "latitude",
-      "lenovo",
-      "dell"
-    ];
+    return ["thinkpad", "latitude", "lenovo", "dell"];
   }
-
-  /*
-  ============================================
-  FALLBACK NORMAL
-  ============================================
-  */
 
   const words = normalized
     .split(/\s+/)
@@ -94,9 +77,14 @@ function buildWhereClause(terms, startIndex = 2) {
   };
 }
 
+/*
+====================================================
+SEARCH CATALOG
+====================================================
+*/
+
 export async function searchCatalog({ organization_id, text }) {
 
-  // 🔥 LOG CORRECTO
   console.log("ORG ID QUE USA EVA:", organization_id);
 
   if (!organization_id || !text) {
@@ -137,6 +125,4 @@ export async function searchCatalog({ organization_id, text }) {
     return [];
 
   }
-}
-
 }
