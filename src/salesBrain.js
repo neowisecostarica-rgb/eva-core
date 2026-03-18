@@ -102,6 +102,46 @@ function detectProductInterest(text = "") {
 
   return null;
 }
+/*
+====================================================
+SALES INTELLIGENCE DETECTION
+====================================================
+*/
+
+function detectSalesSignals(text = "", intent = "UNKNOWN") {
+  const t = normalizeText(text);
+  const signals = [];
+
+  if (t.includes("estudio") || t.includes("colegio")) {
+    signals.push({ type: "USE_CASE_ESTUDIO", value: "estudio" });
+  }
+
+  if (t.includes("trabajo") || t.includes("oficina")) {
+    signals.push({ type: "USE_CASE_TRABAJO", value: "trabajo" });
+  }
+
+  if (t.includes("caro") || t.includes("mucho")) {
+    signals.push({ type: "PRICE_OBJECTION", value: "price objection" });
+  }
+
+  if (t.includes("barato") || t.includes("economico") || t.includes("económico")) {
+    signals.push({ type: "LOW_PRICE_SEARCH", value: "cheaper option" });
+  }
+
+  if (intent === "BUY") {
+    signals.push({ type: "BUY_INTENT", value: "buy" });
+  }
+
+  if (intent === "PRODUCT_SEARCH") {
+    signals.push({ type: "PRODUCT_SEARCH", value: "search" });
+  }
+
+  if (/\d{5,7}/.test(text)) {
+    signals.push({ type: "BUDGET_DETECTED", value: "budget mentioned" });
+  }
+
+  return signals;
+}
 
 /*
 ====================================================
