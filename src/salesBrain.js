@@ -57,15 +57,101 @@ HELPERS
 ====================================================
 */
 
-function safeReplyText(replyResult, products = []) {
+function normalizeText(value = "") {
+  return String(value)
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+}
 
+function detectManualQualification(text = "") {
+  const normalized = normalizeText(text);
+
+  if (
+    normalized.includes("trabajo") ||
+    normalized.includes("oficina") ||
+    normalized.includes("empresa") ||
+    normalized.includes("negocio")
+  ) {
+    return "work";
+  }
+
+  if (
+    normalized.includes("estudio") ||
+    normalized.includes("colegio") ||
+    normalized.includes("universidad") ||
+    normalized.includes("escuela")
+  ) {
+    return "study";
+  }
+
+  return null;
+}
+
+function buildStageAwareReply({
+  stage,
+  qualification,
+  products = []
+}) {
+  const first = products?.[0] || null;
+  const second = products?.[1] || null;
+
+  if (stage === "catalog_shown" && qualification === "work") {
+    if (second) {
+      return {
+        text: `Perfecto 🙌 para trabajo te recomiendo una opción más fluida:
+
+💻 ${second.name}
+💰 ₡${Number(second.price_crc || 0).toLocaleString()}
+
+Es una muy buena opción para oficina, multitarea y uso más constante.
+
+¿Te gustaría que te envíe fotos reales o prefieres que te comparta los datos para apartarla?`,
+        media: []
+      };
+    }
+
+    if (first) {
+      return {
+        text: `Perfecto 🙌 para trabajo esta opción te puede funcionar muy bien:
+
+💻 ${first.name}
+💰 ₡${Number(first.price_crc || 0).toLocaleString()}
+
+Es una alternativa práctica para uso diario y trabajo.
+
+¿Te gustaría ver fotos reales o te paso los datos para apartarla?`,
+        media: []
+      };
+    }
+  }
+
+  if (stage === "catalog_shown" && qualification === "study") {
+    if (first) {
+      return {
+        text: `Buenísimo 🙌 para estudio esta es una excelente opción:
+
+💻 ${first.name}
+💰 ₡${Number(first.price_crc || 0).toLocaleString()}
+
+Es una laptop práctica, confiable y muy buena para clases, tareas y uso diario.
+
+¿Te gustaría que te envíe fotos reales o prefieres apartarla?`,
+        media: []
+      };
+    }
+  }
+
+  return null;
+}
+
+function safeReplyText(replyResult, products = []) {
   const text = String(replyResult?.text || "").trim();
 
   if (text) return text;
 
-  // 🔥 SI HAY PRODUCTOS, RESPONDE CON PRODUCTO
   if (products.length > 0) {
-
     const product = products[0];
 
     return `Claro 🙌 tenemos opciones disponibles.
@@ -76,7 +162,6 @@ function safeReplyText(replyResult, products = []) {
 ¿La necesitas para estudio o trabajo?`;
   }
 
-  // fallback normal
   return "Hola 👋 Soy EVA, asistente de ventas. Cuéntame qué producto estás buscando y con gusto te ayudo.";
 }
 
@@ -104,7 +189,6 @@ async function hasProcessedMessage({ organization_id, external_message_id }) {
 }
 
 async function ensureConversation({ organization_id, phone, channel = "whatsapp" }) {
-
   const result = await pool.query(
     `
     SELECT *
@@ -145,7 +229,6 @@ async function ensureConversation({ organization_id, phone, channel = "whatsapp"
 }
 
 async function touchConversation({ conversation_id }) {
-
   const timestamp = nowIso();
 
   await pool.query(
@@ -160,7 +243,6 @@ async function touchConversation({ conversation_id }) {
 }
 
 async function updateConversationStage({ conversation_id, stage }) {
-
   await pool.query(
     `
     UPDATE conversations
@@ -185,7 +267,6 @@ async function saveMessage({
   content,
   external_message_id = null
 }) {
-
   const result = await pool.query(
     `
     INSERT INTO messages
@@ -231,7 +312,6 @@ async function upsertLead({
   score,
   stage
 }) {
-
   await pool.query(
     `
     INSERT INTO leads
@@ -288,7 +368,6 @@ async function savePipelineEvent({
   to_stage,
   event_type
 }) {
-
   await pool.query(
     `
     INSERT INTO pipeline_events
@@ -322,9 +401,7 @@ MAIN ORCHESTRATOR
 */
 
 export async function handleInbound({ organization_id, payload }) {
-
   try {
-
     const phone = normalizePhone(payload?.phone || payload?.from || "");
     const text = String(payload?.message || payload?.text || "").trim();
     const channel = String(payload?.channel || "whatsapp").toLowerCase();
@@ -391,8 +468,8 @@ export async function handleInbound({ organization_id, payload }) {
       text
     });
 
-    const leadScore = commercialState?.score ?? 0;
-    const leadStage = commercialState?.stage ?? "new";
+    let leadScore = commercialState?.score ?? 0;
+    let leadStage = commercialState?.stage ?? conversation?.stage ?? "new";
 
     /*
     ================================================
@@ -404,8 +481,35 @@ export async function handleInbound({ organization_id, payload }) {
       organization_id,
       text
     });
-console.log("INPUT TEXT:", text);
-console.log("CATALOG RESULT:", products);
+
+    console.log("INPUT TEXT:", text);
+    console.log("CATALOG RESULT:", products);
+    console.log("CURRENT CONVERSATION STAGE:", conversation?.stage);
+
+    /*
+    ================================================
+    STAGE OVERRIDE / CONVERSATIONAL MEMORY
+    ================================================
+    */
+
+    const qualification = detectManualQualification(text);
+    let replyResult = null;
+
+    if (conversation?.stage === "catalog_shown" && qualification) {
+      leadStage = qualification === "work" ? "qualified_work" : "qualified_study";
+
+      replyResult = buildStageAwareReply({
+        stage: "catalog_shown",
+        qualification,
+        products
+      });
+    } else if (
+      products.length > 0 &&
+      (intent === "BUY" || intent === "UNKNOWN" || intent === "SUPPORT" || intent === "GREETING")
+    ) {
+      leadStage = "catalog_shown";
+    }
+
     /*
     ================================================
     LEAD UPSERT
@@ -429,7 +533,6 @@ console.log("CATALOG RESULT:", products);
     });
 
     if (pipelineEvent) {
-
       await savePipelineEvent({
         organization_id,
         conversation_id: conversation.id,
@@ -438,7 +541,6 @@ console.log("CATALOG RESULT:", products);
         to_stage: leadStage,
         event_type: pipelineEvent
       });
-
     }
 
     /*
@@ -447,16 +549,18 @@ console.log("CATALOG RESULT:", products);
     ================================================
     */
 
-    const replyResult = generateReply({
-  intent,
-  interestLevel,
-  objection,
-  closingIntent,
-  opportunities,
-  score: leadScore,
-  stage: leadStage,
-  catalogMatches: products
-});
+    if (!replyResult) {
+      replyResult = await generateReply({
+        intent,
+        interestLevel,
+        objection,
+        closingIntent,
+        opportunities,
+        score: leadScore,
+        stage: leadStage,
+        catalogMatches: products
+      });
+    }
 
     const replyText = safeReplyText(replyResult, products);
 
@@ -478,7 +582,6 @@ console.log("CATALOG RESULT:", products);
     };
 
   } catch (err) {
-
     console.error("EVA SALES BRAIN ERROR", {
       message: err.message,
       stack: err.stack
@@ -488,6 +591,5 @@ console.log("CATALOG RESULT:", products);
       error: "brain_error",
       details: err.message || "unknown brain error"
     };
-
   }
 }
