@@ -1,13 +1,10 @@
-console.log("🔥 USING REPLY ENGINE HARDENED 🔥");
-
 /*
 ====================================================
-EVA REPLY ENGINE (HARDENED + NO SILENCE)
+EVA REPLY ENGINE (CLOSING + OBJECTIONS)
 ====================================================
 */
 
 import { extractProductImages } from "../engines/mediaEngine.js";
-import { enhanceReply } from "../engines/aiEnhancer.js";
 
 /*
 ====================================================
@@ -16,16 +13,24 @@ HELPERS
 */
 
 function formatPrice(value) {
-  if (!value) return "Consultar precio";
+  if (value === null || value === undefined || value === "") {
+    return "Consultar precio";
+  }
+
   const numberValue = Number(value);
-  if (Number.isNaN(numberValue)) return "Consultar precio";
+
+  if (Number.isNaN(numberValue)) {
+    return "Consultar precio";
+  }
+
   return `₡${numberValue.toLocaleString()}`;
 }
 
 function getMainCatalogItem(catalogMatches = []) {
-  return Array.isArray(catalogMatches) && catalogMatches.length > 0
-    ? catalogMatches[0]
-    : null;
+  if (!Array.isArray(catalogMatches) || !catalogMatches.length) {
+    return null;
+  }
+  return catalogMatches[0];
 }
 
 function buildResponse(text, product = null) {
@@ -37,42 +42,97 @@ function buildResponse(text, product = null) {
 
 /*
 ====================================================
-SMART FALLBACK (NUNCA SILENCIO)
+OBJECTION DETECTION
 ====================================================
 */
 
-function smartFallbackReply({ text = "", stage = "new" } = {}) {
+function detectObjection(text = "") {
+  const t = text.toLowerCase();
 
-  const normalized = String(text).toLowerCase();
-
-  if (
-    normalized.includes("hola") ||
-    normalized.includes("buenas") ||
-    normalized.includes("hello")
-  ) {
-    return buildResponse(
-      "Hola 🙌\nTe atiende Eva de Compu Store Costa Rica.\n\n¿Buscas computadora para estudio o trabajo?"
-    );
-  }
+  if (t.includes("caro") || t.includes("mucho")) return "PRICE";
 
   if (
-    normalized.includes("precio") ||
-    normalized.includes("cuanto") ||
-    normalized.includes("vale")
-  ) {
-    return buildResponse(
-      "Con gusto 🙌\n\n¿Me indicas qué tipo de equipo buscas para darte opciones exactas?"
-    );
-  }
+    t.includes("pensar") ||
+    t.includes("luego") ||
+    t.includes("despues")
+  ) return "DOUBT";
 
-  return buildResponse(
-    "Con gusto te ayudo 🙌\n\n¿Buscas laptop para estudio, trabajo o algo más específico?"
-  );
+  if (
+    t.includes("garantia") ||
+    t.includes("nuevo") ||
+    t.includes("sirve")
+  ) return "TRUST";
+
+  if (
+    t.includes("barato") ||
+    t.includes("otra opcion") ||
+    t.includes("mas opciones")
+  ) return "COMPARISON";
+
+  return null;
 }
 
 /*
 ====================================================
-PRODUCT RESPONSE (OPTIMIZADO PARA CIERRE)
+OBJECTION RESPONSES
+====================================================
+*/
+
+function objectionReply(type) {
+  switch (type) {
+
+    case "PRICE":
+      return {
+        text: `Entiendo totalmente 🙌
+
+Estos equipos son línea corporativa, diseñados para durar mucho más que laptops domésticas.
+
+Incluyen SSD y 1 año de garantía, por eso mantienen ese valor.
+
+Igual puedo ayudarte a encontrar algo que se ajuste mejor a tu presupuesto 👇
+
+¿En qué rango andas?`,
+        media: []
+      };
+
+    case "DOUBT":
+      return {
+        text: `Claro 🙌
+
+Solo te comento que estos equipos suelen moverse rápido porque son muy buscados.
+
+Si quieres, puedo apartarte uno sin compromiso mientras decides.`,
+        media: []
+      };
+
+    case "TRUST":
+      return {
+        text: `Sí 🙌
+
+Todos los equipos se revisan completamente antes de entregarse.
+
+Además incluyen 1 año de garantía para tu tranquilidad.`,
+        media: []
+      };
+
+    case "COMPARISON":
+      return {
+        text: `Sí claro 🙌
+
+Tengo varias opciones disponibles según lo que necesites.
+
+Si quieres dime para qué la vas a usar y te recomiendo la mejor opción calidad/precio 👇`,
+        media: []
+      };
+
+    default:
+      return null;
+  }
+}
+
+/*
+====================================================
+PRODUCT RESPONSE (CLOSING ENGINE)
 ====================================================
 */
 
@@ -80,16 +140,12 @@ function productReply({ catalogMatches = [], interestLevel = null }) {
 
   const item = getMainCatalogItem(catalogMatches);
 
-  if (!item) {
-    return null; // importante → deja que fallback actúe
-  }
+  if (!item) return null;
 
   const price = formatPrice(item.price_crc);
 
   /*
-  ====================================================
-  HIGH INTENT → CIERRE DIRECTO
-  ====================================================
+  HIGH INTENT → CIERRE
   */
 
   if (interestLevel === "HIGH") {
@@ -113,9 +169,7 @@ Puedes apartarla con ₡20.000 para asegurarla 🙌
   }
 
   /*
-  ====================================================
   LOW INTENT → EMPUJE SUAVE
-  ====================================================
   */
 
   return buildResponse(
@@ -135,7 +189,24 @@ Si quieres te ayudo a asegurar una unidad disponible 🙌
 
 /*
 ====================================================
-MAIN REPLY ENGINE
+FALLBACK
+====================================================
+*/
+
+function fallbackReply() {
+  return {
+    text: `Hola 🙌
+
+Con gusto te ayudo a encontrar una buena opción.
+
+¿Buscas laptop para estudio o trabajo?`,
+    media: []
+  };
+}
+
+/*
+====================================================
+MAIN GENERATOR
 ====================================================
 */
 
@@ -144,72 +215,41 @@ export async function generateReply({
   intent = "UNKNOWN",
   stage = "new",
   catalogMatches = [],
-  interestLevel = null
+  interestLevel = "LOW"
 }) {
 
-  try {
+  /*
+  ====================================================
+  1. OBJECTIONS FIRST (CRÍTICO)
+  ====================================================
+  */
 
-    let response = null;
+  const objection = detectObjection(text);
 
-    /*
-    ====================================================
-    PRIORIDAD 1 — PRODUCTO
-    ====================================================
-    */
-    if (catalogMatches && catalogMatches.length > 0) {
-      response = productReply({ catalogMatches, interestLevel });
-    }
-
-    /*
-    ====================================================
-    PRIORIDAD 2 — FALLBACK (SI NO HAY PRODUCTO)
-    ====================================================
-    */
-    if (!response) {
-      response = smartFallbackReply({ text, stage });
-    }
-
-    /*
-    ====================================================
-    SEGURIDAD: NUNCA RESPUESTA VACÍA
-    ====================================================
-    */
-    if (!response || !response.text) {
-      response = {
-        text: "Con gusto te ayudo 🙌",
-        media: []
-      };
-    }
-
-    /*
-    ====================================================
-    AI ENHANCER (NO CRÍTICO)
-    ====================================================
-    */
-    try {
-      const enhanced = await enhanceReply({
-        text: response.text,
-        intent,
-        stage
-      });
-
-      if (enhanced) {
-        response.text = enhanced;
-      }
-    } catch (err) {
-      console.warn("⚠️ aiEnhancer falló, usando texto base");
-    }
-
-    return response;
-
-  } catch (err) {
-
-    console.error("❌ reply engine error:", err.message);
-
-    return {
-      text: "Hubo un pequeño problema 🙏 pero con gusto te ayudo.\n\n¿Buscas laptop para estudio o trabajo?",
-      media: []
-    };
-
+  if (objection) {
+    return objectionReply(objection);
   }
+
+  /*
+  ====================================================
+  2. PRODUCT FLOW
+  ====================================================
+  */
+
+  const productResponse = productReply({
+    catalogMatches,
+    interestLevel
+  });
+
+  if (productResponse) {
+    return productResponse;
+  }
+
+  /*
+  ====================================================
+  3. FALLBACK
+  ====================================================
+  */
+
+  return fallbackReply();
 }
