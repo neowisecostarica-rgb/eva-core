@@ -9,6 +9,16 @@ const PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
 const EVA_ENDPOINT = process.env.EVA_ENDPOINT;
 
 /* ======================================
+   DEBUG CONFIG (CRÍTICO)
+====================================== */
+console.log("📡 WhatsApp ENV:", {
+  VERIFY_TOKEN: VERIFY_TOKEN ? "OK" : "MISSING",
+  WHATSAPP_TOKEN: WHATSAPP_TOKEN ? "OK" : "MISSING",
+  PHONE_NUMBER_ID: PHONE_NUMBER_ID || "MISSING",
+  EVA_ENDPOINT: EVA_ENDPOINT || "MISSING"
+});
+
+/* ======================================
    Webhook verification
 ====================================== */
 
@@ -19,10 +29,11 @@ router.get("/webhook/whatsapp", (req, res) => {
   const challenge = req.query["hub.challenge"];
 
   if (mode === "subscribe" && token === VERIFY_TOKEN) {
-    console.log("Webhook verified");
+    console.log("✅ Webhook verified");
     return res.status(200).send(challenge);
   }
 
+  console.log("❌ Webhook verification failed");
   res.sendStatus(403);
 
 });
@@ -48,8 +59,30 @@ router.post("/webhook/whatsapp", async (req, res) => {
     const phone = message.from;
     const text = message.text?.body;
 
+    console.log("📩 Incoming WhatsApp:", {
+      phone,
+      text_length: text?.length || 0
+    });
+
     if (!text) {
       return res.sendStatus(200);
+    }
+
+    /* ===============================
+       VALIDAR CONFIG ANTES DE ENVIAR
+    =============================== */
+
+    if (!EVA_ENDPOINT) {
+      console.error("❌ EVA_ENDPOINT missing");
+      return res.sendStatus(500);
+    }
+
+    if (!PHONE_NUMBER_ID || !WHATSAPP_TOKEN) {
+      console.error("❌ WhatsApp config missing:", {
+        PHONE_NUMBER_ID,
+        WHATSAPP_TOKEN: WHATSAPP_TOKEN ? "OK" : "MISSING"
+      });
+      return res.sendStatus(500);
     }
 
     /* ===============================
@@ -67,20 +100,26 @@ router.post("/webhook/whatsapp", async (req, res) => {
 
       body: JSON.stringify({
         phone,
-        message: text
+        text // 🔥 FIX IMPORTANTE (antes decía "message")
       })
 
     });
 
     const evaData = await evaResponse.json();
 
-    const reply = evaData.reply;
+    const reply = evaData?.reply || "Gracias por escribirnos 🙌";
+
+    console.log("🧠 EVA reply:", reply);
 
     /* ===============================
        Send reply to WhatsApp
     =============================== */
 
-    await fetch(`https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`, {
+    const url = `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`;
+
+    console.log("📤 Sending to WhatsApp URL:", url);
+
+    const waResponse = await fetch(url, {
 
       method: "POST",
 
@@ -95,6 +134,8 @@ router.post("/webhook/whatsapp", async (req, res) => {
 
         to: phone,
 
+        type: "text",
+
         text: {
           body: reply
         }
@@ -103,11 +144,18 @@ router.post("/webhook/whatsapp", async (req, res) => {
 
     });
 
+    const waData = await waResponse.json();
+
+    console.log("✅ WhatsApp response:", waData);
+
     res.sendStatus(200);
 
   } catch (err) {
 
-    console.error("whatsapp webhook error", err);
+    console.error("❌ WHATSAPP WEBHOOK ERROR:", {
+      message: err.message,
+      stack: err.stack
+    });
 
     res.sendStatus(500);
 
