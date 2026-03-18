@@ -1,156 +1,152 @@
+/*
+====================================================
+EVA METRICS API (CLEAN + CONSISTENT)
+====================================================
+*/
+
 import express from "express";
 import pool from "../db.js";
-import { authenticate } from "../lib/auth.js";
 
 const router = express.Router();
 
-router.get("/summary", authenticate, async (req, res) => {
+/*
+====================================================
+GET /v1/metrics/summary
+====================================================
+*/
+
+router.get("/summary", async (req, res) => {
 
   try {
 
-    const organization_id = req.organization.id;
+    const organization_id =
+      req.query.organization_id ||
+      req.headers["x-organization-id"] ||
+      process.env.DEFAULT_ORGANIZATION_ID;
 
-    const conversations = await pool.query(
-      `
-      SELECT COUNT(*)
-      FROM conversations
-      WHERE organization_id=$1
-      `,
-      [organization_id]
-    );
+    if (!organization_id) {
+      return res.status(400).json({
+        error: "organization_id is required"
+      });
+    }
 
-    const leads = await pool.query(
-      `
-      SELECT COUNT(*)
-      FROM leads
-      WHERE organization_id=$1
-      `,
-      [organization_id]
-    );
+    /*
+    ====================================================
+    BASIC COUNTS
+    ====================================================
+    */
 
-    const conversationsToday = await pool.query(
-      `
-      SELECT COUNT(*)
-      FROM conversations
-      WHERE organization_id=$1
-      AND created_at >= CURRENT_DATE
-      `,
-      [organization_id]
-    );
+    const [conversations, leads] = await Promise.all([
+
+      pool.query(
+        `
+        SELECT COUNT(*)::int AS total
+        FROM conversations
+        WHERE organization_id = $1
+        `,
+        [organization_id]
+      ),
+
+      pool.query(
+        `
+        SELECT COUNT(*)::int AS total
+        FROM leads
+        WHERE organization_id = $1
+        `,
+        [organization_id]
+      )
+
+    ]);
+
+    /*
+    ====================================================
+    HOT LEADS (STAGE REAL)
+    ====================================================
+    */
 
     const hotLeads = await pool.query(
       `
-      SELECT COUNT(*)
+      SELECT COUNT(*)::int AS total
       FROM leads
-      WHERE organization_id=$1
-      AND score >= 80
+      WHERE organization_id = $1
+        AND stage = 'hot'
       `,
       [organization_id]
     );
 
-    const followupsPending = await pool.query(
+    /*
+    ====================================================
+    WON LEADS (CIERRES)
+    ====================================================
+    */
+
+    const wonLeads = await pool.query(
       `
-      SELECT COUNT(*)
+      SELECT COUNT(*)::int AS total
+      FROM leads
+      WHERE organization_id = $1
+        AND stage = 'won'
+      `,
+      [organization_id]
+    );
+
+    /*
+    ====================================================
+    FOLLOWUPS PENDIENTES
+    ====================================================
+    */
+
+    const followups = await pool.query(
+      `
+      SELECT COUNT(*)::int AS total
       FROM followups
-      WHERE organization_id=$1
-      AND status='pending'
+      WHERE organization_id = $1
+        AND status = 'pending'
       `,
       [organization_id]
     );
 
-    const messagesToday = await pool.query(
-  `
-  SELECT COUNT(*)
-  FROM messages
-  WHERE organization_id=$1
-  AND created_at >= CURRENT_DATE
-  `,
-  [organization_id]
-);
+    /*
+    ====================================================
+    CONVERSION RATE (SAFE)
+    ====================================================
+    */
 
-const avgScore = await pool.query(
-  `
-  SELECT AVG(score)
-  FROM leads
-  WHERE organization_id=$1
-  `,
-  [organization_id]
-);
+    const totalLeads = leads.rows[0]?.total || 0;
+    const totalWon = wonLeads.rows[0]?.total || 0;
 
-const closingLeads = await pool.query(
-  `
-  SELECT COUNT(*)
-  FROM leads
-  WHERE organization_id=$1
-  AND stage='CLOSING'
-  `,
-  [organization_id]
-);
-    
-    const pipeline = await pool.query(
-      `
-      SELECT stage, COUNT(*) as total
-      FROM leads
-      WHERE organization_id=$1
-      GROUP BY stage
-      `,
-      [organization_id]
-    );
+    const conversionRate =
+      totalLeads > 0
+        ? ((totalWon / totalLeads) * 100).toFixed(2)
+        : "0.00";
 
-    const intents = await pool.query(
-      `
-      SELECT intent, COUNT(*) as total
-      FROM leads
-      WHERE organization_id=$1
-      GROUP BY intent
-      `,
-      [organization_id]
-    );
+    /*
+    ====================================================
+    RESPONSE
+    ====================================================
+    */
 
-   
-
-  res.json({
-
-  conversations: Number(conversations.rows[0].count),
-  leads: Number(leads.rows[0].count),
-  conversations_today: Number(conversationsToday.rows[0].count),
-  messages_today: Number(messagesToday.rows[0].count),
-
-  hot_leads: Number(hotLeads.rows[0].count),
-  followups_pending: Number(followupsPending.rows[0].count),
-
-  avg_lead_score: Number(avgScore.rows[0].avg || 0),
-
-  closing_leads: Number(closingLeads.rows[0].count),
-
-  conversion_rate:
-    Number(leads.rows[0].count) > 0
-      ? Number(closingLeads.rows[0].count) /
-        Number(leads.rows[0].count)
-      : 0,
-
-  pipeline: pipeline.rows.map(r => ({
-    stage: r.stage,
-    total: Number(r.total)
-  })),
-
-  intents: intents.rows.map(r => ({
-    intent: r.intent,
-    total: Number(r.total)
-  }))
-
-});
+    return res.json({
+      success: true,
+      data: {
+        conversations: conversations.rows[0]?.total || 0,
+        leads: totalLeads,
+        hot_leads: hotLeads.rows[0]?.total || 0,
+        won_leads: totalWon,
+        followups_pending: followups.rows[0]?.total || 0,
+        conversion_rate: `${conversionRate}%`
+      }
+    });
 
   } catch (err) {
 
-    console.error(err);
+    console.error("❌ metrics error:", err.message);
 
-    res.status(500).json({
+    return res.status(500).json({
+      success: false,
       error: "metrics_error"
     });
-
   }
-
 });
 
 export default router;
