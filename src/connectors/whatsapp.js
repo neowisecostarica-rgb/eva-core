@@ -1,7 +1,6 @@
 /*
 ====================================================
-WHATSAPP CONNECTOR
-Send messages to WhatsApp Cloud API
+WHATSAPP CONNECTOR (OUTBOUND)
 ====================================================
 */
 
