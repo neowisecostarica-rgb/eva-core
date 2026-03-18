@@ -17,8 +17,15 @@ const pool = new Pool({
   connectionTimeoutMillis: 5000
 });
 
+/*
+====================================================
+CONNECTION LOG (DEBUG)
+====================================================
+*/
+
 pool.on("connect", () => {
   console.log("PostgreSQL connected");
+  console.log("🧪 DATABASE_URL:", process.env.DATABASE_URL);
 });
 
 pool.on("error", (err) => {
