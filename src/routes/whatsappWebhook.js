@@ -1,71 +1,61 @@
 /*
 ====================================================
-EVA WHATSAPP WEBHOOK (FULL HARDENED VERSION)
+WHATSAPP WEBHOOK (INBOUND)
 ====================================================
 */
 
 import express from "express";
-import axios from "axios";
-import {
-  webhookRateLimit,
-  basicSecurityHeaders
-} from "../lib/security.js";
+import fetch from "node-fetch";
 
 const router = express.Router();
 
-/*
-====================================================
-CONFIG
-====================================================
-*/
-
 const VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN;
-const EVA_API_URL = process.env.EVA_API_URL;
-const EVA_API_KEY = process.env.EVA_API_KEY;
-
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
+const EVA_ENDPOINT = process.env.EVA_ENDPOINT;
 
-/*
-====================================================
-GLOBAL MIDDLEWARE
-====================================================
-*/
+/* ======================================
+   DEBUG CONFIG
+====================================== */
+console.log("📡 WhatsApp ENV:", {
+  VERIFY_TOKEN: VERIFY_TOKEN ? "OK" : "MISSING",
+  WHATSAPP_TOKEN: WHATSAPP_TOKEN ? "OK" : "MISSING",
+  PHONE_NUMBER_ID: PHONE_NUMBER_ID || "MISSING",
+  EVA_ENDPOINT: EVA_ENDPOINT || "MISSING"
+});
 
-router.use(basicSecurityHeaders);
-router.use(webhookRateLimit);
-
-/*
-====================================================
-VERIFY WEBHOOK (GET)
-====================================================
-*/
+/* ======================================
+   Webhook verification
+====================================== */
 
 router.get("/", (req, res) => {
+
   const mode = req.query["hub.mode"];
   const token = req.query["hub.verify_token"];
   const challenge = req.query["hub.challenge"];
 
   if (mode === "subscribe" && token === VERIFY_TOKEN) {
-    console.log("✅ Webhook verificado");
+    console.log("✅ Webhook verified");
     return res.status(200).send(challenge);
   }
 
-  console.error("❌ Webhook verification failed");
-  return res.sendStatus(403);
+  console.log("❌ Webhook verification failed");
+  res.sendStatus(403);
+
 });
 
-/*
-====================================================
-RECEIVE MESSAGES (POST)
-====================================================
-*/
+/* ======================================
+   Receive messages
+====================================== */
 
 router.post("/", async (req, res) => {
+
   try {
+
     const entry = req.body.entry?.[0];
-    const changes = entry?.changes?.[0];
-    const value = changes?.value;
+    const change = entry?.changes?.[0];
+    const value = change?.value;
+
     const message = value?.messages?.[0];
 
     if (!message) {
@@ -73,100 +63,96 @@ router.post("/", async (req, res) => {
     }
 
     const phone = message.from;
-    const text = message.text?.body || "";
+    const text = message.text?.body;
 
     console.log("📩 Incoming WhatsApp:", {
       phone,
-      text_length: text.length
+      text_length: text?.length || 0
     });
 
-    /*
-    ====================================================
-    SEND TO EVA CORE (SECURE)
-    ====================================================
-    */
+    if (!text) {
+      return res.sendStatus(200);
+    }
 
-    const evaResponse = await axios.post(
-      `${EVA_API_URL}/v1/messages/inbound`,
-      {
+    /* ===============================
+       VALIDAR CONFIG
+    =============================== */
+
+    if (!EVA_ENDPOINT) {
+      console.error("❌ EVA_ENDPOINT missing");
+      return res.sendStatus(500);
+    }
+
+    if (!PHONE_NUMBER_ID || !WHATSAPP_TOKEN) {
+      console.error("❌ WhatsApp config missing:", {
+        PHONE_NUMBER_ID,
+        WHATSAPP_TOKEN: WHATSAPP_TOKEN ? "OK" : "MISSING"
+      });
+      return res.sendStatus(500);
+    }
+
+    /* ===============================
+       Send to EVA Core
+    =============================== */
+
+    const evaResponse = await fetch(`${EVA_ENDPOINT}/v1/messages/inbound`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": process.env.EVA_API_KEY
+      },
+      body: JSON.stringify({
         phone,
         text
+      })
+    });
+
+    const evaData = await evaResponse.json();
+    const reply = evaData?.reply || "Gracias por escribirnos 🙌";
+
+    console.log("🧠 EVA reply:", reply);
+
+    /* ===============================
+       Send reply to WhatsApp
+    =============================== */
+
+    const url = `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`;
+
+    console.log("📤 Sending to WhatsApp URL:", url);
+
+    const waResponse = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${WHATSAPP_TOKEN}`,
+        "Content-Type": "application/json"
       },
-      {
-        headers: {
-          Authorization: `Bearer ${EVA_API_KEY}`,
-          "Content-Type": "application/json"
-        }
-      }
-    );
-
-    const reply = evaResponse.data?.reply?.text || "Gracias por escribirnos 🙌";
-    const media = evaResponse.data?.reply?.media || [];
-
-    /*
-    ====================================================
-    SEND TEXT REPLY
-    ====================================================
-    */
-
-    await axios.post(
-      `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`,
-      {
+      body: JSON.stringify({
         messaging_product: "whatsapp",
         to: phone,
         type: "text",
         text: {
           body: reply
         }
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${WHATSAPP_TOKEN}`,
-          "Content-Type": "application/json"
-        }
-      }
-    );
-
-    /*
-    ====================================================
-    SEND MEDIA REPLY
-    ====================================================
-    */
-
-    if (Array.isArray(media) && media.length > 0) {
-      for (const url of media) {
-        try {
-          await axios.post(
-            `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`,
-            {
-              messaging_product: "whatsapp",
-              to: phone,
-              type: "image",
-              image: { link: url }
-            },
-            {
-              headers: {
-                Authorization: `Bearer ${WHATSAPP_TOKEN}`,
-                "Content-Type": "application/json"
-              }
-            }
-          );
-        } catch (err) {
-          console.warn("⚠️ media send error:", err.message);
-        }
-      }
-    }
-
-    return res.sendStatus(200);
-
-  } catch (err) {
-    console.error("❌ WHATSAPP WEBHOOK ERROR:", {
-      message: err.message,
-      response: err.response?.data
+      })
     });
 
-    return res.sendStatus(500);
+    const waData = await waResponse.json();
+
+    console.log("✅ WhatsApp response:", waData);
+
+    res.sendStatus(200);
+
+  } catch (err) {
+
+    console.error("❌ WHATSAPP WEBHOOK ERROR:", {
+      message: err.message,
+      stack: err.stack
+    });
+
+    res.sendStatus(500);
+
   }
+
 });
 
 export default router;
