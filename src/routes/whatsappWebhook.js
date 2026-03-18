@@ -1,11 +1,15 @@
 /*
 ====================================================
-EVA WHATSAPP WEBHOOK (PRODUCTION READY)
+EVA WHATSAPP WEBHOOK (FULL HARDENED VERSION)
 ====================================================
 */
 
 import express from "express";
 import axios from "axios";
+import {
+  webhookRateLimit,
+  basicSecurityHeaders
+} from "../lib/security.js";
 
 const router = express.Router();
 
@@ -24,12 +28,20 @@ const PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
 
 /*
 ====================================================
+GLOBAL MIDDLEWARE
+====================================================
+*/
+
+router.use(basicSecurityHeaders);
+router.use(webhookRateLimit);
+
+/*
+====================================================
 VERIFY WEBHOOK (GET)
 ====================================================
 */
 
 router.get("/", (req, res) => {
-
   const mode = req.query["hub.mode"];
   const token = req.query["hub.verify_token"];
   const challenge = req.query["hub.challenge"];
@@ -50,13 +62,10 @@ RECEIVE MESSAGES (POST)
 */
 
 router.post("/", async (req, res) => {
-
   try {
-
     const entry = req.body.entry?.[0];
     const changes = entry?.changes?.[0];
     const value = changes?.value;
-
     const message = value?.messages?.[0];
 
     if (!message) {
@@ -66,7 +75,10 @@ router.post("/", async (req, res) => {
     const phone = message.from;
     const text = message.text?.body || "";
 
-    console.log("📩 Incoming WhatsApp:", { phone, text });
+    console.log("📩 Incoming WhatsApp:", {
+      phone,
+      text_length: text.length
+    });
 
     /*
     ====================================================
@@ -89,10 +101,11 @@ router.post("/", async (req, res) => {
     );
 
     const reply = evaResponse.data?.reply?.text || "Gracias por escribirnos 🙌";
+    const media = evaResponse.data?.reply?.media || [];
 
     /*
     ====================================================
-    SEND REPLY TO WHATSAPP
+    SEND TEXT REPLY
     ====================================================
     */
 
@@ -101,7 +114,10 @@ router.post("/", async (req, res) => {
       {
         messaging_product: "whatsapp",
         to: phone,
-        text: { body: reply }
+        type: "text",
+        text: {
+          body: reply
+        }
       },
       {
         headers: {
@@ -111,10 +127,39 @@ router.post("/", async (req, res) => {
       }
     );
 
+    /*
+    ====================================================
+    SEND MEDIA REPLY
+    ====================================================
+    */
+
+    if (Array.isArray(media) && media.length > 0) {
+      for (const url of media) {
+        try {
+          await axios.post(
+            `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`,
+            {
+              messaging_product: "whatsapp",
+              to: phone,
+              type: "image",
+              image: { link: url }
+            },
+            {
+              headers: {
+                Authorization: `Bearer ${WHATSAPP_TOKEN}`,
+                "Content-Type": "application/json"
+              }
+            }
+          );
+        } catch (err) {
+          console.warn("⚠️ media send error:", err.message);
+        }
+      }
+    }
+
     return res.sendStatus(200);
 
   } catch (err) {
-
     console.error("❌ WHATSAPP WEBHOOK ERROR:", {
       message: err.message,
       response: err.response?.data
