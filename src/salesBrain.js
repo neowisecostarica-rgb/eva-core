@@ -1,10 +1,12 @@
 /*
 ====================================================
-EVA SALES BRAIN (SIMPLIFIED + RADAR FIX)
+EVA SALES BRAIN (FIXED + VENTAS ACTIVAS)
 ====================================================
 */
 
 import pool from "./db.js";
+import { searchCatalog } from "./brain/commerce/catalogEngine.js";
+import { generateReply } from "./brain/replies/replyEngine.js";
 
 /*
 ====================================================
@@ -31,7 +33,7 @@ function detectIntent(text = "") {
 
   if (t.includes("precio") || t.includes("cuanto")) return "PRICE";
   if (t.includes("tienen") || t.includes("busco")) return "PRODUCT_SEARCH";
-  if (t.includes("quiero") || t.includes("comprar")) return "BUY";
+  if (t.includes("quiero") || t.includes("comprar") || t.includes("me interesa")) return "BUY";
 
   return "UNKNOWN";
 }
@@ -73,7 +75,7 @@ function detectSalesSignals(text = "", intent = "UNKNOWN") {
     signals.push({ type: "PRODUCT_SEARCH", value: "search" });
   }
 
-  // PRODUCT DEMAND (🔥 CLAVE)
+  // PRODUCT DEMAND
   if (t.includes("laptop") || t.includes("computadora")) {
     signals.push({ type: "PRODUCT_DEMAND", value: "laptop" });
   }
@@ -134,7 +136,7 @@ async function saveSalesSignals({ organization_id, phone, signals = [] }) {
     console.log("✅ SIGNALS SAVED:", signals);
 
   } catch (err) {
-    console.error("❌ SAVE SALES SIGNALS ERROR FULL:", err);
+    console.error("❌ SAVE SALES SIGNALS ERROR:", err);
   }
 }
 
@@ -160,9 +162,9 @@ export async function handleInbound({
     */
 
     const intent = detectIntent(text);
-
     const signals = detectSalesSignals(text, intent);
 
+    console.log("🧠 INTENT:", intent);
     console.log("🧠 SIGNALS:", signals);
 
     /*
@@ -179,14 +181,37 @@ export async function handleInbound({
 
     /*
     ====================================================
-    SIMPLE REPLY (TEMPORAL)
+    SEARCH PRODUCTS
+    ====================================================
+    */
+
+    const products = await searchCatalog({
+      organization_id,
+      text
+    });
+
+    console.log("📦 PRODUCTS FOUND:", products);
+
+    /*
+    ====================================================
+    GENERATE REPLY (VENTAS ACTIVAS)
+    ====================================================
+    */
+
+    const reply = generateReply({
+      text,
+      intent,
+      products
+    });
+
+    /*
+    ====================================================
+    RETURN
     ====================================================
     */
 
     return {
-      reply: {
-        text: "Perfecto 🙌 ya estoy procesando tu consulta."
-      }
+      reply
     };
 
   } catch (err) {
