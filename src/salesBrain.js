@@ -202,7 +202,7 @@ export async function handleInbound({
 
     const intent = detectIntent(text);
     const interestLevel = detectInterestLevel(text);
-
+    const salesSignals = detectSalesSignals(text, intent);
     /*
 ====================================================
 EXTRAER DATOS DEL MENSAJE (MEMORIA)
@@ -240,6 +240,37 @@ try {
   console.warn("⚠️ lead memory failed:", err.message);
 }
 
+    /*
+====================================================
+SAVE SALES INTELLIGENCE
+====================================================
+*/
+
+try {
+  for (const signal of salesSignals) {
+    await pool.query(
+      `
+      INSERT INTO sales_intelligence_events (
+        organization_id,
+        phone,
+        event_type,
+        event_value,
+        created_at
+      )
+      VALUES ($1, $2, $3, $4, NOW())
+    `,
+      [
+        organization_id,
+        phone,
+        signal.type,
+        signal.value
+      ]
+    );
+  }
+} catch (err) {
+  console.warn("⚠️ sales intelligence failed:", err.message);
+}
+    
     /*
     ====================================================
     CATÁLOGO
