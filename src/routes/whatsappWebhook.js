@@ -1,6 +1,6 @@
 /*
 ====================================================
-WHATSAPP WEBHOOK (INBOUND)
+WHATSAPP WEBHOOK (INBOUND) - FIXED
 ====================================================
 */
 
@@ -67,6 +67,7 @@ router.post("/", async (req, res) => {
 
     console.log("📩 Incoming WhatsApp:", {
       phone,
+      text,
       text_length: text?.length || 0
     });
 
@@ -108,19 +109,23 @@ router.post("/", async (req, res) => {
     });
 
     const evaData = await evaResponse.json();
-    const reply = evaData?.reply || "Gracias por escribirnos 🙌";
 
-    console.log("🧠 EVA reply:", reply);
+    // 🔥 FIX REAL
+    const replyText = evaData?.reply?.text || "Gracias por escribirnos 🙌";
+    const replyMedia = evaData?.reply?.media || [];
+
+    console.log("🧠 EVA reply TEXT:", replyText);
+    console.log("🧠 EVA reply MEDIA:", replyMedia);
 
     /* ===============================
-       Send reply to WhatsApp
+       Send TEXT reply to WhatsApp
     =============================== */
 
     const url = `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`;
 
     console.log("📤 Sending to WhatsApp URL:", url);
 
-    const waResponse = await fetch(url, {
+    await fetch(url, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${WHATSAPP_TOKEN}`,
@@ -131,14 +136,40 @@ router.post("/", async (req, res) => {
         to: phone,
         type: "text",
         text: {
-          body: reply
+          body: replyText
         }
       })
     });
 
-    const waData = await waResponse.json();
+    /* ===============================
+       Send MEDIA (optional)
+    =============================== */
 
-    console.log("✅ WhatsApp response:", waData);
+    if (Array.isArray(replyMedia) && replyMedia.length > 0) {
+
+      for (const mediaUrl of replyMedia) {
+
+        await fetch(url, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${WHATSAPP_TOKEN}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            messaging_product: "whatsapp",
+            to: phone,
+            type: "image",
+            image: {
+              link: mediaUrl
+            }
+          })
+        });
+
+      }
+
+      console.log("🖼️ MEDIA SENT:", replyMedia.length);
+
+    }
 
     res.sendStatus(200);
 
