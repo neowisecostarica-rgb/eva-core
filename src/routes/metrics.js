@@ -1,28 +1,44 @@
 /*
 ====================================================
-EVA METRICS API (SECURE MULTI-TENANT)
+EVA METRICS API (FULL HARDENED VERSION)
 ====================================================
 */
 
 import express from "express";
 import pool from "../db.js";
+
+/*
+AUTH
+*/
 import {
   authenticateApiKey,
   requireOrganizationMatch,
   allowLabOrganizationFallback
 } from "../lib/auth.js";
 
+/*
+SECURITY
+*/
+import {
+  metricsApiRateLimit,
+  basicSecurityHeaders
+} from "../lib/security.js";
+
 const router = express.Router();
 
 /*
 ====================================================
-MIDDLEWARE STACK
+GLOBAL MIDDLEWARE STACK
 ====================================================
 */
+
+router.use(basicSecurityHeaders);
 
 router.use(authenticateApiKey);
 router.use(requireOrganizationMatch);
 router.use(allowLabOrganizationFallback);
+
+router.use(metricsApiRateLimit);
 
 /*
 ====================================================
@@ -31,9 +47,7 @@ GET /v1/metrics/summary
 */
 
 router.get("/summary", async (req, res) => {
-
   try {
-
     const organization_id = req.organization_id;
 
     if (!organization_id) {
@@ -45,32 +59,90 @@ router.get("/summary", async (req, res) => {
 
     /*
     ====================================================
-    METRICS QUERY
+    BASIC COUNTS
     ====================================================
     */
 
-    const result = await pool.query(
+    const [conversations, leads] = await Promise.all([
+      pool.query(
+        `
+        SELECT COUNT(*)::int AS total
+        FROM conversations
+        WHERE organization_id = $1
+        `,
+        [organization_id]
+      ),
+      pool.query(
+        `
+        SELECT COUNT(*)::int AS total
+        FROM leads
+        WHERE organization_id = $1
+        `,
+        [organization_id]
+      )
+    ]);
+
+    /*
+    ====================================================
+    HOT LEADS
+    ====================================================
+    */
+
+    const hotLeads = await pool.query(
       `
-      SELECT
-        COUNT(DISTINCT c.id) AS total_conversations,
-        COUNT(m.id) AS total_messages,
-        COUNT(DISTINCT l.id) AS total_leads,
-
-        COUNT(*) FILTER (WHERE l.interest_level = 'HIGH') AS high_intent_leads,
-        COUNT(*) FILTER (WHERE l.status = 'closed') AS closed_leads,
-
-        MAX(c.updated_at) AS last_activity
-
-      FROM conversations c
-      LEFT JOIN messages m ON m.conversation_id = c.id
-      LEFT JOIN leads l ON l.id = c.lead_id
-
-      WHERE c.organization_id = $1
+      SELECT COUNT(*)::int AS total
+      FROM leads
+      WHERE organization_id = $1
+        AND stage = 'hot'
       `,
       [organization_id]
     );
 
-    const row = result.rows?.[0] || {};
+    /*
+    ====================================================
+    WON LEADS
+    ====================================================
+    */
+
+    const wonLeads = await pool.query(
+      `
+      SELECT COUNT(*)::int AS total
+      FROM leads
+      WHERE organization_id = $1
+        AND stage = 'won'
+      `,
+      [organization_id]
+    );
+
+    /*
+    ====================================================
+    FOLLOWUPS PENDING
+    ====================================================
+    */
+
+    const followups = await pool.query(
+      `
+      SELECT COUNT(*)::int AS total
+      FROM followups
+      WHERE organization_id = $1
+        AND status = 'pending'
+      `,
+      [organization_id]
+    );
+
+    /*
+    ====================================================
+    SAFE CONVERSION RATE
+    ====================================================
+    */
+
+    const totalLeads = leads.rows[0]?.total || 0;
+    const totalWon = wonLeads.rows[0]?.total || 0;
+
+    const conversionRate =
+      totalLeads > 0
+        ? ((totalWon / totalLeads) * 100).toFixed(2)
+        : "0.00";
 
     /*
     ====================================================
@@ -81,17 +153,16 @@ router.get("/summary", async (req, res) => {
     return res.json({
       success: true,
       data: {
-        total_conversations: Number(row.total_conversations || 0),
-        total_messages: Number(row.total_messages || 0),
-        total_leads: Number(row.total_leads || 0),
-        high_intent_leads: Number(row.high_intent_leads || 0),
-        closed_leads: Number(row.closed_leads || 0),
-        last_activity: row.last_activity || null
+        conversations: conversations.rows[0]?.total || 0,
+        leads: totalLeads,
+        hot_leads: hotLeads.rows[0]?.total || 0,
+        won_leads: totalWon,
+        followups_pending: followups.rows[0]?.total || 0,
+        conversion_rate: `${conversionRate}%`
       }
     });
 
   } catch (err) {
-
     console.error("❌ metrics error:", err.message);
 
     return res.status(500).json({
