@@ -1,6 +1,5 @@
 console.log("🔥 USING REPLY ENGINE CORRECTO 🔥");
 
-
 /*
 ====================================================
 EVA REPLY ENGINE (HARDENED VERSION)
@@ -37,7 +36,43 @@ function buildProductResponse(text, product = null) {
 }
 
 /*
+====================================================
+SMART FALLBACK
+====================================================
+*/
 
+function smartFallbackReply({ stage = "new", products = [] } = {}) {
+  if (Array.isArray(products) && products.length > 0) {
+    return {
+      text: `Perfecto 🙌
+
+Tengo opciones disponibles para ti.
+
+Cuéntame, ¿la necesitas para estudio o trabajo?`,
+      media: []
+    };
+  }
+
+  if (
+    stage === "qualified_work" ||
+    stage === "qualified_study" ||
+    stage === "catalog_shown"
+  ) {
+    return {
+      text: `Perfecto 🙌
+
+Cuéntame qué tipo de equipo buscas y con gusto te recomiendo una opción disponible 👌`,
+      media: []
+    };
+  }
+
+  return {
+    text: `Perfecto 🙌
+
+Cuéntame qué estás buscando y te ayudo 👌`,
+    media: []
+  };
+}
 
 /*
 ====================================================
@@ -64,18 +99,37 @@ PRODUCT REPLY
 ====================================================
 */
 
-function productReply({ catalogMatches = [], interestLevel = null }) {
-
+function productReply({
+  catalogMatches = [],
+  interestLevel = null,
+  stage = "new"
+}) {
   const item = getMainCatalogItem(catalogMatches);
 
   if (!item) {
-  return smartFallbackReply({
-    stage,
-    products: catalogMatches
-  });
-}
+    return smartFallbackReply({
+      stage,
+      products: catalogMatches
+    });
+  }
 
   const price = formatPrice(item.price_crc);
+
+  // 🔥 Si ya estamos en flujo comercial, no reiniciar la conversación
+  if (
+    stage === "catalog_shown" ||
+    stage === "qualified_work" ||
+    stage === "qualified_study"
+  ) {
+    return buildProductResponse(`Perfecto 🙌
+
+💻 ${item.name}
+💰 ${price}
+
+Es una excelente opción según lo que buscas.
+
+¿Te gustaría ver fotos reales o prefieres apartarla?`, item);
+  }
 
   if (interestLevel === "HIGH") {
     return buildProductResponse(`Esta opción es de las más buscadas 👇
@@ -100,7 +154,6 @@ Puedes apartarla con ₡20.000 🙌
 💰 ${price}
 
 ¿La necesitas para estudio o trabajo?`, item);
-
 }
 
 /*
@@ -110,11 +163,10 @@ BUY FLOW
 */
 
 function buyReplyByStage({ catalogMatches = [], stage = "new" }) {
-
   const item = getMainCatalogItem(catalogMatches);
 
   if (!item) {
-    return smartFallbackReply();
+    return smartFallbackReply({ stage, products: catalogMatches });
   }
 
   const price = formatPrice(item.price_crc);
@@ -127,7 +179,6 @@ function buyReplyByStage({ catalogMatches = [], stage = "new" }) {
 Puedes apartarla con ₡20.000.
 
 ¿Te paso los datos?`, item);
-
 }
 
 /*
@@ -160,43 +211,40 @@ export async function generateReply({
   score,
   stage
 }) {
-
   let response;
 
   try {
-
-    // 🟢 GREETING SOLO SI NO HAY CONTEXTO
+    // 🟢 Greeting solo si no hay contexto
     if (intent === "GREETING" && (!catalogMatches || catalogMatches.length === 0)) {
       response = greetingReply();
     }
 
-    // 🟢 COMPRA
+    // 🟢 Compra
     else if (intent === "BUY") {
       response = buyReplyByStage({ catalogMatches, stage });
     }
 
-    // 🟢 PRODUCTO ENCONTRADO
+    // 🟢 Producto encontrado
     else if (Array.isArray(catalogMatches) && catalogMatches.length > 0) {
-      response = productReply({ catalogMatches, interestLevel });
+      response = productReply({ catalogMatches, interestLevel, stage });
     }
 
-    // 🔴 CATALOGO VACÍO → fallback inteligente
+    // 🔴 Catálogo vacío → fallback inteligente
     else if (Array.isArray(catalogMatches) && catalogMatches.length === 0) {
       console.log("CATALOG EMPTY → SMART FALLBACK");
-      response = smartFallbackReply();
+      response = smartFallbackReply({ stage, products: catalogMatches });
     }
 
-    // 🔴 cualquier otro caso raro
+    // 🔴 Cualquier otro caso raro
     else {
       console.log("UNKNOWN CASE → FALLBACK");
       response = fallbackReply();
     }
-
   } catch (err) {
     console.error("REPLY ENGINE HARD ERROR:", err);
 
     // 🔥 fallback crítico de sistema
-    response = smartFallbackReply();
+    response = smartFallbackReply({ stage, products: catalogMatches });
   }
 
   /*
@@ -214,5 +262,4 @@ export async function generateReply({
   }
 
   return response;
-
 }
