@@ -1,28 +1,48 @@
 /*
 ====================================================
-EVA MESSAGES API (SECURE MULTI-TENANT)
+EVA MESSAGES API (FULL HARDENED VERSION)
 ====================================================
 */
 
 import express from "express";
 import { handleInbound } from "../salesBrain.js";
+
+/*
+AUTH
+*/
 import {
   authenticateApiKey,
   requireOrganizationMatch,
   allowLabOrganizationFallback
 } from "../lib/auth.js";
 
+/*
+SECURITY
+*/
+import {
+  inboundApiRateLimit,
+  basicSecurityHeaders,
+  blockOversizedText,
+  requireJsonContent
+} from "../lib/security.js";
+
 const router = express.Router();
 
 /*
 ====================================================
-MIDDLEWARE STACK (ORDEN IMPORTANTE)
+GLOBAL MIDDLEWARE STACK (ORDEN CRÍTICO)
 ====================================================
 */
+
+router.use(basicSecurityHeaders);
+router.use(requireJsonContent);
 
 router.use(authenticateApiKey);
 router.use(requireOrganizationMatch);
 router.use(allowLabOrganizationFallback);
+
+router.use(inboundApiRateLimit);
+router.use(blockOversizedText());
 
 /*
 ====================================================
@@ -38,7 +58,7 @@ router.post("/", async (req, res) => {
 
     /*
     ====================================================
-    VALIDACIÓN MÍNIMA
+    VALIDACIÓN
     ====================================================
     */
 
@@ -60,16 +80,22 @@ router.post("/", async (req, res) => {
 
     const userPhone = phone || "unknown";
 
-    console.log("🔐 API inbound (secure):", {
-      organization_id,
+    /*
+    ====================================================
+    LOG CONTROLADO
+    ====================================================
+    */
+
+    console.log("📩 inbound (secure):", {
+      org: organization_id,
       phone: userPhone,
-      text,
+      text_length: text.length,
       api_key: req.auth?.api_key_name
     });
 
     /*
     ====================================================
-    CORE
+    CORE EXECUTION
     ====================================================
     */
 
