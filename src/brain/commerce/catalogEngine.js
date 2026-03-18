@@ -94,13 +94,10 @@ function buildWhereClause(terms, startIndex = 2) {
   };
 }
 
-/*
-====================================================
-SEARCH CATALOG
-====================================================
-*/
-
 export async function searchCatalog({ organization_id, text }) {
+
+  // 🔥 LOG CORRECTO
+  console.log("ORG ID QUE USA EVA:", organization_id);
 
   if (!organization_id || !text) {
     return [];
@@ -140,5 +137,6 @@ export async function searchCatalog({ organization_id, text }) {
     return [];
 
   }
+}
 
 }
