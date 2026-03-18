@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CATALOG ENGINE (HARDENED VERSION)
+EVA CATALOG ENGINE (FIXED VERSION)
 ====================================================
 */
 
@@ -8,133 +8,43 @@ import pool from "../../db.js";
 
 /*
 ====================================================
-NORMALIZE TEXT
-====================================================
-*/
-
-function normalizeText(value = "") {
-  return String(value)
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim();
-}
-
-/*
-====================================================
-EXTRACT SEARCH TERMS
-====================================================
-*/
-
-function extractSearchTerms(text) {
-  const normalized = normalizeText(text);
-
-  // Caso fuerte: computadoras
-  if (
-    normalized.includes("compu") ||
-    normalized.includes("computadora") ||
-    normalized.includes("pc") ||
-    normalized.includes("laptop") ||
-    normalized.includes("laptops") ||
-    normalized.includes("equipo")
-  ) {
-    return ["thinkpad", "latitude", "lenovo", "dell"];
-  }
-
-  const words = normalized
-    .split(/\s+/)
-    .map(w => w.trim())
-    .filter(w => w.length >= 3);
-
-  return words.slice(0, 5);
-}
-
-/*
-====================================================
-SAFE COLUMN (ANTI-SCHEMA BREAK)
-====================================================
-*/
-
-function safeColumn(columnName) {
-  return `COALESCE(p.${columnName}, '')`;
-}
-
-/*
-====================================================
-BUILD WHERE CLAUSE
-====================================================
-*/
-
-function buildWhereClause(terms, startIndex = 2) {
-  const conditions = [];
-  const values = [];
-
-  let paramIndex = startIndex;
-
-  for (const term of terms) {
-    conditions.push(`(
-      LOWER(${safeColumn("name")}) LIKE $${paramIndex}
-      OR LOWER(${safeColumn("category")}) LIKE $${paramIndex}
-      OR LOWER(${safeColumn("description")}) LIKE $${paramIndex}
-    )`);
-
-    values.push(`%${term}%`);
-    paramIndex += 1;
-  }
-
-  return {
-    clause: conditions.length > 0 ? conditions.join(" OR ") : "TRUE",
-    values
-  };
-}
-
-/*
-====================================================
 SEARCH CATALOG
 ====================================================
 */
 
-export async function searchCatalog({ organization_id, text }) {
-
-  console.log("🧠 EVA SEARCH ORG:", organization_id);
-  console.log("🧠 EVA SEARCH TEXT:", text);
-
-  if (!organization_id || !text) {
-    return [];
-  }
+export async function searchCatalog({ organization_id, text = "" }) {
 
   try {
 
-    const terms = extractSearchTerms(text);
-
-    const { clause, values } = buildWhereClause(terms);
-
-    const result = await pool.query(
-      `
+    const query = `
       SELECT
-        p.id,
-        p.name,
-        p.category,
-        p.description,
-        p.price_crc,
-        p.stock,
-        COALESCE(p.image_urls, p.images_url) AS image_urls
-      FROM product_catalog p
-      WHERE p.organization_id = $1
-        AND p.is_active = true
-        AND (${clause})
-      ORDER BY p.updated_at DESC NULLS LAST
-      LIMIT 3
-      `,
-      [organization_id, ...values]
-    );
+        id,
+        name,
+        price_crc,
+        description,
+        images_url
+      FROM product_catalog
+      WHERE organization_id = $1
+      AND (
+        name ILIKE $2
+        OR description ILIKE $2
+      )
+      LIMIT 5
+    `;
 
-    return result.rows || [];
+    const values = [
+      organization_id,
+      `%${text}%`
+    ];
+
+    const result = await pool.query(query, values);
+
+    console.log("📦 RAW DB RESULT:", result.rows);
+
+    return result.rows;
 
   } catch (err) {
-
-    console.error("❌ catalog search error:", err.message);
+    console.error("❌ CATALOG SEARCH ERROR:", err);
     return [];
-
   }
 }
