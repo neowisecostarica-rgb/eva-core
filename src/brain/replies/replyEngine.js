@@ -145,6 +145,10 @@ Tenemos pocas unidades.
 
 Puedes apartarla con ₡20.000 🙌
 
+Es de las que más rápido se van.
+
+Si quieres, te la puedo apartar con ₡20.000 para asegurártela 🙌
+
 ¿Te la reservo?`, item);
   }
 
