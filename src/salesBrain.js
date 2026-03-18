@@ -112,6 +112,12 @@ function detectSalesSignals(text = "", intent = "UNKNOWN") {
   const t = normalizeText(text);
   const signals = [];
 
+  /*
+  ====================================================
+  USE CASE
+  ====================================================
+  */
+
   if (t.includes("estudio") || t.includes("colegio")) {
     signals.push({ type: "USE_CASE_ESTUDIO", value: "estudio" });
   }
@@ -119,6 +125,12 @@ function detectSalesSignals(text = "", intent = "UNKNOWN") {
   if (t.includes("trabajo") || t.includes("oficina")) {
     signals.push({ type: "USE_CASE_TRABAJO", value: "trabajo" });
   }
+
+  /*
+  ====================================================
+  PRICE SIGNALS
+  ====================================================
+  */
 
   if (t.includes("caro") || t.includes("mucho")) {
     signals.push({ type: "PRICE_OBJECTION", value: "price objection" });
@@ -128,6 +140,12 @@ function detectSalesSignals(text = "", intent = "UNKNOWN") {
     signals.push({ type: "LOW_PRICE_SEARCH", value: "cheaper option" });
   }
 
+  /*
+  ====================================================
+  INTENT
+  ====================================================
+  */
+
   if (intent === "BUY") {
     signals.push({ type: "BUY_INTENT", value: "buy" });
   }
@@ -136,13 +154,36 @@ function detectSalesSignals(text = "", intent = "UNKNOWN") {
     signals.push({ type: "PRODUCT_SEARCH", value: "search" });
   }
 
+  /*
+  ====================================================
+  PRODUCT DEMAND (🔥 NUEVO)
+  ====================================================
+  */
+
+  if (t.includes("laptop") || t.includes("computadora")) {
+    signals.push({ type: "PRODUCT_DEMAND", value: "laptop" });
+  }
+
+  if (t.includes("impresora")) {
+    signals.push({ type: "PRODUCT_DEMAND", value: "printer" });
+  }
+
+  if (t.includes("monitor") || t.includes("pantalla")) {
+    signals.push({ type: "PRODUCT_DEMAND", value: "monitor" });
+  }
+
+  /*
+  ====================================================
+  BUDGET
+  ====================================================
+  */
+
   if (/\d{5,7}/.test(text)) {
     signals.push({ type: "BUDGET_DETECTED", value: "budget mentioned" });
   }
 
   return signals;
 }
-
 /*
 ====================================================
 STAGE
