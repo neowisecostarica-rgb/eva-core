@@ -13,21 +13,38 @@ MESSAGE BUILDER
 */
 
 function buildFollowupMessage(reason) {
+
   if (reason === "sales_followup") {
     return `Hola 🙌
 
 Ayer estuviste consultando por nuestros equipos.
 
-Si todavía estás buscando laptop o accesorios con gusto puedo ayudarte a encontrar una buena opción según lo que necesites.
+Si todavía estás buscando laptop o accesorios con gusto puedo ayudarte.
 
 ¿La ocupas para estudio o trabajo?`;
   }
 
-  return `Hola 🙌
+  if (reason === "sales_followup_2") {
+    return `Hola 👋
 
-Solo quería saber si todavía necesitas ayuda con lo que estabas consultando.
+Todavía tenemos unidades disponibles de los equipos que viste.
 
-Estoy aquí para ayudarte.`;
+Son línea corporativa y se van rápido 🙌
+
+Si quieres te ayudo a elegir el ideal.`;
+  }
+
+  if (reason === "sales_followup_3") {
+    return `Hola 🙌
+
+Te escribo por última vez sobre los equipos que consultaste.
+
+Si todavía estás interesado puedo ayudarte a reservar uno antes de que se acaben.
+
+Quedo atento 👍`;
+  }
+
+  return `Hola 🙌 ¿Aún necesitas ayuda?`;
 }
 
 /*
