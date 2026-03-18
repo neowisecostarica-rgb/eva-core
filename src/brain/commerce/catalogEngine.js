@@ -29,36 +29,40 @@ EXTRACT SEARCH TERMS
 function extractSearchTerms(text) {
   const normalized = normalizeText(text);
 
-  const dictionary = [
-    "thinkpad",
-    "lenovo",
-    "dell",
-    "latitude",
-    "laptop",
-    "laptops",
-    "computadora",
-    "pc",
-    "equipo",
-    "estudio",
-    "trabajo",
-    "oficina",
-    "universidad",
-    "colegio"
-  ];
+  /*
+  ============================================
+  INTENT MAPPING (CLAVE DEL ÉXITO)
+  ============================================
+  */
 
-  const matchedTerms = dictionary.filter(term =>
-    normalized.includes(term)
-  );
-
-  if (matchedTerms.length > 0) {
-    return matchedTerms;
+  if (
+    normalized.includes("compu") ||
+    normalized.includes("computadora") ||
+    normalized.includes("pc") ||
+    normalized.includes("laptop") ||
+    normalized.includes("laptops") ||
+    normalized.includes("equipo")
+  ) {
+    return [
+      "thinkpad",
+      "latitude",
+      "lenovo",
+      "dell"
+    ];
   }
 
-  return normalized
+  /*
+  ============================================
+  FALLBACK NORMAL
+  ============================================
+  */
+
+  const words = normalized
     .split(/\s+/)
-    .map(word => word.trim())
-    .filter(word => word.length >= 3)
-    .slice(0, 5);
+    .map(w => w.trim())
+    .filter(w => w.length >= 3);
+
+  return words.slice(0, 5);
 }
 
 /*
