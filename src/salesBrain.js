@@ -163,7 +163,8 @@ export async function handleInbound({
 
     const intent = detectIntent(text);
     const signals = detectSalesSignals(text, intent);
-
+    const isHotLead = signals.some(s => s.type === "BUY_INTENT") || intent === "BUY";
+    
     console.log("🧠 INTENT:", intent);
     console.log("🧠 SIGNALS:", signals);
 
@@ -198,11 +199,46 @@ export async function handleInbound({
     ====================================================
     */
 
-    const reply = generateReply({
-      text,
-      intent,
-      products
-    });
+   let reply = generateReply({
+  text,
+  intent,
+  products
+});
+
+/*
+====================================================
+🔥 HOT LEAD → CIERRE
+====================================================
+*/
+
+if (isHotLead && Array.isArray(products) && products.length > 0) {
+
+  const product = products[0];
+
+  const price = product?.price_crc
+    ? `₡${Number(product.price_crc).toLocaleString()}`
+    : "Consultar precio";
+
+  reply = {
+    text: `Esta opción es de las más buscadas 👇
+
+💻 ${product.name}
+💰 ${price}
+
+✅ Línea corporativa
+✅ SSD rápido
+✅ 1 año de garantía
+
+Tenemos pocas unidades disponibles.
+
+Puedes apartarla con ₡20.000 🙌
+
+¿Te la reservo?`,
+    media: reply.media || []
+  };
+
+  console.log("🔥 HOT LEAD DETECTED → CLOSING MODE");
+}
 
     /*
 ====================================================
