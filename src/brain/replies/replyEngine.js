@@ -180,10 +180,9 @@ function buyReplyByStage({ catalogMatches = [], stage = "new" }) {
 💻 ${item.name}
 💰 ${price}
 
-Puedes apartarla con ₡20.000.
+La puedes apartar con ₡20.000 y asegurarla.
 
-¿Te paso los datos?`, item);
-}
+¿Prefieres SINPE, transferencia o tarjeta?
 
 /*
 ====================================================
