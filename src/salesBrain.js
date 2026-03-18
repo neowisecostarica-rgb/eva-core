@@ -205,6 +205,75 @@ export async function handleInbound({
     });
 
     /*
+====================================================
+FOLLOWUP CREATION (SMART)
+====================================================
+*/
+
+try {
+
+  const shouldCreateFollowup =
+    (intent === "PRODUCT_SEARCH" || intent === "BUY") &&
+    Array.isArray(products) &&
+    products.length > 0;
+
+  if (shouldCreateFollowup) {
+
+    // evitar duplicados
+    const existing = await pool.query(
+      `
+      SELECT id FROM followups
+      WHERE organization_id = $1
+      AND lead_phone = $2
+      AND status = 'PENDING'
+      LIMIT 1
+      `,
+      [organization_id, phone]
+    );
+
+    if (!existing.rowCount) {
+
+      const scheduledFor = new Date(Date.now() + (24 * 60 * 60 * 1000));
+
+      await pool.query(
+        `
+        INSERT INTO followups (
+          organization_id,
+          lead_phone,
+          conversation_id,
+          reason,
+          scheduled_for,
+          status,
+          attempt,
+          sent,
+          created_at,
+          updated_at
+        )
+        VALUES ($1, $2, $3, $4, $5, 'PENDING', 0, false, NOW(), NOW())
+        `,
+        [
+          organization_id,
+          phone,
+          conversation_id || null,
+          "sales_followup",
+          scheduledFor
+        ]
+      );
+
+      console.log("📆 FOLLOWUP CREATED", {
+        phone,
+        scheduledFor
+      });
+
+    }
+
+  }
+
+} catch (err) {
+  console.error("❌ FOLLOWUP CREATION ERROR", err.message);
+}
+    
+    /*
     ====================================================
     RETURN
     ====================================================
