@@ -140,17 +140,23 @@ function productReply({ catalogMatches = [], interestLevel = null }) {
 
   const item = getMainCatalogItem(catalogMatches);
 
-  if (!item) return null;
+  if (!item) {
+    return smartFallbackReply({
+      stage: "no_product",
+      products: catalogMatches
+    });
+  }
 
   const price = formatPrice(item.price_crc);
 
   /*
-  HIGH INTENT → CIERRE
+  ============================================
+  HIGH INTENT → CIERRE DIRECTO
+  ============================================
   */
 
   if (interestLevel === "HIGH") {
-    return buildResponse(
-      `Esta es de las opciones más buscadas 👇
+    return buildProductResponse(`Esta opción es de las más buscadas 👇
 
 💻 ${item.name}
 💰 ${price}
@@ -159,14 +165,43 @@ function productReply({ catalogMatches = [], interestLevel = null }) {
 ✅ SSD rápido
 ✅ 1 año de garantía
 
-Nos quedan pocas unidades disponibles.
+Nos quedan pocas unidades.
 
-Puedes apartarla con ₡20.000 para asegurarla 🙌
+Puedes apartarla con ₡20.000 🙌
 
-¿Te la reservo o prefieres ver fotos reales primero?`,
-      item
-    );
+¿Te la reservo?`, item);
   }
+
+  /*
+  ============================================
+  MEDIUM INTENT → EMPUJAR SUAVEMENTE
+  ============================================
+  */
+
+  if (interestLevel === "MEDIUM") {
+    return buildProductResponse(`Te recomiendo esta opción 👇
+
+💻 ${item.name}
+💰 ${price}
+
+Es muy usada para trabajo y estudio 🙌
+
+Si quieres te puedo enviar fotos reales o reservar una para vos.`, item);
+  }
+
+  /*
+  ============================================
+  LOW / UNKNOWN → EXPLORAR + CALIFICAR
+  ============================================
+  */
+
+  return buildProductResponse(`Tenemos esta opción disponible 👇
+
+💻 ${item.name}
+💰 ${price}
+
+¿La estarías usando para estudio o trabajo?`, item);
+}
 
   /*
   LOW INTENT → EMPUJE SUAVE
