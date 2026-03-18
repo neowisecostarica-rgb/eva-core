@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA FOLLOWUP WORKER (HARDENED P0)
+EVA FOLLOWUP WORKER (SMART + HARDENED)
 ====================================================
 */
 
@@ -8,41 +8,77 @@ import pool from "./db.js";
 
 /*
 ====================================================
-MESSAGE BUILDER
+MESSAGE BUILDER (CONTEXTUAL)
 ====================================================
 */
 
-function buildFollowupMessage(reason) {
+function buildFollowupMessage(followup, memory = {}) {
+
+  const { reason } = followup;
+
+  const useCaseText = {
+    ESTUDIO: "para estudio",
+    TRABAJO: "para trabajo",
+    GAMING: "para gaming"
+  };
+
+  const useCase = memory?.use_case
+    ? useCaseText[memory.use_case] || ""
+    : "";
+
+  /*
+  ====================================================
+  FOLLOWUP 1 (24H)
+  ====================================================
+  */
 
   if (reason === "sales_followup") {
     return `Hola 🙌
 
-Ayer estuviste consultando por nuestros equipos.
+Ayer estuviste consultando ${useCase ? useCase : "sobre laptops"}.
 
-Si todavía estás buscando laptop o accesorios con gusto puedo ayudarte.
+Si todavía estás buscando, puedo ayudarte a encontrar una buena opción según lo que necesitas 👇
 
-¿La ocupas para estudio o trabajo?`;
+¿Quieres que te recomiende una opción disponible ahora?`;
   }
+
+  /*
+  ====================================================
+  FOLLOWUP 2 (3 DÍAS)
+  ====================================================
+  */
 
   if (reason === "sales_followup_2") {
     return `Hola 👋
 
-Todavía tenemos unidades disponibles de los equipos que viste.
+Todavía tenemos unidades disponibles ${useCase ? useCase : ""}.
 
-Son línea corporativa y se van rápido 🙌
+Son equipos línea corporativa y se van rápido 🙌
 
-Si quieres te ayudo a elegir el ideal.`;
+Si quieres te ayudo a elegir el ideal para ti.`;
   }
+
+  /*
+  ====================================================
+  FOLLOWUP 3 (7 DÍAS)
+  ====================================================
+  */
 
   if (reason === "sales_followup_3") {
     return `Hola 🙌
 
-Te escribo por última vez sobre los equipos que consultaste.
+Te escribo por última vez sobre ${useCase ? useCase : "los equipos que consultaste"}.
 
 Si todavía estás interesado puedo ayudarte a reservar uno antes de que se acaben.
 
 Quedo atento 👍`;
   }
+
+  /*
+  ====================================================
+  DEFAULT
+  ====================================================
+  */
 
   return `Hola 🙌 ¿Aún necesitas ayuda?`;
 }
@@ -88,10 +124,7 @@ export async function processFollowups(sendMessage) {
           [f.id]
         );
 
-        if (!lock.rowCount) {
-          // otro worker ya lo tomó
-          continue;
-        }
+        if (!lock.rowCount) continue;
 
         const followup = lock.rows[0];
 
@@ -119,11 +152,35 @@ export async function processFollowups(sendMessage) {
 
         /*
         ------------------------------------------------
-        BUILD MESSAGE
+        LOAD MEMORY (NUEVO 🔥)
         ------------------------------------------------
         */
 
-        const message = buildFollowupMessage(followup.reason);
+        let memory = {};
+
+        try {
+          const memResult = await pool.query(
+            `
+            SELECT use_case, budget_crc, product_interest
+            FROM leads
+            WHERE phone = $1
+            LIMIT 1
+          `,
+            [followup.lead_phone]
+          );
+
+          memory = memResult.rows[0] || {};
+        } catch (err) {
+          console.warn("⚠️ followup memory error", err.message);
+        }
+
+        /*
+        ------------------------------------------------
+        BUILD MESSAGE (CON MEMORIA)
+        ------------------------------------------------
+        */
+
+        const message = buildFollowupMessage(followup, memory);
 
         /*
         ------------------------------------------------
@@ -136,80 +193,72 @@ export async function processFollowups(sendMessage) {
           message
         });
 
-   /*
-------------------------------------------------
-SUCCESS
-------------------------------------------------
-*/
+        /*
+        ------------------------------------------------
+        SUCCESS
+        ------------------------------------------------
+        */
 
-await pool.query(
-  `
-  UPDATE followups
-  SET status = 'DONE',
-      updated_at = NOW()
-  WHERE id = $1
-`,
-  [followup.id]
-);
-
-/*
-------------------------------------------------
-SEQUENCE ENGINE
-------------------------------------------------
-*/
-
-try {
-
-  let nextDelay = null;
-  let nextReason = null;
-
-  if (followup.reason === "sales_followup") {
-    nextDelay = 3 * 24 * 60 * 60 * 1000; // +3 días
-    nextReason = "sales_followup_2";
-  }
-
-  else if (followup.reason === "sales_followup_2") {
-    nextDelay = 7 * 24 * 60 * 60 * 1000; // +7 días
-    nextReason = "sales_followup_3";
-  }
-
-  if (nextDelay && nextReason) {
-
-    const scheduledFor = new Date(Date.now() + nextDelay);
-
-    await pool.query(
-      `
-      INSERT INTO followups (
-        organization_id,
-        lead_phone,
-        reason,
-        scheduled_for,
-        status,
-        attempt_count,
-        created_at,
-        updated_at
-      )
-      VALUES ($1, $2, $3, $4, 'PENDING', 0, NOW(), NOW())
-    `,
-      [
-        followup.organization_id,
-        followup.lead_phone,
-        nextReason,
-        scheduledFor
-      ]
-    );
-
-  }
-
-} catch (err) {
-  console.error("FOLLOWUP SEQUENCE ERROR", err.message);
-}
+        await pool.query(
+          `
+          UPDATE followups
+          SET status = 'DONE',
+              updated_at = NOW()
+          WHERE id = $1
+        `,
+          [followup.id]
+        );
 
         /*
         ------------------------------------------------
-        ERROR HANDLING
+        SEQUENCE ENGINE
         ------------------------------------------------
         */
+
+        try {
+          let nextDelay = null;
+          let nextReason = null;
+
+          if (followup.reason === "sales_followup") {
+            nextDelay = 3 * 24 * 60 * 60 * 1000;
+            nextReason = "sales_followup_2";
+          } else if (followup.reason === "sales_followup_2") {
+            nextDelay = 7 * 24 * 60 * 60 * 1000;
+            nextReason = "sales_followup_3";
+          }
+
+          if (nextDelay && nextReason) {
+            const scheduledFor = new Date(Date.now() + nextDelay);
+
+            await pool.query(
+              `
+              INSERT INTO followups (
+                organization_id,
+                lead_phone,
+                reason,
+                scheduled_for,
+                status,
+                attempt_count,
+                created_at,
+                updated_at
+              )
+              VALUES ($1, $2, $3, $4, 'PENDING', 0, NOW(), NOW())
+            `,
+              [
+                followup.organization_id,
+                followup.lead_phone,
+                nextReason,
+                scheduledFor
+              ]
+            );
+          }
+        } catch (err) {
+          console.error("FOLLOWUP SEQUENCE ERROR", err.message);
+        }
+
+      } catch (err) {
+
+        console.error("FOLLOWUP ERROR", err);
 
         await pool.query(
           `
@@ -251,5 +300,5 @@ export function startFollowupWorker(sendMessage) {
     } finally {
       isRunning = false;
     }
-  }, 120000); // cada 2 min
+  }, 120000);
 }
