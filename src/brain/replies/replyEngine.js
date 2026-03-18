@@ -1,8 +1,8 @@
-console.log("🔥 USING REPLY ENGINE CORRECTO 🔥");
+console.log("🔥 USING REPLY ENGINE HARDENED 🔥");
 
 /*
 ====================================================
-EVA REPLY ENGINE (HARDENED VERSION)
+EVA REPLY ENGINE (HARDENED + NO SILENCE)
 ====================================================
 */
 
@@ -28,7 +28,7 @@ function getMainCatalogItem(catalogMatches = []) {
     : null;
 }
 
-function buildProductResponse(text, product = null) {
+function buildResponse(text, product = null) {
   return {
     text,
     media: product ? extractProductImages(product) : []
@@ -37,101 +37,58 @@ function buildProductResponse(text, product = null) {
 
 /*
 ====================================================
-SMART FALLBACK
+SMART FALLBACK (NUNCA SILENCIO)
 ====================================================
 */
 
-function smartFallbackReply({ stage = "new", products = [] } = {}) {
-  if (Array.isArray(products) && products.length > 0) {
-    return {
-      text: `Perfecto 🙌
+function smartFallbackReply({ text = "", stage = "new" } = {}) {
 
-Tengo opciones disponibles para ti.
+  const normalized = String(text).toLowerCase();
 
-Cuéntame, ¿Para qué la estarías usando? (estudio, trabajo, algo más exigente)`,
-      media: []
-    };
+  if (
+    normalized.includes("hola") ||
+    normalized.includes("buenas") ||
+    normalized.includes("hello")
+  ) {
+    return buildResponse(
+      "Hola 🙌\nTe atiende Eva de Compu Store Costa Rica.\n\n¿Buscas computadora para estudio o trabajo?"
+    );
   }
 
   if (
-    stage === "qualified_work" ||
-    stage === "qualified_study" ||
-    stage === "catalog_shown"
+    normalized.includes("precio") ||
+    normalized.includes("cuanto") ||
+    normalized.includes("vale")
   ) {
-    return {
-      text: `Perfecto 🙌
-
-Cuéntame qué tipo de equipo buscas y con gusto te recomiendo una opción disponible 👌`,
-      media: []
-    };
+    return buildResponse(
+      "Con gusto 🙌\n\n¿Me indicas qué tipo de equipo buscas para darte opciones exactas?"
+    );
   }
 
-  return {
-    text: `Perfecto 🙌
-
-Cuéntame qué estás buscando y te ayudo 👌`,
-    media: []
-  };
+  return buildResponse(
+    "Con gusto te ayudo 🙌\n\n¿Buscas laptop para estudio, trabajo o algo más específico?"
+  );
 }
 
 /*
 ====================================================
-GREETING
+PRODUCT RESPONSE
 ====================================================
 */
 
-function greetingReply() {
-  return {
-    text: `Hola 🙌
+function productReply({ catalogMatches = [], interestLevel = null }) {
 
-Te atiende *Eva de Compu Store Costa Rica*.
-
-Tenemos laptops de línea corporativa con excelente rendimiento y garantía 👌
-
-¿La necesitas para *estudio o trabajo*?`,
-    media: []
-  };
-}
-
-/*
-====================================================
-PRODUCT REPLY
-====================================================
-*/
-
-function productReply({
-  catalogMatches = [],
-  interestLevel = null,
-  stage = "new"
-}) {
   const item = getMainCatalogItem(catalogMatches);
 
   if (!item) {
-    return smartFallbackReply({
-      stage,
-      products: catalogMatches
-    });
+    return null; // importante → deja que fallback actúe
   }
 
   const price = formatPrice(item.price_crc);
 
-  if (
-    stage === "catalog_shown" ||
-    stage === "qualified_work" ||
-    stage === "qualified_study"
-  ) {
-    return buildProductResponse(`Perfecto 🙌
-
-💻 ${item.name}
-💰 ${price}
-
-Es una excelente opción según lo que buscas.
-
-¿Te gustaría ver fotos reales o prefieres apartarla?`, item);
-  }
-
   if (interestLevel === "HIGH") {
-    return buildProductResponse(`Esta opción es de las más buscadas 👇
+    return buildResponse(
+      `Esta opción es de las más buscadas 👇
 
 💻 ${item.name}
 💰 ${price}
@@ -142,113 +99,103 @@ Es una excelente opción según lo que buscas.
 
 Tenemos pocas unidades.
 
-Es de las que más rápido se van.
+Puedes apartarla con ₡20.000 🙌
 
-Puedes apartarla con ₡20.000 para asegurártela 🙌
-
-¿Te la reservo?`, item);
+¿Te la reservo?`,
+      item
+    );
   }
 
-  return buildProductResponse(`Te recomiendo esta opción 👇
+  return buildResponse(
+    `Te recomiendo esta opción 👇
 
 💻 ${item.name}
 💰 ${price}
 
-¿La necesitas para estudio o trabajo?`, item);
+Son equipos empresariales, más duraderos que muchos nuevos domésticos.
+
+¿La necesitas para estudio o trabajo?`,
+    item
+  );
 }
 
 /*
 ====================================================
-BUY FLOW
-====================================================
-*/
-
-function buyReplyByStage({ catalogMatches = [], stage = "new" }) {
-  const item = getMainCatalogItem(catalogMatches);
-
-  if (!item) {
-    return smartFallbackReply({ stage, products: catalogMatches });
-  }
-
-  const price = formatPrice(item.price_crc);
-
-  return buildProductResponse(`Perfecto 🙌
-
-💻 ${item.name}
-💰 ${price}
-
-La puedes apartar con ₡20.000 y asegurarla.
-
-¿Prefieres SINPE, transferencia o tarjeta?`, item);
-}
-
-/*
-====================================================
-FALLBACK (CONTROLADO)
-====================================================
-*/
-
-function fallbackReply() {
-  return {
-    text: `Perfecto 🙌
-
-Cuéntame qué estás buscando y te ayudo 👌`,
-    media: []
-  };
-}
-
-/*
-====================================================
-MAIN
+MAIN REPLY ENGINE
 ====================================================
 */
 
 export async function generateReply({
-  intent,
-  catalogMatches,
-  interestLevel,
-  objection,
-  closingIntent,
-  score,
-  stage
+  text = "",
+  intent = "UNKNOWN",
+  stage = "new",
+  catalogMatches = [],
+  interestLevel = null
 }) {
-  let response;
 
   try {
-    if (intent === "GREETING" && (!catalogMatches || catalogMatches.length === 0)) {
-      response = greetingReply();
+
+    let response = null;
+
+    /*
+    ====================================================
+    PRIORIDAD 1 — PRODUCTO
+    ====================================================
+    */
+    if (catalogMatches && catalogMatches.length > 0) {
+      response = productReply({ catalogMatches, interestLevel });
     }
 
-    else if (intent === "BUY") {
-      response = buyReplyByStage({ catalogMatches, stage });
+    /*
+    ====================================================
+    PRIORIDAD 2 — FALLBACK (SI NO HAY PRODUCTO)
+    ====================================================
+    */
+    if (!response) {
+      response = smartFallbackReply({ text, stage });
     }
 
-    else if (Array.isArray(catalogMatches) && catalogMatches.length > 0) {
-      response = productReply({ catalogMatches, interestLevel, stage });
+    /*
+    ====================================================
+    SEGURIDAD: NUNCA RESPUESTA VACÍA
+    ====================================================
+    */
+    if (!response || !response.text) {
+      response = {
+        text: "Con gusto te ayudo 🙌",
+        media: []
+      };
     }
 
-    else if (Array.isArray(catalogMatches) && catalogMatches.length === 0) {
-      console.log("CATALOG EMPTY → SMART FALLBACK");
-      response = smartFallbackReply({ stage, products: catalogMatches });
+    /*
+    ====================================================
+    AI ENHANCER (NO CRÍTICO)
+    ====================================================
+    */
+    try {
+      const enhanced = await enhanceReply({
+        text: response.text,
+        intent,
+        stage
+      });
+
+      if (enhanced) {
+        response.text = enhanced;
+      }
+    } catch (err) {
+      console.warn("⚠️ aiEnhancer falló, usando texto base");
     }
 
-    else {
-      console.log("UNKNOWN CASE → FALLBACK");
-      response = fallbackReply();
-    }
+    return response;
 
   } catch (err) {
-    console.error("REPLY ENGINE HARD ERROR:", err);
-    response = smartFallbackReply({ stage, products: catalogMatches });
-  }
 
-  try {
-    if (response?.text) {
-      response.text = await enhanceReply(response.text);
-    }
-  } catch (err) {
-    console.error("reply ai enhance error", err);
-  }
+    console.error("❌ reply engine error:", err.message);
 
-  return response;
+    return {
+      text: "Hubo un pequeño problema 🙏 pero con gusto te ayudo.\n\n¿Buscas laptop para estudio o trabajo?",
+      media: []
+    };
+
+  }
 }
