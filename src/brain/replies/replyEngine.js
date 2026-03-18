@@ -48,7 +48,7 @@ function smartFallbackReply({ stage = "new", products = [] } = {}) {
 
 Tengo opciones disponibles para ti.
 
-Cuéntame, ¿la necesitas para estudio o trabajo?`,
+Cuéntame, ¿Para qué la estarías usando? (estudio, trabajo, algo más exigente)`,
       media: []
     };
   }
