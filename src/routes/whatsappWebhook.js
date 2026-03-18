@@ -1,40 +1,51 @@
 /*
 ====================================================
-EVA WHATSAPP WEBHOOK (STABLE VERSION)
+EVA WHATSAPP WEBHOOK (PRODUCTION READY)
 ====================================================
 */
 
 import express from "express";
 import axios from "axios";
-import { handleInbound } from "../salesBrain.js";
 
 const router = express.Router();
 
 /*
 ====================================================
-VERIFY WEBHOOK (META)
+CONFIG
+====================================================
+*/
+
+const VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN;
+const EVA_API_URL = process.env.EVA_API_URL;
+const EVA_API_KEY = process.env.EVA_API_KEY;
+
+const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
+const PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
+
+/*
+====================================================
+VERIFY WEBHOOK (GET)
 ====================================================
 */
 
 router.get("/", (req, res) => {
 
-  const verify_token = process.env.WHATSAPP_VERIFY_TOKEN;
-
   const mode = req.query["hub.mode"];
   const token = req.query["hub.verify_token"];
   const challenge = req.query["hub.challenge"];
 
-  if (mode === "subscribe" && token === verify_token) {
-    console.log("✅ Webhook verified");
+  if (mode === "subscribe" && token === VERIFY_TOKEN) {
+    console.log("✅ Webhook verificado");
     return res.status(200).send(challenge);
   }
 
+  console.error("❌ Webhook verification failed");
   return res.sendStatus(403);
 });
 
 /*
 ====================================================
-RECEIVE MESSAGES
+RECEIVE MESSAGES (POST)
 ====================================================
 */
 
@@ -45,6 +56,7 @@ router.post("/", async (req, res) => {
     const entry = req.body.entry?.[0];
     const changes = entry?.changes?.[0];
     const value = changes?.value;
+
     const message = value?.messages?.[0];
 
     if (!message) {
@@ -54,78 +66,50 @@ router.post("/", async (req, res) => {
     const phone = message.from;
     const text = message.text?.body || "";
 
-    console.log("📲 WhatsApp inbound:", { phone, text });
+    console.log("📩 Incoming WhatsApp:", { phone, text });
 
     /*
     ====================================================
-    SEND TO EVA CORE
+    SEND TO EVA CORE (SECURE)
     ====================================================
     */
 
-    const evaResponse = await handleInbound({
-      organization_id: process.env.DEFAULT_ORGANIZATION_ID,
-      phone,
-      text
-    });
-
-    const reply = evaResponse?.reply?.text || "Gracias por escribirnos 🙌";
-    const media = evaResponse?.reply?.media || [];
-
-    console.log("🤖 EVA reply:", reply);
-
-    /*
-    ====================================================
-    SEND TEXT MESSAGE
-    ====================================================
-    */
-
-    await axios.post(
-      `https://graph.facebook.com/v18.0/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`,
+    const evaResponse = await axios.post(
+      `${EVA_API_URL}/v1/messages/inbound`,
       {
-        messaging_product: "whatsapp",
-        to: phone,
-        type: "text",
-        text: {
-          body: reply
-        }
+        phone,
+        text
       },
       {
         headers: {
-          Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
+          Authorization: `Bearer ${EVA_API_KEY}`,
           "Content-Type": "application/json"
         }
       }
     );
 
+    const reply = evaResponse.data?.reply?.text || "Gracias por escribirnos 🙌";
+
     /*
     ====================================================
-    SEND MEDIA (IMAGES)
+    SEND REPLY TO WHATSAPP
     ====================================================
     */
 
-    if (Array.isArray(media) && media.length > 0) {
-      for (const url of media) {
-        try {
-          await axios.post(
-            `https://graph.facebook.com/v18.0/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`,
-            {
-              messaging_product: "whatsapp",
-              to: phone,
-              type: "image",
-              image: { link: url }
-            },
-            {
-              headers: {
-                Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
-                "Content-Type": "application/json"
-              }
-            }
-          );
-        } catch (err) {
-          console.warn("⚠️ media send error:", err.message);
+    await axios.post(
+      `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`,
+      {
+        messaging_product: "whatsapp",
+        to: phone,
+        text: { body: reply }
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${WHATSAPP_TOKEN}`,
+          "Content-Type": "application/json"
         }
       }
-    }
+    );
 
     return res.sendStatus(200);
 
@@ -133,10 +117,10 @@ router.post("/", async (req, res) => {
 
     console.error("❌ WHATSAPP WEBHOOK ERROR:", {
       message: err.message,
-      data: err.response?.data
+      response: err.response?.data
     });
 
-    return res.sendStatus(200);
+    return res.sendStatus(500);
   }
 });
 
