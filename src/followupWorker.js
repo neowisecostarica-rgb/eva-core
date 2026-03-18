@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA FOLLOWUP WORKER (SMART + HARDENED)
+EVA FOLLOWUP WORKER (SMART + HARDENED FINAL)
 ====================================================
 */
 
@@ -26,12 +26,6 @@ function buildFollowupMessage(followup, memory = {}) {
     ? useCaseText[memory.use_case] || ""
     : "";
 
-  /*
-  ====================================================
-  FOLLOWUP 1 (24H)
-  ====================================================
-  */
-
   if (reason === "sales_followup") {
     return `Hola 🙌
 
@@ -41,12 +35,6 @@ Si todavía estás buscando, puedo ayudarte a encontrar una buena opción según
 
 ¿Quieres que te recomiende una opción disponible ahora?`;
   }
-
-  /*
-  ====================================================
-  FOLLOWUP 2 (3 DÍAS)
-  ====================================================
-  */
 
   if (reason === "sales_followup_2") {
     return `Hola 👋
@@ -58,12 +46,6 @@ Son equipos línea corporativa y se van rápido 🙌
 Si quieres te ayudo a elegir el ideal para ti.`;
   }
 
-  /*
-  ====================================================
-  FOLLOWUP 3 (7 DÍAS)
-  ====================================================
-  */
-
   if (reason === "sales_followup_3") {
     return `Hola 🙌
 
@@ -73,12 +55,6 @@ Si todavía estás interesado puedo ayudarte a reservar uno antes de que se acab
 
 Quedo atento 👍`;
   }
-
-  /*
-  ====================================================
-  DEFAULT
-  ====================================================
-  */
 
   return `Hola 🙌 ¿Aún necesitas ayuda?`;
 }
@@ -91,6 +67,7 @@ PROCESS FOLLOWUPS
 
 export async function processFollowups(sendMessage) {
   try {
+
     const result = await pool.query(`
       SELECT *
       FROM followups
@@ -101,11 +78,12 @@ export async function processFollowups(sendMessage) {
     `);
 
     const followups = result.rows;
-
     if (!followups.length) return;
 
     for (const f of followups) {
+
       try {
+
         /*
         ------------------------------------------------
         LOCK (CRÍTICO)
@@ -127,62 +105,63 @@ export async function processFollowups(sendMessage) {
         if (!lock.rowCount) continue;
 
         const followup = lock.rows[0];
-/*
-------------------------------------------------
-ANTI-SPAM / ACTIVIDAD RECIENTE
-------------------------------------------------
-*/
 
-try {
+        /*
+        ------------------------------------------------
+        🔥 ANTI-SPAM / CONTROL INTELIGENTE
+        ------------------------------------------------
+        */
 
-  // evitar followup si ya fue enviado recientemente
-  if (followup.sent === true) {
-    await pool.query(
-      `
-      UPDATE followups
-      SET status = 'CANCELLED',
-          updated_at = NOW()
-      WHERE id = $1
-      `,
-      [followup.id]
-    );
-    continue;
-  }
+        try {
 
-  // evitar followup si hay otro followup pendiente más reciente
-  const newer = await pool.query(
-    `
-    SELECT id FROM followups
-    WHERE organization_id = $1
-    AND lead_phone = $2
-    AND status = 'PENDING'
-    AND scheduled_for > $3
-    LIMIT 1
-    `,
-    [
-      followup.organization_id,
-      followup.lead_phone,
-      followup.scheduled_for
-    ]
-  );
+          // ya fue enviado antes
+          if (followup.sent === true) {
+            await pool.query(
+              `
+              UPDATE followups
+              SET status = 'CANCELLED',
+                  updated_at = NOW()
+              WHERE id = $1
+              `,
+              [followup.id]
+            );
+            continue;
+          }
 
-  if (newer.rowCount) {
-    await pool.query(
-      `
-      UPDATE followups
-      SET status = 'CANCELLED',
-          updated_at = NOW()
-      WHERE id = $1
-      `,
-      [followup.id]
-    );
-    continue;
-  }
+          // existe uno más reciente → cancelar este
+          const newer = await pool.query(
+            `
+            SELECT id FROM followups
+            WHERE organization_id = $1
+            AND lead_phone = $2
+            AND status = 'PENDING'
+            AND scheduled_for > $3
+            LIMIT 1
+            `,
+            [
+              followup.organization_id,
+              followup.lead_phone,
+              followup.scheduled_for
+            ]
+          );
 
-} catch (err) {
-  console.warn("⚠️ anti-spam check error", err.message);
-}
-        
+          if (newer.rowCount) {
+            await pool.query(
+              `
+              UPDATE followups
+              SET status = 'CANCELLED',
+                  updated_at = NOW()
+              WHERE id = $1
+              `,
+              [followup.id]
+            );
+            continue;
+          }
+
+        } catch (err) {
+          console.warn("⚠️ anti-spam error", err.message);
+        }
+
         /*
         ------------------------------------------------
         VALIDATION
@@ -190,13 +169,12 @@ try {
         */
 
         if (!followup.lead_phone) {
-          console.warn("FOLLOWUP WITHOUT PHONE", followup.id);
 
           await pool.query(
             `
             UPDATE followups
             SET status = 'FAILED',
-                last_error = 'Missing phone'
+                updated_at = NOW()
             WHERE id = $1
           `,
             [followup.id]
@@ -207,7 +185,7 @@ try {
 
         /*
         ------------------------------------------------
-        LOAD MEMORY (NUEVO 🔥)
+        LOAD MEMORY
         ------------------------------------------------
         */
 
@@ -220,18 +198,19 @@ try {
             FROM leads
             WHERE phone = $1
             LIMIT 1
-          `,
+            `,
             [followup.lead_phone]
           );
 
           memory = memResult.rows[0] || {};
+
         } catch (err) {
-          console.warn("⚠️ followup memory error", err.message);
+          console.warn("⚠️ memory error", err.message);
         }
 
         /*
         ------------------------------------------------
-        BUILD MESSAGE (CON MEMORIA)
+        BUILD MESSAGE
         ------------------------------------------------
         */
 
@@ -239,7 +218,7 @@ try {
 
         /*
         ------------------------------------------------
-        SEND MESSAGE
+        SEND
         ------------------------------------------------
         */
 
@@ -255,16 +234,16 @@ try {
         */
 
         await pool.query(
-  `
-  UPDATE followups
-  SET status = 'DONE',
-      sent = true,
-      sent_at = NOW(),
-      updated_at = NOW()
-  WHERE id = $1
-`,
-  [followup.id]
-);
+          `
+          UPDATE followups
+          SET status = 'DONE',
+              sent = true,
+              sent_at = NOW(),
+              updated_at = NOW()
+          WHERE id = $1
+          `,
+          [followup.id]
+        );
 
         /*
         ------------------------------------------------
@@ -273,6 +252,7 @@ try {
         */
 
         try {
+
           let nextDelay = null;
           let nextReason = null;
 
@@ -285,6 +265,7 @@ try {
           }
 
           if (nextDelay && nextReason) {
+
             const scheduledFor = new Date(Date.now() + nextDelay);
 
             await pool.query(
@@ -292,23 +273,27 @@ try {
               INSERT INTO followups (
                 organization_id,
                 lead_phone,
+                conversation_id,
                 reason,
                 scheduled_for,
                 status,
-                attempt_count,
+                attempt,
+                sent,
                 created_at,
                 updated_at
               )
-              VALUES ($1, $2, $3, $4, 'PENDING', 0, NOW(), NOW())
-            `,
+              VALUES ($1, $2, $3, $4, $5, 'PENDING', 0, false, NOW(), NOW())
+              `,
               [
                 followup.organization_id,
                 followup.lead_phone,
+                followup.conversation_id,
                 nextReason,
                 scheduledFor
               ]
             );
           }
+
         } catch (err) {
           console.error("FOLLOWUP SEQUENCE ERROR", err.message);
         }
@@ -321,15 +306,15 @@ try {
           `
           UPDATE followups
           SET status = 'FAILED',
-              attempt_count = attempt_count + 1,
-              last_error = $2,
+              attempt = COALESCE(attempt, 0) + 1,
               updated_at = NOW()
           WHERE id = $1
-        `,
-          [f.id, err.message || "unknown error"]
+          `,
+          [f.id]
         );
       }
     }
+
   } catch (err) {
     console.error("FOLLOWUP WORKER ERROR", err);
   }
@@ -344,9 +329,11 @@ WORKER LOOP
 let isRunning = false;
 
 export function startFollowupWorker(sendMessage) {
+
   console.log("EVA FOLLOWUP WORKER STARTED");
 
   setInterval(async () => {
+
     if (isRunning) return;
 
     try {
@@ -357,5 +344,6 @@ export function startFollowupWorker(sendMessage) {
     } finally {
       isRunning = false;
     }
+
   }, 120000);
 }
