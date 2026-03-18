@@ -1,148 +1,94 @@
 /*
 ====================================================
-EVA METRICS API (FULL HARDENED VERSION)
+EVA METRICS ROUTES
 ====================================================
 */
 
 import express from "express";
 import pool from "../db.js";
 
-/*
-AUTH
-*/
-import {
-  authenticateApiKey,
-  requireOrganizationMatch,
-  allowLabOrganizationFallback
-} from "../lib/auth.js";
-
-/*
-SECURITY
-*/
-import {
-  metricsApiRateLimit,
-  basicSecurityHeaders
-} from "../lib/security.js";
-
 const router = express.Router();
 
 /*
 ====================================================
-GLOBAL MIDDLEWARE STACK
-====================================================
-*/
-
-router.use(basicSecurityHeaders);
-
-router.use(authenticateApiKey);
-router.use(requireOrganizationMatch);
-router.use(allowLabOrganizationFallback);
-
-router.use(metricsApiRateLimit);
-
-/*
-====================================================
-GET /v1/metrics/summary
+SUMMARY METRICS
 ====================================================
 */
 
 router.get("/summary", async (req, res) => {
   try {
-    const organization_id = req.organization_id;
+    const { organization_id } = req.query;
 
     if (!organization_id) {
       return res.status(400).json({
-        success: false,
-        error: "organization_not_resolved"
+        error: "organization_id required"
       });
     }
 
     /*
     ====================================================
-    BASIC COUNTS
+    LEADS
     ====================================================
     */
 
-    const [conversations, leads] = await Promise.all([
-      pool.query(
-        `
-        SELECT COUNT(*)::int AS total
-        FROM conversations
-        WHERE organization_id = $1
-        `,
-        [organization_id]
-      ),
-      pool.query(
-        `
-        SELECT COUNT(*)::int AS total
-        FROM leads
-        WHERE organization_id = $1
-        `,
-        [organization_id]
-      )
-    ]);
-
-    /*
-    ====================================================
-    HOT LEADS
-    ====================================================
-    */
-
-    const hotLeads = await pool.query(
-      `
-      SELECT COUNT(*)::int AS total
+    const leadsResult = await pool.query(`
+      SELECT COUNT(*) AS total_leads
       FROM leads
       WHERE organization_id = $1
-        AND stage = 'hot'
-      `,
-      [organization_id]
-    );
+    `, [organization_id]);
 
     /*
     ====================================================
-    WON LEADS
+    HIGH INTENT (aproximado)
     ====================================================
     */
 
-    const wonLeads = await pool.query(
-      `
-      SELECT COUNT(*)::int AS total
-      FROM leads
+    const highIntentResult = await pool.query(`
+      SELECT COUNT(*) AS high_intent
+      FROM sales_intelligence_events
       WHERE organization_id = $1
-        AND stage = 'won'
-      `,
-      [organization_id]
-    );
+      AND event_type = 'BUY_INTENT'
+    `, [organization_id]);
 
     /*
     ====================================================
-    FOLLOWUPS PENDING
+    PRICE OBJECTIONS
     ====================================================
     */
 
-    const followups = await pool.query(
-      `
-      SELECT COUNT(*)::int AS total
-      FROM followups
+    const priceResult = await pool.query(`
+      SELECT COUNT(*) AS price_objections
+      FROM sales_intelligence_events
       WHERE organization_id = $1
-        AND status = 'pending'
-      `,
-      [organization_id]
-    );
+      AND event_type = 'PRICE_OBJECTION'
+    `, [organization_id]);
 
     /*
     ====================================================
-    SAFE CONVERSION RATE
+    USE CASE DISTRIBUTION
     ====================================================
     */
 
-    const totalLeads = leads.rows[0]?.total || 0;
-    const totalWon = wonLeads.rows[0]?.total || 0;
+    const useCaseResult = await pool.query(`
+      SELECT event_type, COUNT(*) as count
+      FROM sales_intelligence_events
+      WHERE organization_id = $1
+      AND event_type IN ('USE_CASE_ESTUDIO', 'USE_CASE_TRABAJO')
+      GROUP BY event_type
+    `, [organization_id]);
 
-    const conversionRate =
-      totalLeads > 0
-        ? ((totalWon / totalLeads) * 100).toFixed(2)
-        : "0.00";
+    /*
+    ====================================================
+    LOW PRICE SEARCH
+    ====================================================
+    */
+
+    const lowPriceResult = await pool.query(`
+      SELECT COUNT(*) AS low_price_search
+      FROM sales_intelligence_events
+      WHERE organization_id = $1
+      AND event_type = 'LOW_PRICE_SEARCH'
+    `, [organization_id]);
 
     /*
     ====================================================
@@ -153,12 +99,11 @@ router.get("/summary", async (req, res) => {
     return res.json({
       success: true,
       data: {
-        conversations: conversations.rows[0]?.total || 0,
-        leads: totalLeads,
-        hot_leads: hotLeads.rows[0]?.total || 0,
-        won_leads: totalWon,
-        followups_pending: followups.rows[0]?.total || 0,
-        conversion_rate: `${conversionRate}%`
+        total_leads: Number(leadsResult.rows[0]?.total_leads || 0),
+        high_intent: Number(highIntentResult.rows[0]?.high_intent || 0),
+        price_objections: Number(priceResult.rows[0]?.price_objections || 0),
+        low_price_search: Number(lowPriceResult.rows[0]?.low_price_search || 0),
+        use_cases: useCaseResult.rows || []
       }
     });
 
@@ -166,8 +111,7 @@ router.get("/summary", async (req, res) => {
     console.error("❌ metrics error:", err.message);
 
     return res.status(500).json({
-      success: false,
-      error: "metrics_error"
+      error: "metrics failed"
     });
   }
 });
