@@ -85,6 +85,11 @@ app.get("/health", (req, res) => {
   });
 });
 
+app.get("/test-version", (req, res) => {
+  res.json({
+    version: "EVA NUEVO V2 🔥"
+  });
+});
 /* ===============================
    ROUTES
 ================================ */
