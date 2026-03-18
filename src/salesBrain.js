@@ -73,6 +73,38 @@ function detectInterestLevel(text = "") {
 
 /*
 ====================================================
+MEMORY DETECTION (CRM BÁSICO)
+====================================================
+*/
+
+function detectUseCase(text = "") {
+  const t = normalizeText(text);
+
+  if (t.includes("estudio") || t.includes("colegio")) return "ESTUDIO";
+  if (t.includes("trabajo") || t.includes("oficina")) return "TRABAJO";
+  if (t.includes("gaming") || t.includes("juegos")) return "GAMING";
+
+  return null;
+}
+
+function detectBudget(text = "") {
+  const match = text.match(/(\d{5,7})/);
+  if (!match) return null;
+
+  return Number(match[1]);
+}
+
+function detectProductInterest(text = "") {
+  const t = normalizeText(text);
+
+  if (t.includes("laptop") || t.includes("computadora")) return "LAPTOP";
+  if (t.includes("impresora")) return "PRINTER";
+
+  return null;
+}
+
+/*
+====================================================
 STAGE
 ====================================================
 */
@@ -132,6 +164,43 @@ export async function handleInbound({
     const interestLevel = detectInterestLevel(text);
 
     /*
+====================================================
+EXTRAER DATOS DEL MENSAJE (MEMORIA)
+====================================================
+*/
+
+const use_case = detectUseCase(text);
+const budget_crc = detectBudget(text);
+const product_interest = detectProductInterest(text);
+
+    /*
+====================================================
+SAVE MEMORY (UPSERT LEAD)
+====================================================
+*/
+
+try {
+  await pool.query(`
+    INSERT INTO leads (organization_id, phone, use_case, budget_crc, product_interest)
+    VALUES ($1, $2, $3, $4, $5)
+    ON CONFLICT (phone)
+    DO UPDATE SET
+      use_case = COALESCE(EXCLUDED.use_case, leads.use_case),
+      budget_crc = COALESCE(EXCLUDED.budget_crc, leads.budget_crc),
+      product_interest = COALESCE(EXCLUDED.product_interest, leads.product_interest),
+      updated_at = NOW()
+  `, [
+    organization_id,
+    phone,
+    use_case,
+    budget_crc,
+    product_interest
+  ]);
+} catch (err) {
+  console.warn("⚠️ lead memory failed:", err.message);
+}
+
+    /*
     ====================================================
     CATÁLOGO
     ====================================================
@@ -161,18 +230,40 @@ export async function handleInbound({
     });
 
     /*
+====================================================
+READ MEMORY
+====================================================
+*/
+
+let memory = {};
+
+try {
+  const result = await pool.query(`
+    SELECT use_case, budget_crc, product_interest
+    FROM leads
+    WHERE phone = $1
+    LIMIT 1
+  `, [phone]);
+
+  memory = result.rows[0] || {};
+} catch (err) {
+  console.warn("⚠️ memory read failed:", err.message);
+}
+    
+    /*
     ====================================================
     GENERAR RESPUESTA
     ====================================================
     */
 
     const reply = await generateReply({
-      text,
-      intent,
-      stage,
-      catalogMatches,
-      interestLevel
-    });
+  text,
+  intent,
+  stage,
+  catalogMatches,
+  interestLevel,
+  memory
+});
 
     /*
     ====================================================
