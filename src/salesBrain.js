@@ -1,3 +1,5 @@
+console.log("📦 PRODUCTS FOUND:", products);
+console.log("🧪 ORG ID:", organization_id);
 console.log("🚨 USANDO SALES BRAIN CORRECTO 🚨");
 console.log("🔥🔥🔥 SALES BRAIN NUEVO ACTIVO 🔥🔥🔥");
 
