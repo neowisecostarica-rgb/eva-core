@@ -17,7 +17,7 @@ const VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
 const EVA_ENDPOINT = process.env.EVA_ENDPOINT;
-const EVA_API_KEY = process.env.EVA_API_KEY;
+const EVA_API_KEY = process.env.EVA_API_KEY || process.env.EVA_DEFAULT_API_KEY;
 
 /* ======================================
    DEBUG
