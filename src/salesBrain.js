@@ -112,10 +112,10 @@ export async function handleInbound({
     ====================================================
     */
 
-    const products = await searchCatalog({
-      organization_id,
-      text
-    });
+   const products = await searchCatalog({
+  organization_id: "1", // 👈 poné uno que sepás que tiene datos
+  text
+});
 
     console.log("📦 PRODUCTS FOUND:", products);
 
