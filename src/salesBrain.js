@@ -1,4 +1,4 @@
-console.log("📦 PRODUCTS FOUND:", products);
+
 console.log("🧪 ORG ID:", organization_id);
 console.log("🚨 USANDO SALES BRAIN CORRECTO 🚨");
 console.log("🔥🔥🔥 SALES BRAIN NUEVO ACTIVO 🔥🔥🔥");
@@ -113,11 +113,12 @@ export async function handleInbound({
     */
 
    const products = await searchCatalog({
-  organization_id: "1", // 👈 poné uno que sepás que tiene datos
+  organization_id,
   text
 });
 
-    console.log("📦 PRODUCTS FOUND:", products);
+console.log("🧪 ORG ID:", organization_id);
+console.log("📦 PRODUCTS FOUND:", products);
 
     /*
     ====================================================
