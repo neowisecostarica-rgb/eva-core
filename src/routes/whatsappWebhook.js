@@ -1,12 +1,10 @@
-
 /*
 ====================================================
-WHATSAPP WEBHOOK (INBOUND) - CLEAN VERSION
+WHATSAPP WEBHOOK (INBOUND) - CONTRACT SAFE
 ====================================================
 */
 
 import express from "express";
-import fetch from "node-fetch";
 
 const router = express.Router();
 
@@ -28,7 +26,8 @@ console.log("📡 WhatsApp ENV:", {
   VERIFY_TOKEN: VERIFY_TOKEN ? "OK" : "MISSING",
   WHATSAPP_TOKEN: WHATSAPP_TOKEN ? "OK" : "MISSING",
   PHONE_NUMBER_ID: PHONE_NUMBER_ID || "MISSING",
-  EVA_ENDPOINT: EVA_ENDPOINT || "MISSING"
+  EVA_ENDPOINT: EVA_ENDPOINT || "MISSING",
+  EVA_API_KEY: EVA_API_KEY ? "OK" : "MISSING"
 });
 
 /* ======================================
@@ -36,7 +35,6 @@ console.log("📡 WhatsApp ENV:", {
 ====================================== */
 
 router.get("/", (req, res) => {
-
   const mode = req.query["hub.mode"];
   const token = req.query["hub.verify_token"];
   const challenge = req.query["hub.challenge"];
@@ -48,7 +46,6 @@ router.get("/", (req, res) => {
 
   console.log("❌ Webhook verification failed");
   return res.sendStatus(403);
-
 });
 
 /* ======================================
@@ -56,13 +53,10 @@ router.get("/", (req, res) => {
 ====================================== */
 
 router.post("/", async (req, res) => {
-
   try {
-
     const entry = req.body.entry?.[0];
     const change = entry?.changes?.[0];
     const value = change?.value;
-
     const message = value?.messages?.[0];
 
     if (!message) {
@@ -70,15 +64,15 @@ router.post("/", async (req, res) => {
     }
 
     const phone = message.from;
-    const text = message.text?.body;
+    const text = message.text?.body || "";
 
     console.log("📩 Incoming WhatsApp:", {
       phone,
       text,
-      text_length: text?.length || 0
+      text_length: text.length
     });
 
-    if (!text) {
+    if (!text.trim()) {
       return res.sendStatus(200);
     }
 
@@ -91,6 +85,11 @@ router.post("/", async (req, res) => {
       return res.sendStatus(500);
     }
 
+    if (!EVA_API_KEY) {
+      console.error("❌ EVA_API_KEY missing");
+      return res.sendStatus(500);
+    }
+
     if (!PHONE_NUMBER_ID || !WHATSAPP_TOKEN) {
       console.error("❌ WhatsApp config missing");
       return res.sendStatus(500);
@@ -100,7 +99,7 @@ router.post("/", async (req, res) => {
        SEND TO EVA CORE
     ====================================== */
 
-    const evaResponse = await fetch(`${EVA_ENDPOINT}/v1/messages/inbound`, {
+    const evaResponse = await fetch(`${EVA_ENDPOINT}/v1/messages`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -108,14 +107,44 @@ router.post("/", async (req, res) => {
       },
       body: JSON.stringify({
         phone,
-        text
+        text,
+        channel: "whatsapp"
       })
     });
 
-    const evaData = await evaResponse.json();
+    let evaData = null;
 
-    const replyText = evaData?.reply?.text || "Error generando respuesta";
-    const replyMedia = evaData?.reply?.media || [];
+    try {
+      evaData = await evaResponse.json();
+    } catch (err) {
+      console.error("❌ EVA JSON parse error:", err.message);
+      return res.sendStatus(500);
+    }
+
+    console.log("📦 EVA RAW RESPONSE:", evaData);
+
+    if (!evaResponse.ok) {
+      console.error("❌ EVA responded with error:", {
+        status: evaResponse.status,
+        body: evaData
+      });
+      return res.sendStatus(500);
+    }
+
+    /*
+    ====================================================
+    CONTRACT SAFE READ
+    ====================================================
+    */
+
+    const replyText =
+      evaData?.reply?.text && typeof evaData.reply.text === "string"
+        ? evaData.reply.text
+        : "Error generando respuesta";
+
+    const replyMedia = Array.isArray(evaData?.reply?.media)
+      ? evaData.reply.media
+      : [];
 
     console.log("🧠 EVA reply TEXT:", replyText);
     console.log("🧠 EVA reply MEDIA:", replyMedia);
@@ -126,7 +155,7 @@ router.post("/", async (req, res) => {
 
     const url = `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`;
 
-    await fetch(url, {
+    const textResponse = await fetch(url, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${WHATSAPP_TOKEN}`,
@@ -142,15 +171,22 @@ router.post("/", async (req, res) => {
       })
     });
 
+    const textResult = await textResponse.json().catch(() => ({}));
+
+    if (!textResponse.ok) {
+      console.error("❌ WhatsApp text send error:", textResult);
+      return res.sendStatus(500);
+    }
+
+    console.log("✅ WhatsApp text sent:", textResult);
+
     /* ======================================
        SEND MEDIA (OPTIONAL)
     ====================================== */
 
-    if (Array.isArray(replyMedia) && replyMedia.length > 0) {
-
+    if (replyMedia.length > 0) {
       for (const mediaUrl of replyMedia) {
-
-        await fetch(url, {
+        const mediaResponse = await fetch(url, {
           method: "POST",
           headers: {
             Authorization: `Bearer ${WHATSAPP_TOKEN}`,
@@ -166,22 +202,21 @@ router.post("/", async (req, res) => {
           })
         });
 
+        const mediaResult = await mediaResponse.json().catch(() => ({}));
+
+        if (!mediaResponse.ok) {
+          console.error("❌ WhatsApp media send error:", mediaResult);
+        }
       }
 
       console.log("🖼️ MEDIA SENT:", replyMedia.length);
-
     }
 
     return res.sendStatus(200);
-
   } catch (err) {
-
     console.error("❌ WHATSAPP WEBHOOK ERROR:", err);
-
     return res.sendStatus(500);
-
   }
-
 });
 
 export default router;
