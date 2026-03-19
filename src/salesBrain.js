@@ -3,7 +3,7 @@ console.log("🔥🔥🔥 SALES BRAIN NUEVO ACTIVO 🔥🔥🔥");
 
 /*
 ====================================================
-EVA SALES BRAIN (HARDENED FINAL)
+EVA SALES BRAIN (HARDENED FINAL - FIXED)
 ====================================================
 */
 
@@ -32,13 +32,11 @@ function isGreeting(text = "") {
     "hola",
     "buenas",
     "buenos dias",
-    "buen día",
     "buen dia",
     "buenas tardes",
     "buenas noches",
     "info",
     "informacion",
-    "información",
     "consulta"
   ].includes(t);
 }
@@ -106,7 +104,7 @@ export async function handleInbound({
 
     /*
     ====================================================
-    SEARCH PRODUCTS (PROTEGIDO)
+    SEARCH PRODUCTS
     ====================================================
     */
 
@@ -119,7 +117,7 @@ export async function handleInbound({
       });
 
       console.log("🧪 ORG ID:", organization_id);
-      console.log("📦 PRODUCTS FOUND:", products);
+      console.log("📦 PRODUCTS FOUND:", products?.length || 0);
 
     } catch (err) {
       console.error("❌ SEARCH CATALOG ERROR:", err.message);
@@ -128,51 +126,58 @@ export async function handleInbound({
 
     /*
     ====================================================
-    GREETING
+    REGLA CLAVE — SI HAY PRODUCTOS, SIEMPRE VENDE
     ====================================================
     */
 
-    if (greetingOnly && (!products || products.length === 0)) {
+    if (products && products.length > 0) {
+      console.log("🟢 PRODUCT FLOW ACTIVATED");
+
+      try {
+        const reply = generateReply({
+          text,
+          intent,
+          products
+        });
+
+        if (reply?.text) {
+          return {
+            reply: reply.text,
+            media: reply.media || []
+          };
+        }
+
+        console.log("⚠️ EMPTY REPLY FROM ENGINE → FALLBACK CONTROLADO");
+
+      } catch (err) {
+        console.error("❌ GENERATE REPLY ERROR:", err);
+      }
+    }
+
+    /*
+    ====================================================
+    GREETING (SOLO SI NO HAY PRODUCTOS)
+    ====================================================
+    */
+
+    if (greetingOnly) {
       return {
-        reply: "Hola 😊 buenas tardes, claro que sí 🙌\n\nSoy Eva de Compu Store Costa Rica.\n\nTe puedo ayudar con laptops, computadoras, impresoras y monitores.\n\n¿Andas buscando algún equipo en específico?",
+        reply: "Hola 😊 buenas tardes, soy Eva de Compu Store Costa Rica.\n\nTe puedo ayudar con laptops, computadoras, impresoras y monitores.\n\n¿Andas buscando algún equipo en específico?",
         media: []
       };
     }
 
     /*
     ====================================================
-    GENERATE REPLY (PROTEGIDO)
+    FALLBACK INTELIGENTE (NO ROBÓTICO)
     ====================================================
     */
 
-    let reply;
-
-    try {
-      reply = generateReply({
-        text,
-        intent,
-        products
-      });
-
-      console.log("🧠 RAW REPLY:", reply);
-
-    } catch (err) {
-      console.error("❌ GENERATE REPLY ERROR:", err);
-      reply = {
-        text: "Error interno generando respuesta",
-        media: []
-      };
-    }
-
-    /*
-    ====================================================
-    RESPUESTA FINAL
-    ====================================================
-    */
+    console.log("🟡 FALLBACK FLOW ACTIVATED");
 
     return {
-      reply: reply?.text || "Gracias por escribirnos 🙌",
-      media: reply?.media || []
+      reply: "Claro 😊 contame un poco más qué estás buscando y con gusto te ayudo a encontrar la mejor opción 🙌",
+      media: []
     };
 
   } catch (err) {
