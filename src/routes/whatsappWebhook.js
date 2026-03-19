@@ -1,4 +1,4 @@
-console.log("🧠 EVA RAW:", evaData);
+
 /*
 ====================================================
 WHATSAPP WEBHOOK (INBOUND) - CLEAN VERSION
