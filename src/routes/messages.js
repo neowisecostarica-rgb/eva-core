@@ -1,15 +1,50 @@
 /*
 ====================================================
-MESSAGES ROUTE (FIXED - CONTRACT SAFE)
+EVA MESSAGES API (CONTRACT FIXED)
 ====================================================
 */
 
 import express from "express";
 import { handleInbound } from "../salesBrain.js";
-import { authenticate } from "../lib/auth.js";
+import pool from "../db.js";
 import { validateInbound } from "../validators.js";
 
+/*
+AUTH
+*/
+import {
+  authenticateApiKey,
+  requireOrganizationMatch,
+  allowLabOrganizationFallback
+} from "../lib/auth.js";
+
+/*
+SECURITY
+*/
+import {
+  inboundApiRateLimit,
+  basicSecurityHeaders,
+  blockOversizedText,
+  requireJsonContent
+} from "../lib/security.js";
+
 const router = express.Router();
+
+/*
+====================================================
+GLOBAL MIDDLEWARE
+====================================================
+*/
+
+router.use(basicSecurityHeaders);
+router.use(requireJsonContent);
+
+router.use(authenticateApiKey);
+router.use(requireOrganizationMatch);
+router.use(allowLabOrganizationFallback);
+
+router.use(inboundApiRateLimit);
+router.use(blockOversizedText());
 
 /*
 ====================================================
@@ -17,64 +52,97 @@ POST /v1/messages/inbound
 ====================================================
 */
 
-router.post("/inbound", authenticate, async (req, res) => {
+router.post("/", async (req, res) => {
   try {
+    const validated = validateInbound(req.body);
 
+    if (!validated?.valid) {
+      return res.status(400).json({
+        success: false,
+        error: validated?.error || "invalid_payload"
+      });
+    }
+
+    const { phone, message, channel, message_id } = validated.data;
+    const text = message;
+    const conversation_id = req.body?.conversation_id || null;
     const organization_id = req.organization_id;
 
+    console.log("📩 INBOUND REQUEST:", {
+      organization_id,
+      phone,
+      text,
+      channel,
+      message_id
+    });
+
     /*
-    ======================================
-    VALIDATION
-    ======================================
+    ====================================================
+    CANCELAR FOLLOWUPS ACTIVOS
+    ====================================================
     */
 
-    const { phone, text } = validateInbound(req.body);
-
-    console.log("📩 INBOUND REQUEST:", { phone, text, organization_id });
+    try {
+      await pool.query(
+        `
+        UPDATE followups
+        SET status = 'CANCELLED',
+            updated_at = NOW()
+        WHERE organization_id = $1
+        AND lead_phone = $2
+        AND status = 'PENDING'
+        `,
+        [organization_id, phone]
+      );
+    } catch (err) {
+      console.warn("⚠️ cancel followups error:", err.message);
+    }
 
     /*
-    ======================================
-    HANDLE INBOUND (BRAIN)
-    ======================================
+    ====================================================
+    CORE
+    ====================================================
     */
 
     const result = await handleInbound({
       organization_id,
       phone,
-      text
+      text,
+      conversation_id
     });
 
     console.log("🧠 RAW RESULT FROM BRAIN:", result);
 
     /*
-    ======================================
-    CONTRACT NORMALIZATION (CLAVE)
-    ======================================
+    ====================================================
+    CONTRACT NORMALIZATION
+    Webhook espera:
+    reply.text
+    reply.media
+    ====================================================
     */
 
-    const safeReply = result?.reply || "Sin respuesta";
-    const safeMedia = Array.isArray(result?.media) ? result.media : [];
+    const safeReplyText =
+      typeof result?.reply === "string" && result.reply.trim()
+        ? result.reply.trim()
+        : "Sin respuesta";
 
-    /*
-    ======================================
-    RESPONSE FINAL (UNIFICADO)
-    ======================================
-    */
+    const safeReplyMedia = Array.isArray(result?.media) ? result.media : [];
 
     return res.json({
       success: true,
       reply: {
-        text: safeReply,
-        media: safeMedia
+        text: safeReplyText,
+        media: safeReplyMedia
       },
       meta: {
-        organization_id
+        organization_id,
+        channel,
+        message_id
       }
     });
-
   } catch (err) {
-
-    console.error("❌ MESSAGES ROUTE ERROR:", err);
+    console.error("❌ messages API error:", err);
 
     return res.status(500).json({
       success: false,
