@@ -113,7 +113,7 @@ router.post("/", async (req, res) => {
 
     const evaData = await evaResponse.json();
 
-    const replyText = evaData?.reply?.text || "Gracias por escribirnos 🙌";
+    const replyText = evaData?.reply?.text || "Error generando respuesta";
     const replyMedia = evaData?.reply?.media || [];
 
     console.log("🧠 EVA reply TEXT:", replyText);
