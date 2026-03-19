@@ -14,23 +14,6 @@ const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
 const EVA_ENDPOINT = process.env.EVA_ENDPOINT;
 
-/* ======================================
-   DEBUG CONFIG
-====================================== *//*
-====================================================
-WHATSAPP WEBHOOK (INBOUND) - FIXED
-====================================================
-*/
-
-import express from "express";
-import fetch from "node-fetch";
-
-const router = express.Router();
-
-const VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN;
-const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
-const PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
-const EVA_ENDPOINT = process.env.EVA_ENDPOINT;
 
 /* ======================================
    DEBUG CONFIG
