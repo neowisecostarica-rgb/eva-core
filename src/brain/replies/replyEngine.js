@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA REPLY ENGINE (CLEAN STABLE VERSION)
+EVA REPLY ENGINE (HARDENED SAFE VERSION)
 ====================================================
 */
 
@@ -21,16 +21,32 @@ function formatPrice(value) {
   return `₡${numberValue.toLocaleString()}`;
 }
 
-function getMainCatalogItem(catalogMatches = []) {
-  return Array.isArray(catalogMatches) && catalogMatches.length > 0
-    ? catalogMatches[0]
+function getMainCatalogItem(products = []) {
+  return Array.isArray(products) && products.length > 0
+    ? products[0]
     : null;
+}
+
+function safeExtractMedia(product) {
+  try {
+    if (!product) return [];
+
+    const media = extractProductImages(product);
+
+    if (!Array.isArray(media)) return [];
+
+    return media;
+
+  } catch (err) {
+    console.error("❌ MEDIA ERROR:", err.message);
+    return [];
+  }
 }
 
 function buildResponse(text, product = null) {
   return {
     text,
-    media: product ? extractProductImages(product) : []
+    media: safeExtractMedia(product)
   };
 }
 
@@ -41,7 +57,7 @@ SMART FALLBACK
 */
 
 function smartFallbackReply() {
-  return buildResponse("Gracias por escribirnos 🙌");
+  return buildResponse("Claro 😊 contame un poco más qué estás buscando y te ayudo 🙌");
 }
 
 /*
@@ -58,6 +74,7 @@ function productReply({ products = [], intent = "UNKNOWN", text = "" }) {
     return smartFallbackReply();
   }
 
+  const name = item.name || "Equipo disponible";
   const price = formatPrice(item.price_crc);
 
   /*
@@ -69,7 +86,7 @@ function productReply({ products = [], intent = "UNKNOWN", text = "" }) {
   if (intent === "BUY") {
     return buildResponse(`Esta opción es de las más buscadas 👇
 
-💻 ${item.name}
+💻 ${name}
 💰 ${price}
 
 ✅ Línea corporativa
@@ -92,7 +109,7 @@ Puedes apartarla con ₡20.000 🙌
   if (intent === "PRICE") {
     return buildResponse(`Claro 🙌 te comparto una opción 👇
 
-💻 ${item.name}
+💻 ${name}
 💰 ${price}
 
 Es una excelente opción para trabajo y estudio.
@@ -109,7 +126,7 @@ Si quieres te envío fotos reales o te ayudo a reservar una.`, item);
   if (intent === "PRODUCT_SEARCH") {
     return buildResponse(`Tenemos esta opción disponible 👇
 
-💻 ${item.name}
+💻 ${name}
 💰 ${price}
 
 ¿La estarías usando para estudio o trabajo?`, item);
@@ -123,7 +140,7 @@ Si quieres te envío fotos reales o te ayudo a reservar una.`, item);
 
   return buildResponse(`Te recomiendo esta opción 👇
 
-💻 ${item.name}
+💻 ${name}
 💰 ${price}
 
 ¿La necesitas para estudio o trabajo?`, item);
@@ -141,7 +158,11 @@ export function generateReply({
   products = []
 }) {
 
-  console.log("🧠 GENERATE REPLY:", { text, intent, products });
+  console.log("🧠 GENERATE REPLY:", {
+    text,
+    intent,
+    products_count: products?.length || 0
+  });
 
   /*
   PRIORIDAD: PRODUCTOS
