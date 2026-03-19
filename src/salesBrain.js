@@ -138,11 +138,24 @@ console.log("📦 PRODUCTS FOUND:", products);
     ====================================================
     */
 
-    const reply = generateReply({
-      text,
-      intent,
-      products
-    });
+   let reply;
+
+try {
+  reply = generateReply({
+    text,
+    intent,
+    products
+  });
+
+  console.log("🧠 RAW REPLY:", reply);
+
+} catch (err) {
+  console.error("❌ GENERATE REPLY ERROR:", err);
+  reply = {
+    text: "Error interno generando respuesta",
+    media: []
+  };
+}
 
     /*
     ====================================================
