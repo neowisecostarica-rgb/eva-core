@@ -1,10 +1,9 @@
-
 console.log("🚨 USANDO SALES BRAIN CORRECTO 🚨");
 console.log("🔥🔥🔥 SALES BRAIN NUEVO ACTIVO 🔥🔥🔥");
 
 /*
 ====================================================
-EVA SALES BRAIN (FIXED + CONTRATO API CORRECTO)
+EVA SALES BRAIN (HARDENED FINAL)
 ====================================================
 */
 
@@ -107,17 +106,25 @@ export async function handleInbound({
 
     /*
     ====================================================
-    SEARCH PRODUCTS
+    SEARCH PRODUCTS (PROTEGIDO)
     ====================================================
     */
 
-  const products = await searchCatalog({
-  organization_id,
-  text
-});
+    let products = [];
 
-console.log("🧪 ORG ID:", organization_id);
-console.log("📦 PRODUCTS FOUND:", products);
+    try {
+      products = await searchCatalog({
+        organization_id,
+        text
+      });
+
+      console.log("🧪 ORG ID:", organization_id);
+      console.log("📦 PRODUCTS FOUND:", products);
+
+    } catch (err) {
+      console.error("❌ SEARCH CATALOG ERROR:", err.message);
+      products = [];
+    }
 
     /*
     ====================================================
@@ -134,32 +141,32 @@ console.log("📦 PRODUCTS FOUND:", products);
 
     /*
     ====================================================
-    GENERATE REPLY
+    GENERATE REPLY (PROTEGIDO)
     ====================================================
     */
 
-   let reply;
+    let reply;
 
-try {
-  reply = generateReply({
-    text,
-    intent,
-    products
-  });
+    try {
+      reply = generateReply({
+        text,
+        intent,
+        products
+      });
 
-  console.log("🧠 RAW REPLY:", reply);
+      console.log("🧠 RAW REPLY:", reply);
 
-} catch (err) {
-  console.error("❌ GENERATE REPLY ERROR:", err);
-  reply = {
-    text: "Error interno generando respuesta",
-    media: []
-  };
-}
+    } catch (err) {
+      console.error("❌ GENERATE REPLY ERROR:", err);
+      reply = {
+        text: "Error interno generando respuesta",
+        media: []
+      };
+    }
 
     /*
     ====================================================
-    RESPUESTA FINAL (FIX CRÍTICO)
+    RESPUESTA FINAL
     ====================================================
     */
 
