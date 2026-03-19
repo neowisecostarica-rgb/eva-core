@@ -7,7 +7,7 @@ import devChatRoute from "./routes/devChat.js";
 import devChatUIRoute from "./routes/devChatUI.js";
 import whatsappWebhook from "./routes/whatsappWebhook.js";
 
-import { startFollowupWorker } from "./followupWorker.js"; // ✅ ACTIVADO
+import { startFollowupWorker } from "./followupWorker.js";
 
 dotenv.config();
 
@@ -21,17 +21,14 @@ app.use(express.json({ limit: "1mb" }));
 
 const RATE_LIMIT_WINDOW = 60 * 1000;
 const RATE_LIMIT_MAX = 120;
-
 const rateMap = new Map();
 
 app.use((req, res, next) => {
-
   let ip =
     req.headers["x-forwarded-for"] ||
     req.socket.remoteAddress ||
     "unknown";
 
-  // 🔥 FIX: tomar solo el primer IP
   if (typeof ip === "string" && ip.includes(",")) {
     ip = ip.split(",")[0].trim();
   }
@@ -59,7 +56,6 @@ app.use((req, res, next) => {
   }
 
   next();
-
 });
 
 /* ===============================
@@ -90,6 +86,7 @@ app.get("/test-version", (req, res) => {
     version: "EVA NUEVO V2 🔥"
   });
 });
+
 /* ===============================
    ROUTES
 ================================ */
@@ -108,9 +105,6 @@ async function sendWhatsAppMessage({ phone, message }) {
   console.log("📩 FOLLOWUP MESSAGE");
   console.log("PHONE:", phone);
   console.log("MESSAGE:", message);
-
-  // 🔥 FUTURO:
-  // aquí va integración real con WhatsApp API
 }
 
 /* ===============================
@@ -120,15 +114,6 @@ async function sendWhatsAppMessage({ phone, message }) {
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-
   console.log(`EVA Core running on port ${PORT}`);
-
-  /*
-  ==============================
-  START FOLLOWUP WORKER 🔥
-  ==============================
-  */
-
   startFollowupWorker(sendWhatsAppMessage);
-
 });
