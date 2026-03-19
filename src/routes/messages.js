@@ -1,49 +1,15 @@
 /*
 ====================================================
-EVA MESSAGES API (FOLLOWUP ENABLED)
+MESSAGES ROUTE (FIXED - CONTRACT SAFE)
 ====================================================
 */
 
 import express from "express";
 import { handleInbound } from "../salesBrain.js";
-import pool from "../db.js";
-
-/*
-AUTH
-*/
-import {
-  authenticateApiKey,
-  requireOrganizationMatch,
-  allowLabOrganizationFallback
-} from "../lib/auth.js";
-
-/*
-SECURITY
-*/
-import {
-  inboundApiRateLimit,
-  basicSecurityHeaders,
-  blockOversizedText,
-  requireJsonContent
-} from "../lib/security.js";
+import { authenticate } from "../lib/auth.js";
+import { validateInbound } from "../validators.js";
 
 const router = express.Router();
-
-/*
-====================================================
-GLOBAL MIDDLEWARE
-====================================================
-*/
-
-router.use(basicSecurityHeaders);
-router.use(requireJsonContent);
-
-router.use(authenticateApiKey);
-router.use(requireOrganizationMatch);
-router.use(allowLabOrganizationFallback);
-
-router.use(inboundApiRateLimit);
-router.use(blockOversizedText());
 
 /*
 ====================================================
@@ -51,60 +17,56 @@ POST /v1/messages/inbound
 ====================================================
 */
 
-router.post("/", async (req, res) => {
-
+router.post("/inbound", authenticate, async (req, res) => {
   try {
 
-    const { phone, text, conversation_id } = req.body;
-
-    if (!text || typeof text !== "string") {
-      return res.status(400).json({
-        success: false,
-        error: "text_required"
-      });
-    }
-
     const organization_id = req.organization_id;
-    const userPhone = phone || "unknown";
 
     /*
-    ====================================================
-    🔥 CANCELAR FOLLOWUPS ACTIVOS
-    ====================================================
+    ======================================
+    VALIDATION
+    ======================================
     */
 
-    try {
-      await pool.query(
-        `
-        UPDATE followups
-        SET status = 'CANCELLED',
-            updated_at = NOW()
-        WHERE organization_id = $1
-        AND lead_phone = $2
-        AND status = 'PENDING'
-        `,
-        [organization_id, userPhone]
-      );
-    } catch (err) {
-      console.warn("⚠️ cancel followups error", err.message);
-    }
+    const { phone, text } = validateInbound(req.body);
+
+    console.log("📩 INBOUND REQUEST:", { phone, text, organization_id });
 
     /*
-    ====================================================
-    CORE
-    ====================================================
+    ======================================
+    HANDLE INBOUND (BRAIN)
+    ======================================
     */
 
     const result = await handleInbound({
       organization_id,
-      phone: userPhone,
-      text,
-      conversation_id
+      phone,
+      text
     });
+
+    console.log("🧠 RAW RESULT FROM BRAIN:", result);
+
+    /*
+    ======================================
+    CONTRACT NORMALIZATION (CLAVE)
+    ======================================
+    */
+
+    const safeReply = result?.reply || "Sin respuesta";
+    const safeMedia = Array.isArray(result?.media) ? result.media : [];
+
+    /*
+    ======================================
+    RESPONSE FINAL (UNIFICADO)
+    ======================================
+    */
 
     return res.json({
       success: true,
-      reply: result.reply,
+      reply: {
+        text: safeReply,
+        media: safeMedia
+      },
       meta: {
         organization_id
       }
@@ -112,11 +74,14 @@ router.post("/", async (req, res) => {
 
   } catch (err) {
 
-    console.error("❌ messages API error:", err.message);
+    console.error("❌ MESSAGES ROUTE ERROR:", err);
 
     return res.status(500).json({
       success: false,
-      error: "internal_error"
+      reply: {
+        text: "Error interno en el servidor",
+        media: []
+      }
     });
   }
 });
