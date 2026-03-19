@@ -438,8 +438,9 @@ Por ejemplo: laptop para estudio, laptop para trabajo, impresora o monitor.`
     }
 
     return {
-      reply
-    };
+  reply: reply?.text || "Error generando respuesta",
+  media: reply?.media || []
+};
 
   } catch (err) {
     console.error("❌ HANDLE INBOUND ERROR:", err);
