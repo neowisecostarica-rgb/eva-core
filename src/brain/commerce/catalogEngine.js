@@ -6,16 +6,9 @@ EVA CATALOG ENGINE (SMART SEARCH FIX)
 
 import pool from "../../db.js";
 
-/*
-====================================================
-TEXT NORMALIZATION
-====================================================
-*/
-
 function normalizeSearchText(text = "") {
   const lower = text.toLowerCase();
 
-  // palabras irrelevantes
   const stopwords = [
     "tienen",
     "tiene",
@@ -30,23 +23,31 @@ function normalizeSearchText(text = "") {
     "informacion",
     "info",
     "quiero",
-    "busco"
+    "busco",
+    "algo",
+    "en",
+    "una",
+    "un",
+    "para"
   ];
 
   let cleaned = lower;
 
   stopwords.forEach(word => {
-    cleaned = cleaned.replace(word, "");
+    cleaned = cleaned.replaceAll(word, "");
   });
 
-  // normalizar plurales simples
-  cleaned = cleaned.replace("laptops", "laptop");
-  cleaned = cleaned.replace("computadoras", "computadora");
+  // quitar signos como ?
+  cleaned = cleaned.replace(/[^\w\s]/gi, "");
 
-  return cleaned.trim();
+  // limpiar espacios
+  cleaned = cleaned.replace(/\s+/g, " ").trim();
+
+  // tomar palabra clave principal
+  const words = cleaned.split(" ").filter(Boolean);
+
+  return words[0] || "";
 }
-
-/*
 ====================================================
 SEARCH
 ====================================================
