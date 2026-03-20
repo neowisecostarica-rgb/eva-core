@@ -75,6 +75,21 @@ function detectIntent(text = "") {
   return "UNKNOWN";
 }
 
+if (
+  t === "si" ||
+  t === "sí" ||
+  t.includes("claro") ||
+  t.includes("ok") ||
+  t.includes("dale") ||
+  t.includes("de acuerdo")
+) return "CONFIRM";
+
+if (
+  t === "no" ||
+  t.includes("no gracias") ||
+  t.includes("no quiero")
+) return "REJECT";
+
 /*
 ====================================================
 MAIN HANDLER
@@ -108,7 +123,21 @@ export async function handleInbound({
       console.error("❌ SEARCH CATALOG ERROR:", err.message);
       products = [];
     }
+if (intent === "CONFIRM") {
+  return {
+    reply:
+      "Buenísimo 🙌 ya te ayudo con eso 😊\n\n¿Preferís coordinar entrega o retiro?",
+    media: []
+  };
+}
 
+if (intent === "REJECT") {
+  return {
+    reply:
+      "Perfecto 😊 no hay problema.\n\nSi querés puedo mostrarte otras opciones que se ajusten mejor 👍",
+    media: []
+  };
+}
     /*
     ====================================================
     PRODUCT FLOW
