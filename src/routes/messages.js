@@ -35,9 +35,7 @@ GLOBAL MIDDLEWARE
 router.use(basicSecurityHeaders);
 router.use(requireJsonContent);
 
-router.use(authenticateApiKey);
-router.use(requireOrganizationMatch);
-router.use(allowLabOrganizationFallback);
+router.use(authenticate);
 
 router.use(inboundApiRateLimit);
 router.use(blockOversizedText());
