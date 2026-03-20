@@ -1,3 +1,86 @@
+console.log("🚨 USANDO SALES BRAIN CORRECTO 🚨");
+console.log("🔥🔥🔥 SALES BRAIN NUEVO ACTIVO 🔥🔥🔥");
+
+import pool from "./db.js";
+import { searchCatalog } from "./brain/commerce/catalogEngine.js";
+import { generateReply } from "./brain/replies/replyEngine.js";
+
+/*
+====================================================
+HELPERS
+====================================================
+*/
+
+function normalizeText(value = "") {
+  return String(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function isGreeting(text = "") {
+  const t = normalizeText(text);
+
+  return [
+    "hola",
+    "buenas",
+    "buenos dias",
+    "buen dia",
+    "buenas tardes",
+    "buenas noches",
+    "info",
+    "informacion",
+    "consulta"
+  ].includes(t);
+}
+
+/*
+====================================================
+INTENT DETECTION
+====================================================
+*/
+
+function detectIntent(text = "") {
+  const t = normalizeText(text);
+
+  if (
+    t.includes("precio") ||
+    t.includes("cuanto") ||
+    t.includes("vale")
+  ) return "PRICE";
+
+  if (
+    t.includes("quiero") ||
+    t.includes("comprar") ||
+    t.includes("me interesa") ||
+    t.includes("ocupo") ||
+    t.includes("necesito")
+  ) return "BUY";
+
+  if (
+    t.includes("tienen") ||
+    t.includes("busco") ||
+    t.includes("laptop") ||
+    t.includes("computadora") ||
+    t.includes("impresora") ||
+    t.includes("monitor") ||
+    t.includes("pantalla") ||
+    t.includes("thinkpad") ||
+    t.includes("lenovo") ||
+    t.includes("dell") ||
+    t.includes("hp")
+  ) return "PRODUCT_SEARCH";
+
+  return "UNKNOWN";
+}
+
+/*
+====================================================
+MAIN HANDLER
+====================================================
+*/
+
 export async function handleInbound({
   organization_id,
   phone,
@@ -55,7 +138,7 @@ export async function handleInbound({
 
     /*
     ====================================================
-    GREETING INTELIGENTE
+    GREETING
     ====================================================
     */
 
