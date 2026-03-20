@@ -12,11 +12,7 @@ import { validateInbound } from "../validators.js";
 /*
 AUTH
 */
-import {
-  authenticateApiKey,
-  requireOrganizationMatch,
-  allowLabOrganizationFallback
-} from "../lib/auth.js";
+import { authenticate } from "../lib/auth.js";
 
 /*
 SECURITY
@@ -66,7 +62,7 @@ router.post("/", async (req, res) => {
     const { phone, message, channel, message_id } = validated.data;
     const text = message;
     const conversation_id = req.body?.conversation_id || null;
-    const organization_id = req.organization_id;
+    const organization_id = req.organization.id;
 
     console.log("📩 INBOUND REQUEST:", {
       organization_id,
