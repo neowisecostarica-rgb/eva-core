@@ -1,5 +1,4 @@
-console.log("🚨 USANDO SALES BRAIN CORRECTO 🚨");
-console.log("🔥🔥🔥 SALES BRAIN NUEVO ACTIVO 🔥🔥🔥");
+console.log("🚨 SALES BRAIN CLEAN VERSION 🚨");
 
 import pool from "./db.js";
 import { searchCatalog } from "./brain/commerce/catalogEngine.js";
@@ -37,19 +36,38 @@ function isGreeting(text = "") {
 
 /*
 ====================================================
-INTENT DETECTION
+INTENT DETECTION (CORRECTO Y CERRADO)
 ====================================================
 */
 
 function detectIntent(text = "") {
   const t = normalizeText(text);
 
+  // CONFIRM
+  if (
+    t === "si" ||
+    t === "sí" ||
+    t.includes("claro") ||
+    t.includes("ok") ||
+    t.includes("dale") ||
+    t.includes("de acuerdo")
+  ) return "CONFIRM";
+
+  // REJECT
+  if (
+    t === "no" ||
+    t.includes("no gracias") ||
+    t.includes("no quiero")
+  ) return "REJECT";
+
+  // PRICE
   if (
     t.includes("precio") ||
     t.includes("cuanto") ||
     t.includes("vale")
   ) return "PRICE";
 
+  // BUY
   if (
     t.includes("quiero") ||
     t.includes("comprar") ||
@@ -58,6 +76,7 @@ function detectIntent(text = "") {
     t.includes("necesito")
   ) return "BUY";
 
+  // SEARCH
   if (
     t.includes("tienen") ||
     t.includes("busco") ||
@@ -74,21 +93,6 @@ function detectIntent(text = "") {
 
   return "UNKNOWN";
 }
-
-if (
-  t === "si" ||
-  t === "sí" ||
-  t.includes("claro") ||
-  t.includes("ok") ||
-  t.includes("dale") ||
-  t.includes("de acuerdo")
-) return "CONFIRM";
-
-if (
-  t === "no" ||
-  t.includes("no gracias") ||
-  t.includes("no quiero")
-) return "REJECT";
 
 /*
 ====================================================
@@ -120,33 +124,17 @@ export async function handleInbound({
 
       console.log("📦 PRODUCTS FOUND:", products?.length || 0);
     } catch (err) {
-      console.error("❌ SEARCH CATALOG ERROR:", err.message);
+      console.error("❌ SEARCH ERROR:", err.message);
       products = [];
     }
-if (intent === "CONFIRM") {
-  return {
-    reply:
-      "Buenísimo 🙌 ya te ayudo con eso 😊\n\n¿Preferís coordinar entrega o retiro?",
-    media: []
-  };
-}
 
-if (intent === "REJECT") {
-  return {
-    reply:
-      "Perfecto 😊 no hay problema.\n\nSi querés puedo mostrarte otras opciones que se ajusten mejor 👍",
-    media: []
-  };
-}
     /*
     ====================================================
     PRODUCT FLOW
     ====================================================
     */
 
-    if (products && products.length > 0) {
-      console.log("🟢 PRODUCT FLOW");
-
+    if (products.length > 0) {
       try {
         const reply = generateReply({
           text,
@@ -154,14 +142,14 @@ if (intent === "REJECT") {
           products
         });
 
-        if (reply?.text) {
+        if (reply && reply.text) {
           return {
             reply: reply.text,
             media: reply.media || []
           };
         }
       } catch (err) {
-        console.error("❌ GENERATE REPLY ERROR:", err);
+        console.error("❌ REPLY ERROR:", err);
       }
     }
 
@@ -174,21 +162,37 @@ if (intent === "REJECT") {
     if (greetingOnly) {
       return {
         reply:
-          "Hola 😊 con mucho gusto te ayudo 🙌\n\nContame, ¿estás buscando algún equipo en específico o sería para estudio, trabajo o algo más exigente?",
+          "Hola 😊 con gusto te ayudo 🙌 ¿Buscás algún equipo o lo necesitás para estudio o trabajo?",
         media: []
       };
     }
 
     /*
     ====================================================
-    INTENT RESPONSES
+    CONVERSACIÓN BÁSICA (CLAVE)
     ====================================================
     */
+
+    if (intent === "CONFIRM") {
+      return {
+        reply:
+          "Perfecto 🙌 ya casi lo coordinamos.\n\n¿Preferís retiro o envío?",
+        media: []
+      };
+    }
+
+    if (intent === "REJECT") {
+      return {
+        reply:
+          "Todo bien 😊\n\nSi querés puedo mostrarte otras opciones que se ajusten mejor 👍",
+        media: []
+      };
+    }
 
     if (intent === "PRICE") {
       return {
         reply:
-          "Claro 😊 con gusto te ayudo con eso 🙌\n\n¿Me podés contar cuál modelo viste o qué tipo de equipo estás buscando? Así te doy el precio exacto 👍",
+          "Claro 😊 decime cuál modelo viste o qué tipo de equipo buscás y te doy el precio exacto 👍",
         media: []
       };
     }
@@ -196,7 +200,7 @@ if (intent === "REJECT") {
     if (intent === "BUY") {
       return {
         reply:
-          "Perfecto 🙌 con gusto te ayudo a encontrar la mejor opción 😊\n\nContame, ¿para qué uso la necesitás y qué presupuesto tenés pensado más o menos?",
+          "Buenísimo 🙌 contame para qué uso la necesitás y tu presupuesto aproximado y te recomiendo bien 👍",
         media: []
       };
     }
@@ -204,25 +208,25 @@ if (intent === "REJECT") {
     if (intent === "PRODUCT_SEARCH") {
       return {
         reply:
-          "Claro 😊 tenemos varias opciones disponibles 🙌\n\nPara recomendarte bien, ¿la necesitás para estudio, oficina o algo más exigente?",
+          "Claro 😊 ¿la necesitás para estudio, oficina o algo más exigente?",
         media: []
       };
     }
 
     /*
     ====================================================
-    FALLBACK
+    FALLBACK HUMANO
     ====================================================
     */
 
     return {
       reply:
-        "Claro 😊 contame un poquito más sobre lo que estás buscando 🙌 así te ayudo mejor y te recomiendo una buena opción 👍",
+        "Claro 😊 contame un poco más y te ayudo mejor 👍",
       media: []
     };
 
   } catch (err) {
-    console.error("❌ HANDLE INBOUND ERROR:", err);
+    console.error("❌ HANDLE ERROR:", err);
 
     return {
       reply: "Hubo un error procesando tu mensaje.",
