@@ -6,6 +6,12 @@ EVA CATALOG ENGINE (SMART SEARCH FIX)
 
 import pool from "../../db.js";
 
+/*
+====================================================
+TEXT NORMALIZATION
+====================================================
+*/
+
 function normalizeSearchText(text = "") {
   const lower = text.toLowerCase();
 
@@ -37,7 +43,7 @@ function normalizeSearchText(text = "") {
     cleaned = cleaned.replaceAll(word, "");
   });
 
-  // quitar signos como ?
+  // quitar signos
   cleaned = cleaned.replace(/[^\w\s]/gi, "");
 
   // limpiar espacios
@@ -48,6 +54,8 @@ function normalizeSearchText(text = "") {
 
   return words[0] || "";
 }
+
+/*
 ====================================================
 SEARCH
 ====================================================
