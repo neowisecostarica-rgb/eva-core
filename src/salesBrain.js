@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA SALES BRAIN — VENTAS REAL (FASE 1 FIX)
+EVA SALES BRAIN — VENTAS FASE 1 (STABLE + CONTEXT FIX)
 ====================================================
 */
 
@@ -13,10 +13,12 @@ function detectIntent(text = "") {
 
   if (!t) return "UNKNOWN";
 
-  if (t.includes("hola") || t.includes("buenas")) {
+  // 🟢 GREETING
+  if (t.includes("hola") || t.includes("Hola te saluda Eva de Compu Store Costa Rica")) {
     return "GREETING";
   }
 
+  // 🟢 BUY
   if (
     t.includes("precio") ||
     t.includes("cuanto") ||
@@ -32,7 +34,7 @@ function detectIntent(text = "") {
     return "BUY";
   }
 
-  // 🟢 USO (CLAVE NUEVA)
+  // 🟢 USO — ESTUDIO
   if (
     t.includes("estudio") ||
     t.includes("clases") ||
@@ -43,15 +45,46 @@ function detectIntent(text = "") {
     return "USE_STUDY";
   }
 
-  if (t.includes("trabajo") || t.includes("oficina")) {
+  // 🟢 USO — TRABAJO
+  if (
+    t.includes("trabajo") ||
+    t.includes("oficina") ||
+    t.includes("teletrabajo")
+  ) {
     return "USE_WORK";
   }
 
-  if (t.includes("edicion") || t.includes("diseño") || t.includes("video")) {
+  // 🟢 USO — ALTO RENDIMIENTO
+  if (
+    t.includes("edicion") ||
+    t.includes("edición") ||
+    t.includes("diseño") ||
+    t.includes("video")
+  ) {
     return "USE_HEAVY";
   }
 
-  if (t.includes("no funciona") || t.includes("problema") || t.includes("error")) {
+  // 🟢 PREGUNTAS DE PRODUCTO
+  if (
+    t.includes("memoria") ||
+    t.includes("ram") ||
+    t.includes("almacenamiento") ||
+    t.includes("ssd") ||
+    t.includes("procesador") ||
+    t.includes("bateria") ||
+    t.includes("batería") ||
+    t.includes("cuanto dura") ||
+    t.includes("cuánto dura")
+  ) {
+    return "PRODUCT_QUESTION";
+  }
+
+  // 🟢 SOPORTE
+  if (
+    t.includes("no funciona") ||
+    t.includes("problema") ||
+    t.includes("error")
+  ) {
     return "SUPPORT";
   }
 
@@ -71,7 +104,7 @@ function buildSalesReply(intent, text) {
     return "Claro 😊 te ayudo con gusto.\n\n¿La estás buscando para estudio, trabajo o algo más exigente como diseño o edición?";
   }
 
-  // 🟢 ESTUDIO → 🔥 RECOMENDACIÓN DIRECTA
+  // 🟢 ESTUDIO → RECOMENDACIÓN DIRECTA
   if (intent === "USE_STUDY") {
     return (
       "Perfecto 👍 para estudio y clases virtuales te recomiendo esta opción:\n\n" +
@@ -93,12 +126,24 @@ function buildSalesReply(intent, text) {
     );
   }
 
-  // 🟢 EDICIÓN
+  // 🟢 ALTO RENDIMIENTO
   if (intent === "USE_HEAVY") {
     return (
       "Perfecto 👍 para edición o diseño ocupás algo más potente.\n\n" +
       "Te recomiendo equipos con mínimo 16GB RAM y mejor procesador.\n\n" +
       "¿Querés que te pase opciones disponibles?"
+    );
+  }
+
+  // 🟢 RESPUESTA A PREGUNTAS DE PRODUCTO
+  if (intent === "PRODUCT_QUESTION") {
+    return (
+      "Claro 👍 te cuento:\n\n" +
+      "💻 Este modelo viene con:\n" +
+      "✔ 8GB RAM (ideal para estudio y uso diario)\n" +
+      "✔ 256GB SSD (rápido)\n\n" +
+      "Es un equipo pensado para que te funcione fluido en clases virtuales y tareas.\n\n" +
+      "Si querés te puedo pasar fotos reales o ayudarte a apartarla 😊"
     );
   }
 
