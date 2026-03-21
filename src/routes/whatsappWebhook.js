@@ -9,9 +9,7 @@ const PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
 const EVA_ENDPOINT = process.env.EVA_ENDPOINT;
 const EVA_API_KEY = process.env.EVA_API_KEY;
 
-/* ======================================
-   VERIFY WEBHOOK
-====================================== */
+// VERIFY WEBHOOK
 router.get("/", (req, res) => {
   const mode = req.query["hub.mode"];
   const token = req.query["hub.verify_token"];
@@ -20,20 +18,17 @@ router.get("/", (req, res) => {
   if (mode === "subscribe" && token === VERIFY_TOKEN) {
     console.log("✅ Webhook verified");
     return res.status(200).send(challenge);
+  } else {
+    return res.sendStatus(403);
   }
-
-  return res.sendStatus(403);
 });
 
-/* ======================================
-   RECEIVE MESSAGE
-====================================== */
+// RECEIVE MESSAGE
 router.post("/", async (req, res) => {
   try {
     const entry = req.body.entry?.[0];
     const changes = entry?.changes?.[0];
-    const value = changes?.value;
-    const message = value?.messages?.[0];
+    const message = changes?.value?.messages?.[0];
 
     if (!message) {
       return res.sendStatus(200);
@@ -42,19 +37,9 @@ router.post("/", async (req, res) => {
     const phone = message.from;
     const text = message.text?.body || "";
 
-    // 🔥 CLAVE: ID único del mensaje
-    const external_message_id = message.id;
+    console.log("📩 Incoming WhatsApp:", { phone, text });
 
-    console.log("📩 Incoming WhatsApp:", {
-      phone,
-      text,
-      id: external_message_id
-    });
-
-    /* ======================================
-       SEND TO EVA (NUEVO CONTRATO)
-    ====================================== */
-
+    // SEND TO EVA CORE
     const evaResponse = await fetch(`${EVA_ENDPOINT}/v1/messages/inbound`, {
       method: "POST",
       headers: {
@@ -62,45 +47,43 @@ router.post("/", async (req, res) => {
         "x-api-key": EVA_API_KEY
       },
       body: JSON.stringify({
+        organization_id: "db83e3f9-d971-4ed1-9b6d-82408fbd7c03",
         phone,
         text,
-        channel: "whatsapp",
-        external_message_id
+        channel: "whatsapp"
       })
     });
 
-    const evaData = await evaResponse.json();
+    const data = await evaResponse.json();
 
-    const replyText =
-      evaData?.data?.reply?.text ||
-      "Gracias por escribir 🙌";
+    const replyText = data?.reply?.text;
 
-    console.log("🧠 EVA reply:", replyText);
+    if (!replyText) {
+      return res.sendStatus(200);
+    }
 
-    /* ======================================
-       SEND BACK TO WHATSAPP
-    ====================================== */
+    // SEND BACK TO WHATSAPP
+    const url = `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`;
 
-    await fetch(
-      `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${WHATSAPP_TOKEN}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          messaging_product: "whatsapp",
-          to: phone,
-          text: { body: replyText }
-        })
-      }
-    );
+    await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${WHATSAPP_TOKEN}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        to: phone,
+        text: { body: replyText }
+      })
+    });
+
+    console.log("📤 Sent to WhatsApp:", replyText);
 
     return res.sendStatus(200);
 
   } catch (error) {
-    console.error("❌ WHATSAPP ERROR:", error.message);
+    console.error("❌ Webhook error:", error);
     return res.sendStatus(500);
   }
 });
