@@ -1,3 +1,5 @@
+console.log("🧪 TOKEN:", process.env.WHATSAPP_TOKEN?.slice(0, 15));
+
 import express from "express";
 import fetch from "node-fetch";
 
