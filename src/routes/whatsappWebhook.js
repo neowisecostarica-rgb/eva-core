@@ -7,6 +7,7 @@ const VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
 const EVA_ENDPOINT = process.env.EVA_ENDPOINT;
+const EVA_API_KEY = process.env.EVA_API_KEY;
 
 /* ======================================
    VERIFY WEBHOOK
@@ -34,12 +35,14 @@ router.post("/", async (req, res) => {
     const value = changes?.value;
     const message = value?.messages?.[0];
 
-    if (!message) return res.sendStatus(200);
+    if (!message) {
+      return res.sendStatus(200);
+    }
 
     const phone = message.from;
     const text = message.text?.body || "";
 
-    // 🔥 IMPORTANTE: ID del mensaje (idempotencia futura)
+    // 🔥 CLAVE: ID único del mensaje
     const external_message_id = message.id;
 
     console.log("📩 Incoming WhatsApp:", {
@@ -48,12 +51,15 @@ router.post("/", async (req, res) => {
       id: external_message_id
     });
 
-    // 🔁 ENVÍO A EVA (USANDO NUEVO ENDPOINT)
-    const response = await fetch(`${EVA_ENDPOINT}/v1/messages/inbound`, {
+    /* ======================================
+       SEND TO EVA (NUEVO CONTRATO)
+    ====================================== */
+
+    const evaResponse = await fetch(`${EVA_ENDPOINT}/v1/messages/inbound`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-api-key": process.env.EVA_API_KEY
+        "x-api-key": EVA_API_KEY
       },
       body: JSON.stringify({
         phone,
@@ -63,23 +69,33 @@ router.post("/", async (req, res) => {
       })
     });
 
-    const data = await response.json();
+    const evaData = await evaResponse.json();
 
-    const replyText = data?.data?.reply?.text || "Gracias por escribir 🙌";
+    const replyText =
+      evaData?.data?.reply?.text ||
+      "Gracias por escribir 🙌";
 
-    // 📤 RESPUESTA A WHATSAPP
-    await fetch(`https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${WHATSAPP_TOKEN}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        messaging_product: "whatsapp",
-        to: phone,
-        text: { body: replyText }
-      })
-    });
+    console.log("🧠 EVA reply:", replyText);
+
+    /* ======================================
+       SEND BACK TO WHATSAPP
+    ====================================== */
+
+    await fetch(
+      `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${WHATSAPP_TOKEN}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          messaging_product: "whatsapp",
+          to: phone,
+          text: { body: replyText }
+        })
+      }
+    );
 
     return res.sendStatus(200);
 
