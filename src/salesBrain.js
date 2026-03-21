@@ -1,27 +1,19 @@
 /*
 ====================================================
-EVA CORE - SALES BRAIN
+EVA SALES BRAIN — VENTAS FASE 1
 ====================================================
 */
 
-function normalizeText(text = "") {
-  return String(text).trim().toLowerCase();
+function normalize(text = "") {
+  return String(text).toLowerCase().trim();
 }
 
 function detectIntent(text = "") {
-  const t = normalizeText(text);
+  const t = normalize(text);
 
   if (!t) return "UNKNOWN";
 
-  if (
-    t.includes("hola") ||
-    t.includes("buenas") ||
-    t.includes("buenos dias") ||
-    t.includes("buen día") ||
-    t.includes("buen día") ||
-    t === "hi" ||
-    t === "hello"
-  ) {
+  if (t.includes("hola") || t.includes("buenas")) {
     return "GREETING";
   }
 
@@ -29,61 +21,47 @@ function detectIntent(text = "") {
     t.includes("precio") ||
     t.includes("cuanto") ||
     t.includes("cuánto") ||
-    t.includes("tienen") ||
-    t.includes("disponible") ||
     t.includes("informacion") ||
     t.includes("información") ||
-    t.includes("me interesa") ||
-    t.includes("quiero") ||
-    t.includes("busco")
+    t.includes("tienen") ||
+    t.includes("busco") ||
+    t.includes("me interesa")
   ) {
     return "BUY";
   }
 
-  if (
-    t.includes("ya cambie") ||
-    t.includes("ya cambié") ||
-    t.includes("listo") ||
-    t.includes("ok") ||
-    t.includes("perfecto")
-  ) {
-    return "CONFIRM";
-  }
-
-  if (
-    t.includes("problema") ||
-    t.includes("no funciona") ||
-    t.includes("error") ||
-    t.includes("ayuda") ||
-    t.includes("soporte")
-  ) {
+  if (t.includes("no funciona") || t.includes("problema") || t.includes("error")) {
     return "SUPPORT";
   }
 
   return "UNKNOWN";
 }
 
-function buildReply(intent, text = "") {
-  switch (intent) {
-    case "GREETING":
-      return "Hola 😊 gracias por escribir. ¿Buscás información de algún equipo en específico o querés que te recomiende una opción?";
+function buildSalesReply(intent, text) {
+  const t = normalize(text);
 
-    case "BUY":
-      return "Claro 😊 contame qué tipo de equipo buscás y para qué uso lo necesitás, y con gusto te ayudo a encontrar la mejor opción 👍";
-
-    case "CONFIRM":
-      return "Perfecto 🙌 ya lo tengo presente. Contame qué ocupás y te ayudo con el siguiente paso.";
-
-    case "SUPPORT":
-      return "Entiendo. Contame un poco más sobre el problema y te ayudo a revisarlo paso a paso.";
-
-    default:
-      if (normalizeText(text).includes("deploy")) {
-        return "Entiendo. Si el deploy no está funcionando, pegáme el error exacto o el log y lo revisamos paso a paso.";
-      }
-
-      return "Claro 😊 contame un poco más y te ayudo mejor 👍";
+  // 🟢 GREETING → abrir y dirigir
+  if (intent === "GREETING") {
+    return "Hola 😊 con gusto te ayudo.\n\n¿Estás buscando laptop para estudio, trabajo o algo más específico?";
   }
+
+  // 🟢 BUY → guiar con intención
+  if (intent === "BUY") {
+    return "Claro 😊 te ayudo con gusto.\n\n¿La estás buscando para estudio, trabajo o algo más exigente como diseño o edición?";
+  }
+
+  // 🟢 SUPPORT → diagnóstico ligero
+  if (intent === "SUPPORT") {
+    return "Entiendo 👍 contame qué problema presenta el equipo y te orientamos con el diagnóstico.";
+  }
+
+  // 🟡 fallback inteligente (NO genérico)
+  if (t.includes("laptop") || t.includes("computadora")) {
+    return "Perfecto 👍\n\n¿Para qué uso la necesitas? Así te recomiendo una opción que realmente te funcione.";
+  }
+
+  // 🔴 fallback final (controlado)
+  return "Claro 😊 contame un poco más sobre lo que estás buscando y te guío paso a paso 👍";
 }
 
 export async function handleInboundMessage(payload) {
@@ -94,14 +72,14 @@ export async function handleInboundMessage(payload) {
   const intent = detectIntent(text);
   console.log("🧠 INTENT:", intent);
 
-  const reply = buildReply(intent, text);
+  const reply = buildSalesReply(intent, text);
 
   const result = {
     reply,
     media: []
   };
 
-  console.log("🧠 RAW RESULT FROM BRAIN:", result);
+  console.log("🧠 SALES RESPONSE:", result);
 
   return result;
 }
