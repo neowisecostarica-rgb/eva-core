@@ -6,13 +6,18 @@ const router = express.Router();
 
 /*
 ====================================================
-INBOUND (OFICIAL)
-====================================================
-*/
-
 router.post("/inbound", async (req, res) => {
   try {
-    const payload = validateInbound(req.body);
+    const validation = validateInbound(req.body);
+
+    if (!validation.valid) {
+      return res.status(400).json({
+        success: false,
+        error: validation.error
+      });
+    }
+
+    const payload = validation.data;
 
     const result = await handleInboundMessage(payload);
 
@@ -24,9 +29,9 @@ router.post("/inbound", async (req, res) => {
   } catch (error) {
     console.error("❌ INBOUND ERROR:", error.message);
 
-    return res.status(400).json({
+    return res.status(500).json({
       success: false,
-      error: error.message
+      error: "internal_error"
     });
   }
 });
