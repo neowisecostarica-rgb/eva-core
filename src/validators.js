@@ -1,30 +1,42 @@
 /*
 ====================================================
-VALIDATORS - EVA CORE (FIXED)
+EVA CORE - VALIDATORS
 ====================================================
 */
 
-export function validateInbound(payload) {
-  const { phone, text } = payload;
+export function validateInbound(payload = {}) {
+  const {
+    organization_id,
+    phone,
+    text,
+    channel,
+    message_id
+  } = payload;
 
-  // VALIDATE PHONE
+  if (!organization_id || typeof organization_id !== "string") {
+    return { valid: false, error: "missing_organization_id" };
+  }
+
   if (!phone || typeof phone !== "string") {
     return { valid: false, error: "missing_phone" };
   }
 
-  // VALIDATE TEXT
   if (!text || typeof text !== "string") {
     return { valid: false, error: "missing_text" };
   }
 
-  // CLEAN TEXT
-  const cleanText = text.trim();
+  if (!channel || typeof channel !== "string") {
+    return { valid: false, error: "missing_channel" };
+  }
 
   return {
     valid: true,
     data: {
-      phone,
-      text: cleanText
+      organization_id: organization_id.trim(),
+      phone: phone.trim(),
+      text: text.trim(),
+      channel: channel.trim(),
+      message_id: message_id ?? null
     }
   };
 }
