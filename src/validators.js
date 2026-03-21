@@ -27,6 +27,29 @@ export function validateInbound(payload = {}) {
     return { valid: false, error: "missing_payload" };
   }
 
+  const { phone, text, channel, external_message_id } = payload;
+
+  // 🔴 Validaciones mínimas
+  if (!phone) {
+    return { valid: false, error: "missing_phone" };
+  }
+
+  if (!text) {
+    return { valid: false, error: "missing_text" };
+  }
+
+  // 🧠 Normalización (clave para consistencia)
+  return {
+    valid: true,
+    data: {
+      phone,
+      text,
+      channel: channel || "whatsapp",
+      external_message_id: external_message_id || null
+    }
+  };
+}
+
   /*
   ----------------------------------------------------
   PHONE
