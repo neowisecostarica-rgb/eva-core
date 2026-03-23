@@ -1,44 +1,29 @@
-/*
-====================================================
-EVA CORE - VALIDATORS (FIXED + FLEXIBLE)
-====================================================
-*/
+// src/validators.js
 
-export function validateInbound(payload = {}) {
-  const {
-    organization_id,
-    phone,
-    text,
-    channel,
-    message_id
-  } = payload;
+export function validateInbound(body) {
+  const errors = [];
 
-  if (!phone || typeof phone !== "string") {
-    return { valid: false, error: "missing_phone" };
+  if (!body) {
+    return { valid: false, errors: ["Body requerido"] };
   }
 
-  if (!text || typeof text !== "string") {
-    return { valid: false, error: "missing_text" };
+  if (!body.phone) {
+    errors.push("phone requerido");
   }
 
-  const safeChannel =
-    channel && typeof channel === "string"
-      ? channel.trim()
-      : "whatsapp";
+  if (!body.text) {
+    errors.push("text requerido");
+  }
 
-  const safeOrg =
-    organization_id && typeof organization_id === "string"
-      ? organization_id.trim()
-      : "default-org";
+  if (!body.channel) {
+    errors.push("channel requerido");
+  }
+
+  // 🚨 IMPORTANTE: organization_id YA NO se valida aquí
+  // viene desde auth (req.organization_id)
 
   return {
-    valid: true,
-    data: {
-      organization_id: safeOrg,
-      phone: phone.trim(),
-      text: text.trim(),
-      channel: safeChannel,
-      message_id: message_id ?? null
-    }
+    valid: errors.length === 0,
+    errors,
   };
 }
