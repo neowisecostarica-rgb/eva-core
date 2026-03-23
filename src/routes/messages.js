@@ -7,13 +7,26 @@ const router = express.Router();
 
 /*
 ====================================================
-INBOUND (SECURE VERSION - P0.2 FIX)
+INBOUND (SECURE VERSION - P0.2 FIX HARDENED)
 ====================================================
 */
 
 router.post("/inbound", authenticate, async (req, res) => {
   try {
-    console.log("📩 RAW REQUEST:", req.body);
+    // 🔒 Guardrail crítico post-auth
+    if (!req.organization || !req.organization.id) {
+      console.error("❌ AUTH FAILED: organization missing");
+      return res.status(401).json({
+        success: false,
+        error: "unauthorized"
+      });
+    }
+
+    console.log("📩 Incoming:", {
+      phone: req.body?.phone,
+      text: req.body?.text,
+      channel: req.body?.channel
+    });
 
     const validation = validateInbound(req.body);
 
@@ -24,10 +37,13 @@ router.post("/inbound", authenticate, async (req, res) => {
       });
     }
 
-    // ⚠️ CRÍTICO: NO confiar en organization_id del cliente
+    // 🔒 Nunca confiar en organization_id del cliente
     const payload = {
-      ...validation.data,
-      organization_id: req.organization.id // ← viene del API KEY
+      phone: validation.data.phone,
+      text: validation.data.text,
+      channel: validation.data.channel,
+      message_id: validation.data.message_id || null,
+      organization_id: req.organization.id
     };
 
     const result = await handleInboundMessage(payload);
@@ -45,7 +61,11 @@ router.post("/inbound", authenticate, async (req, res) => {
       }
     };
 
-    console.log("📦 RESPONSE:", response);
+    console.log("📦 RESPONSE:", {
+      ok: true,
+      org: payload.organization_id,
+      text_length: result.reply?.length || 0
+    });
 
     return res.json(response);
 
