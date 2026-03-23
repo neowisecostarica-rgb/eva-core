@@ -1,6 +1,6 @@
 // src/brain/utils/catalogEngine.js
 
-import { pool } from "../../db.js";
+import pool from "../../db.js";
 
 export async function searchCatalogSmart({ organization_id, query }) {
   try {
