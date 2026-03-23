@@ -1,299 +1,33 @@
-import pool from "./db.js";
-import { generateAIReply } from "./aiReply.js";
+// src/aiReply.js
 
-export async function handleInboundMessage(payload) {
+export async function generateAIReply({ text, stage, intent, entities, summary }) {
   try {
-    const {
-      organization_id,
-      phone,
-      text,
-      channel = "whatsapp",
-      message_id
-    } = payload;
-
-    console.log("🧠 EVA inbound:", { phone, text, message_id });
-
-    const normalizedText = normalizeText(text);
+    if (!text) return null;
 
     // =============================
-    // IDEMPOTENCIA
+    // RESPUESTAS SEGÚN INTENCIÓN
     // =============================
-    if (message_id) {
-      const existing = await pool.query(
-        `SELECT id FROM messages WHERE external_message_id = $1 LIMIT 1`,
-        [message_id]
-      );
 
-      if (existing.rows.length > 0) {
-        console.log("⚠️ Duplicate message:", message_id);
-        return { reply: null, media: [] };
-      }
+    if (intent === "GREETING") {
+      return "Hola 😊 con gusto te ayudo. ¿Qué estás buscando?";
+    }
+
+    if (intent === "BUY") {
+      return "Claro 🙌 te ayudo a encontrar una buena opción. ¿Es para estudio, trabajo o algo más específico?";
+    }
+
+    if (intent === "INFO") {
+      return "Perfecto 😊 contame un poco más y te ayudo mejor 🙌";
     }
 
     // =============================
-    // CONVERSATION
+    // FALLBACK
     // =============================
-    const conversation = await ensureConversationSafe({
-      organization_id,
-      channel,
-      external_user_id: phone
-    });
 
-    const previousStage = conversation?.stage || "NEW";
-    const previousSummary = conversation?.summary || "";
+    return "Hola 😊 ¿Qué estás buscando exactamente?";
 
-    // =============================
-    // SAVE USER MESSAGE
-    // =============================
-    await pool.query(
-      `
-      INSERT INTO messages (
-        organization_id,
-        conversation_id,
-        external_message_id,
-        role,
-        content,
-        created_at
-      )
-      VALUES ($1, $2, $3, 'user', $4, NOW())
-      `,
-      [
-        organization_id,
-        conversation?.id || null,
-        message_id || null,
-        text
-      ]
-    );
-
-    // =============================
-    // SALES BRAIN
-    // =============================
-    const intent = analyzeIntent(normalizedText);
-    const entities = extractEntities(normalizedText);
-    const lead_score = calculateLeadScore(intent, entities);
-
-    const stage = determineStage({
-      intent,
-      entities,
-      previousStage
-    });
-
-    const action = decideAction({
-      intent,
-      entities,
-      stage,
-      previousStage,
-      lead_score
-    });
-
-    // =============================
-    // AI RESPONSE
-    // =============================
-    let reply = await generateAIReply({
-      text,
-      stage,
-      intent,
-      entities,
-      summary: previousSummary
-    });
-
-    console.log("🔥 AI reply:", reply);
-
-    if (!reply) {
-      reply = buildReply({
-        action,
-        entities
-      });
-    }
-
-    const summary = buildSummary({
-      previousSummary,
-      entities,
-      stage,
-      normalizedText
-    });
-
-    // =============================
-    // SAVE ASSISTANT MESSAGE
-    // =============================
-    await pool.query(
-      `
-      INSERT INTO messages (
-        organization_id,
-        conversation_id,
-        role,
-        content,
-        created_at
-      )
-      VALUES ($1, $2, 'assistant', $3, NOW())
-      `,
-      [
-        organization_id,
-        conversation?.id || null,
-        reply
-      ]
-    );
-
-    // =============================
-    // UPDATE CONVERSATION
-    // =============================
-    await updateConversationSafe({
-      conversationId: conversation?.id || null,
-      organization_id,
-      channel,
-      external_user_id: phone,
-      stage,
-      summary
-    });
-
-    return {
-      reply,
-      media: [],
-      intent,
-      stage,
-      lead_score,
-      entities,
-      should_followup: lead_score >= 60
-    };
-
-  } catch (error) {
-    console.error("❌ ERROR salesBrain:", error);
-    return {
-      reply: "Hubo un error procesando el mensaje",
-      media: []
-    };
+  } catch (err) {
+    console.error("❌ AI error:", err);
+    return null;
   }
-}
-
-// =============================
-// CONVERSATION FUNCTIONS
-// =============================
-
-async function ensureConversationSafe({ organization_id, channel, external_user_id }) {
-  const found = await pool.query(
-    `
-    SELECT id, stage, summary
-    FROM conversations
-    WHERE organization_id = $1
-      AND channel = $2
-      AND external_user_id = $3
-    ORDER BY created_at DESC
-    LIMIT 1
-    `,
-    [organization_id, channel, external_user_id]
-  );
-
-  if (found.rows.length > 0) {
-    await pool.query(
-      `
-      UPDATE conversations
-      SET last_message_at = NOW(),
-          updated_at = NOW()
-      WHERE id = $1
-      `,
-      [found.rows[0].id]
-    );
-
-    return found.rows[0];
-  }
-
-  const created = await pool.query(
-    `
-    INSERT INTO conversations (
-      organization_id,
-      channel,
-      external_user_id,
-      stage,
-      summary,
-      last_message_at,
-      created_at,
-      updated_at
-    )
-    VALUES ($1, $2, $3, 'NEW', '', NOW(), NOW(), NOW())
-    RETURNING id, stage, summary
-    `,
-    [organization_id, channel, external_user_id]
-  );
-
-  return created.rows[0];
-}
-
-async function updateConversationSafe({
-  conversationId,
-  stage,
-  summary
-}) {
-  if (!conversationId) return;
-
-  await pool.query(
-    `
-    UPDATE conversations
-    SET stage = $2,
-        summary = $3,
-        last_message_at = NOW(),
-        updated_at = NOW()
-    WHERE id = $1
-    `,
-    [conversationId, stage, summary]
-  );
-}
-
-// =============================
-// BRAIN FUNCTIONS
-// =============================
-
-function analyzeIntent(text) {
-  if (text.includes("hola")) return "GREETING";
-  if (text.includes("laptop") || text.includes("lenovo")) return "BUY";
-  return "INFO";
-}
-
-function extractEntities(text) {
-  return {
-    product: text.includes("laptop") ? "laptop" : null,
-    brand: text.includes("lenovo") ? "lenovo" : null,
-    use_case: text.includes("estudio") ? "estudio" : null
-  };
-}
-
-function determineStage({ entities, previousStage }) {
-  if (entities.brand) return "OFFERING";
-  if (entities.use_case) return "QUALIFYING";
-  if (entities.product) return previousStage === "QUALIFYING" ? "OFFERING" : "QUALIFYING";
-  return previousStage;
-}
-
-function calculateLeadScore(intent, entities) {
-  let score = 0;
-  if (intent === "BUY") score += 40;
-  if (entities.product) score += 20;
-  if (entities.use_case) score += 20;
-  if (entities.brand) score += 10;
-  return score;
-}
-
-function decideAction({ stage }) {
-  if (stage === "QUALIFYING") return "ASK_MORE";
-  if (stage === "OFFERING") return "SHOW_OPTIONS";
-  return "ASK";
-}
-
-function buildReply({ action }) {
-  if (action === "ASK_MORE") {
-    return "Perfecto 😊 ¿tenés algún presupuesto o marca de preferencia?";
-  }
-
-  if (action === "SHOW_OPTIONS") {
-    return "Claro 🙌 tengo opciones disponibles. ¿Querés que te recomiende una según tu uso?";
-  }
-
-  return "Hola 😊 ¿Qué estás buscando exactamente?";
-}
-
-function buildSummary({ previousSummary, entities, stage }) {
-  return `${previousSummary} | ${JSON.stringify(entities)} | stage:${stage}`;
-}
-
-function normalizeText(text) {
-  return (text || "").toLowerCase().trim();
 }
