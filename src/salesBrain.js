@@ -77,12 +77,11 @@ export async function handleInbound(payload) {
     ========================================
     */
 
-    const config = {
-      business_name: "tu negocio",
-      assistant_name: "Eva",
-      tone: "profesional cercano",
-      objective: "ayudar al cliente y guiarlo a una compra",
-    };
+    import { getPromptConfig } from "./brain/utils/getPromptConfig.js";
+
+// ...
+
+const config = await getPromptConfig(organization_id);
 
     /*
     ========================================
