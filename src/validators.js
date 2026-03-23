@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE - VALIDATORS
+EVA CORE - VALIDATORS (FIXED + FLEXIBLE)
 ====================================================
 */
 
@@ -13,29 +13,35 @@ export function validateInbound(payload = {}) {
     message_id
   } = payload;
 
-  if (!organization_id || typeof organization_id !== "string") {
-    return { valid: false, error: "missing_organization_id" };
-  }
-
+  // 📱 PHONE
   if (!phone || typeof phone !== "string") {
     return { valid: false, error: "missing_phone" };
   }
 
+  // 💬 TEXT
   if (!text || typeof text !== "string") {
     return { valid: false, error: "missing_text" };
   }
 
-  if (!channel || typeof channel !== "string") {
-    return { valid: false, error: "missing_channel" };
-  }
+  // 📡 CHANNEL (fallback seguro)
+  const safeChannel =
+    channel && typeof channel === "string"
+      ? channel.trim()
+      : "whatsapp";
+
+  // 🏢 ORG (FLEXIBLE POR AHORA)
+  const safeOrg =
+    organization_id && typeof organization_id === "string"
+      ? organization_id.trim()
+      : "default-org";
 
   return {
     valid: true,
     data: {
-      organization_id: organization_id.trim(),
+      organization_id: safeOrg,
       phone: phone.trim(),
       text: text.trim(),
-      channel: channel.trim(),
+      channel: safeChannel,
       message_id: message_id ?? null
     }
   };
