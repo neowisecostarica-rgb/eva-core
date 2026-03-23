@@ -100,6 +100,22 @@ function detectIntent(text = "") {
   )
     return "BUY";
 
+  // 🔥 NUEVO
+  if (
+    t.includes("pago") ||
+    t.includes("sinpe") ||
+    t.includes("deposito") ||
+    t.includes("transferencia")
+  )
+    return "PAYMENT";
+
+  if (
+    t.includes("datos") ||
+    t.includes("cuentas") ||
+    t.includes("numero")
+  )
+    return "PAYMENT_INFO";
+
   return "UNKNOWN";
 }
 
@@ -255,6 +271,26 @@ function buildSalesReply(intent, context) {
   return "Claro 😊 contame qué estás buscando y te ayudo 👍";
 }
 
+if (intent === "PAYMENT") {
+  return `Perfecto 👍
+
+Podés realizar el pago por SINPE Móvil al 7038-2476.
+
+A nombre de Compu Store Costa Rica.
+
+Cuando lo hagás, me pasás el comprobante y te confirmo de una 😊`;
+}
+
+if (intent === "PAYMENT_INFO") {
+  return `Claro 👍
+
+SINPE Móvil: 7038-2476  
+A nombre de Compu Store Costa Rica  
+
+Solo indicá el producto en la descripción.
+
+Cuando hagás el pago me enviás el comprobante y listo 😊`;
+}
 /* ======================================
    MAIN HANDLER
 ====================================== */
