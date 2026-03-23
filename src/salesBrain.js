@@ -106,7 +106,7 @@ async function tryAIResponse(context) {
       return null;
     }
 
-    const prompt = buildPrompt(context);
+   const prompt = buildPrompt(context, EVA_CONFIG);
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4.1-mini",
