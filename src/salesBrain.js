@@ -228,6 +228,8 @@ Responde como humana y guía a cierre.
 ====================================== */
 
 async function tryAIResponse(context) {
+  return null;
+}
   try {
     if (!process.env.OPENAI_API_KEY) return null;
 const client = await getOpenAI();
