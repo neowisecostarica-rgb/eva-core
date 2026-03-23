@@ -107,9 +107,21 @@ export async function handleInboundMessage(payload) {
       lead_score
     });
 
-    const reply = buildReply({
-      action,
-      entities
+   let reply = await generateAIReply({
+  text,
+  stage,
+  intent,
+  entities,
+  summary
+});
+
+// fallback (por si falla AI)
+if (!reply) {
+  reply = buildReply({
+    action,
+    entities
+  });
+}
     });
 
     const summary = buildSummary({
