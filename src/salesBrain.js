@@ -4,6 +4,10 @@ EVA SALES BRAIN — V5 (AI + KNOWLEDGE + MEMORY FIX)
 ====================================================
 */
 
+/* ======================================
+   OPENAI LAZY LOAD (SAFE)
+====================================== */
+
 let openai = null;
 
 async function getOpenAI() {
@@ -83,10 +87,6 @@ const BUSINESS_KNOWLEDGE = {
     }
   }
 };
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
 
 /* ======================================
    HELPERS
@@ -228,14 +228,13 @@ Responde como humana y guía a cierre.
 ====================================== */
 
 async function tryAIResponse(context) {
-  return null;
-}
   try {
     if (!process.env.OPENAI_API_KEY) return null;
-const client = await getOpenAI();
-if (!client) return null;
 
-const completion = await client.chat.completions.create({
+    const client = await getOpenAI();
+    if (!client) return null;
+
+    const completion = await client.chat.completions.create({
       model: "gpt-4.1-mini",
       messages: [
         { role: "system", content: "Eres experta en ventas." },
@@ -246,7 +245,9 @@ const completion = await client.chat.completions.create({
     });
 
     return completion.choices?.[0]?.message?.content?.trim() || null;
-  } catch {
+
+  } catch (err) {
+    console.error("❌ AI ERROR:", err.message);
     return null;
   }
 }
