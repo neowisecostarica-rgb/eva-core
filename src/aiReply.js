@@ -1,3 +1,5 @@
+console.log("🧠 AI RESPONSE:", data);
+
 export async function generateAIReply({
   text,
   stage,
