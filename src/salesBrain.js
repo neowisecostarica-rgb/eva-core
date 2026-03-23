@@ -1,8 +1,14 @@
 /*
 ====================================================
-EVA SALES BRAIN — V2.1 (CLEAN + AI READY + SAFE)
+EVA SALES BRAIN — V3 (AI ACTIVE + SAFE FALLBACK)
 ====================================================
 */
+
+import OpenAI from "openai";
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
 
 function normalize(text = "") {
   return String(text).toLowerCase().trim();
@@ -23,7 +29,7 @@ function buildContext(payload) {
 }
 
 /* ======================================
-   INTENT DETECTION (IMPROVED)
+   INTENT DETECTION (GUARDRAIL)
 ====================================== */
 
 function detectIntent(text = "") {
@@ -31,150 +37,121 @@ function detectIntent(text = "") {
 
   if (!t) return "UNKNOWN";
 
-  // GREETING
-  if (
-    t.includes("hola") ||
-    t.includes("buenas") ||
-    t.includes("buenos dias") ||
-    t.includes("buenas tardes")
-  ) return "GREETING";
+  if (t.includes("hola") || t.includes("buenas")) return "GREETING";
 
-  // SUPPORT
-  if (
-    t.includes("problema") ||
-    t.includes("no funciona") ||
-    t.includes("error") ||
-    t.includes("dañado") ||
-    t.includes("dañada")
-  ) return "SUPPORT";
+  if (t.includes("problema") || t.includes("no funciona"))
+    return "SUPPORT";
 
-  // PRODUCT QUESTIONS
-  if (
-    t.includes("memoria") ||
-    t.includes("ram") ||
-    t.includes("ssd") ||
-    t.includes("procesador") ||
-    t.includes("bateria") ||
-    t.includes("batería")
-  ) return "PRODUCT_QUESTION";
-
-  // USE CASES
-  if (
-    t.includes("estudio") ||
-    t.includes("colegio") ||
-    t.includes("universidad")
-  ) return "USE_STUDY";
-
-  if (
-    t.includes("trabajo") ||
-    t.includes("oficina")
-  ) return "USE_WORK";
-
-  if (
-    t.includes("edicion") ||
-    t.includes("edición") ||
-    t.includes("diseño") ||
-    t.includes("video")
-  ) return "USE_HEAVY";
-
-  // BUY INTENT (más fuerte)
   if (
     t.includes("precio") ||
     t.includes("cuanto") ||
-    t.includes("cuánto") ||
-    t.includes("informacion") ||
-    t.includes("información") ||
-    t.includes("tienen") ||
-    t.includes("busco") ||
-    t.includes("me interesa") ||
-    t.includes("disponible") ||
-    t.includes("laptop") ||
-    t.includes("computadora")
-  ) return "BUY";
+    t.includes("computadora") ||
+    t.includes("laptop")
+  )
+    return "BUY";
 
   return "UNKNOWN";
 }
 
 /* ======================================
-   AI PLACEHOLDER (FUTURE SAFE)
+   PROMPT BUILDER (CORE AI)
 ====================================== */
 
-async function tryAIResponse(context) {
-  // ⚠️ Aquí luego conectamos OpenAI / LLM
-  // Por ahora NO rompe nada y permite activarlo después
+function buildPrompt(context) {
+  return `
+Eres Eva, asesora comercial de Compu Store Costa Rica.
 
-  return null;
+OBJETIVO:
+Convertir conversaciones en ventas.
+
+TONO:
+- Profesional pero cercana
+- Natural (no robot)
+- Máximo 1 emoji por mensaje
+- No usar lenguaje técnico complejo
+
+REGLAS:
+- No explicar cómo reparar equipos
+- Siempre guiar a una acción (comprar, ver fotos, visitar)
+- Respuestas cortas (máximo 4-5 líneas)
+- Sonar humana, no como bot
+
+CONTEXTO CLIENTE:
+Mensaje: "${context.message}"
+
+INSTRUCCIÓN:
+Responde como una asesora real buscando avanzar la venta.
+`;
 }
 
 /* ======================================
-   REPLY ENGINE (IMPROVED UX)
+   AI ENGINE
+====================================== */
+
+async function tryAIResponse(context) {
+  try {
+    if (!process.env.OPENAI_API_KEY) {
+      console.log("⚠️ OPENAI_API_KEY missing → fallback");
+      return null;
+    }
+
+    const prompt = buildPrompt(context);
+
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4.1-mini",
+      messages: [
+        {
+          role: "system",
+          content: "Eres una asesora de ventas experta."
+        },
+        {
+          role: "user",
+          content: prompt
+        }
+      ],
+      temperature: 0.7,
+      max_tokens: 150
+    });
+
+    const text = completion.choices?.[0]?.message?.content;
+
+    if (!text) return null;
+
+    return text.trim();
+  } catch (error) {
+    console.error("❌ AI ERROR:", error.message);
+    return null;
+  }
+}
+
+/* ======================================
+   FALLBACK ENGINE (SAFE)
 ====================================== */
 
 function buildSalesReply(intent, context) {
   const t = normalize(context.message);
 
-  // GREETING
   if (intent === "GREETING") {
-    return "Hola 😊 con gusto te ayudo.\n\n¿Estás buscando laptop para estudio, trabajo o algo más específico?";
+    return "Hola 😊 con gusto te ayudo.\n\n¿Buscás laptop para estudio, trabajo o algo más específico?";
   }
 
-  // BUY
   if (intent === "BUY") {
-    return "Claro 😊 con gusto te ayudo.\n\n¿La necesitás para estudio, trabajo o algo más exigente como diseño o edición?";
+    return "Claro 😊\n\n¿La necesitás para estudio, trabajo o algo más exigente?";
   }
 
-  // STUDY
-  if (intent === "USE_STUDY") {
-    return (
-      "Perfecto 👍 para estudio te recomiendo:\n\n" +
-      "💻 Lenovo ThinkPad 11e\n" +
-      "💰 ₡125.000\n" +
-      "✔ Rápida\n✔ Resistente\n✔ Ideal para estudiantes\n\n" +
-      "¿Querés que te envíe fotos reales?"
-    );
-  }
-
-  // WORK
-  if (intent === "USE_WORK") {
-    return (
-      "Perfecto 👍 para trabajo te puedo recomendar equipos más potentes.\n\n" +
-      "¿Qué tipo de trabajo realizás? Así te recomiendo algo más preciso."
-    );
-  }
-
-  // HEAVY
-  if (intent === "USE_HEAVY") {
-    return (
-      "Perfecto 👍 para edición o diseño ocupás un equipo más potente.\n\n" +
-      "¿Querés que te pase opciones disponibles?"
-    );
-  }
-
-  // PRODUCT QUESTION
-  if (intent === "PRODUCT_QUESTION") {
-    return (
-      "Claro 👍\n\n" +
-      "✔ 8GB RAM\n✔ SSD rápido\n✔ Buen rendimiento general\n\n" +
-      "Ideal para uso fluido diario.\n\n" +
-      "¿Querés fotos o te ayudo a apartarla?"
-    );
-  }
-
-  // SUPPORT
   if (intent === "SUPPORT") {
-    return "Claro 👍 contame qué problema presenta el equipo y te orientamos.\n\nTrabajamos reparación y diagnóstico.";
+    return "Claro 👍 contame qué problema presenta el equipo y te orientamos.";
   }
 
-  // FALLBACK SMART
   if (t.includes("laptop") || t.includes("computadora")) {
     return "Perfecto 👍 ¿Para qué uso la necesitás?";
   }
 
-  return "Claro 😊 contame qué estás buscando y con gusto te ayudo 👍";
+  return "Claro 😊 contame qué estás buscando y te ayudo 👍";
 }
 
 /* ======================================
-   MAIN HANDLER (AI READY)
+   MAIN HANDLER
 ====================================== */
 
 export async function handleInboundMessage(payload) {
@@ -182,15 +159,15 @@ export async function handleInboundMessage(payload) {
 
   const context = buildContext(payload);
 
-  // 1. Intent
   const intent = detectIntent(context.message);
   console.log("🧠 INTENT:", intent);
 
-  // 2. TRY AI (NO rompe flujo actual)
+  // 🔥 1. TRY AI FIRST
   let reply = await tryAIResponse(context);
 
-  // 3. FALLBACK A REGLAS
+  // 🛟 2. FALLBACK
   if (!reply) {
+    console.log("⚠️ FALLBACK ACTIVATED");
     reply = buildSalesReply(intent, context);
   }
 
