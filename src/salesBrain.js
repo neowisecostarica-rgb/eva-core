@@ -1,31 +1,8 @@
 /*
 ====================================================
-EVA SALES BRAIN — V5 (AI + KNOWLEDGE + MEMORY FIX)
+EVA SALES BRAIN — STABLE (NO AI)
 ====================================================
 */
-
-/* ======================================
-   OPENAI LAZY LOAD (SAFE)
-====================================== */
-
-let openai = null;
-
-async function getOpenAI() {
-  if (openai) return openai;
-
-  try {
-    const OpenAI = (await import("openai")).default;
-
-    openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY
-    });
-
-    return openai;
-  } catch (err) {
-    console.error("❌ OpenAI init error:", err.message);
-    return null;
-  }
-}
 
 /* ======================================
    EVA CONFIG
@@ -35,13 +12,7 @@ const EVA_CONFIG = {
   business_name: "Compu Store Costa Rica",
   assistant_name: "Eva",
   tone: "profesional cercano",
-  primary_goal: "cerrar ventas",
-  rules: [
-    "no explicar cómo reparar equipos",
-    "siempre guiar a una acción",
-    "respuestas cortas",
-    "máximo 1 emoji"
-  ]
+  primary_goal: "cerrar ventas"
 };
 
 /* ======================================
@@ -58,35 +29,6 @@ function setMemory(phone, data) {
   const current = conversationMemory.get(phone) || {};
   conversationMemory.set(phone, { ...current, ...data });
 }
-
-/* ======================================
-   BUSINESS KNOWLEDGE
-====================================== */
-
-const BUSINESS_KNOWLEDGE = {
-  services: {
-    printer_maintenance: {
-      keywords: ["impresora", "mantenimiento", "tinta", "epson", "hp"],
-      price_range: "₡20.000 – ₡30.000",
-      description: "mantenimiento completo con limpieza interna y revisión",
-      action: "agendar revisión o traer equipo"
-    }
-  },
-
-  products: {
-    laptops: {
-      keywords: ["laptop", "computadora", "portatil"],
-      examples: [
-        {
-          name: "Lenovo ThinkPad 11e",
-          price: "₡125.000",
-          use: "estudio",
-          highlights: ["resistente", "rápida", "ideal estudiantes"]
-        }
-      ]
-    }
-  }
-};
 
 /* ======================================
    HELPERS
@@ -151,109 +93,7 @@ function detectIntent(text = "") {
 }
 
 /* ======================================
-   BUSINESS CONTEXT
-====================================== */
-
-function detectBusinessContext(message) {
-  const t = normalize(message);
-
-  for (const key in BUSINESS_KNOWLEDGE.services) {
-    const s = BUSINESS_KNOWLEDGE.services[key];
-    if (s.keywords.some(k => t.includes(k))) {
-      return { type: "service", data: s };
-    }
-  }
-
-  for (const key in BUSINESS_KNOWLEDGE.products) {
-    const p = BUSINESS_KNOWLEDGE.products[key];
-    if (p.keywords.some(k => t.includes(k))) {
-      return { type: "product", data: p };
-    }
-  }
-
-  return null;
-}
-
-/* ======================================
-   PROMPT BUILDER
-====================================== */
-
-function buildPrompt(context, config) {
-  const businessContext = detectBusinessContext(context.message);
-
-  let knowledge = "";
-
-  if (businessContext?.type === "service") {
-    const s = businessContext.data;
-
-    knowledge = `
-SERVICIO:
-Precio: ${s.price_range}
-Detalle: ${s.description}
-Acción: ${s.action}
-`;
-  }
-
-  if (businessContext?.type === "product") {
-    const p = businessContext.data;
-
-    knowledge = `
-PRODUCTOS:
-${p.examples.map(e => `
-- ${e.name} (${e.price})
-`).join("")}
-`;
-  }
-
-  return `
-Eres ${config.assistant_name}, asesora comercial de ${config.business_name}.
-
-OBJETIVO: ${config.primary_goal}
-TONO: ${config.tone}
-
-REGLAS:
-${config.rules.map(r => `- ${r}`).join("\n")}
-
-${knowledge}
-
-CLIENTE:
-"${context.message}"
-
-Responde como humana y guía a cierre.
-`;
-}
-
-/* ======================================
-   AI ENGINE
-====================================== */
-
-async function tryAIResponse(context) {
-  try {
-    if (!process.env.OPENAI_API_KEY) return null;
-
-    const client = await getOpenAI();
-    if (!client) return null;
-
-    const completion = await client.chat.completions.create({
-      model: "gpt-4.1-mini",
-      messages: [
-        { role: "system", content: "Eres experta en ventas." },
-        { role: "user", content: buildPrompt(context, EVA_CONFIG) }
-      ],
-      temperature: 0.7,
-      max_tokens: 150
-    });
-
-    return completion.choices?.[0]?.message?.content?.trim() || null;
-
-  } catch (err) {
-    console.error("❌ AI ERROR:", err.message);
-    return null;
-  }
-}
-
-/* ======================================
-   FALLBACK
+   RESPUESTAS
 ====================================== */
 
 function buildSalesReply(intent, context) {
@@ -308,18 +148,15 @@ export async function handleInboundMessage(payload) {
 
   const context = buildContext(payload);
 
-  // 🧠 MEMORY
-  const memory = getMemory(context.phone);
-
   const intent = detectIntent(context.message);
 
+  // 🧠 MEMORY
   if (intent === "PAYMENT" || intent === "PAYMENT_INFO") {
     setMemory(context.phone, { stage: intent });
   }
 
   const currentMemory = getMemory(context.phone);
 
-  // 🔥 PRIORIDAD: MEMORY
   if (currentMemory.stage === "PAYMENT") {
     return {
       reply: `Perfecto 👍
@@ -343,13 +180,7 @@ Me enviás el comprobante cuando esté listo 😊`,
     };
   }
 
-  // 🔥 AI
-  let reply = await tryAIResponse(context);
-
-  // 🛟 FALLBACK
-  if (!reply) {
-    reply = buildSalesReply(intent, context);
-  }
+  const reply = buildSalesReply(intent, context);
 
   return {
     reply,
