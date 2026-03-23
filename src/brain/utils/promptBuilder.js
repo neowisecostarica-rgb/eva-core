@@ -1,144 +1,113 @@
-/**
- * Construye el prompt dinámico para EVA (AI-first)
- * Basado en:
- * - negocio
- * - tono
- * - reglas
- * - contexto conversacional
- * - catálogo
- */
+// src/brain/utils/promptBuilder.js
 
-function formatCatalog(catalog = []) {
-  if (!Array.isArray(catalog) || catalog.length === 0) {
-    return "No hay productos disponibles.";
+export function buildPrompt({ context, catalogResults = [], config = {} }) {
+  try {
+    const {
+      text,
+      phone,
+      organization_id,
+    } = context;
+
+    /*
+    ========================================
+    1. CONFIG DEL NEGOCIO (MULTI-TENANT)
+    ========================================
+    */
+
+    const {
+      business_name = "este negocio",
+      tone = "profesional cercano",
+      objective = "ayudar y guiar al cliente hacia una compra",
+      language = "es",
+      assistant_name = "Asistente",
+    } = config;
+
+    /*
+    ========================================
+    2. CATÁLOGO
+    ========================================
+    */
+
+    let catalogText = "No hay productos relevantes";
+
+    if (catalogResults.length > 0) {
+      catalogText = catalogResults
+        .slice(0, 3)
+        .map((p, i) => `${i + 1}. ${p.name} — ₡${p.price}`)
+        .join("\n");
+    }
+
+    /*
+    ========================================
+    3. INSTRUCCIONES BASE EVA
+    ========================================
+    */
+
+    const instructions = `
+Sos ${assistant_name}, asistente comercial de ${business_name}.
+
+Tu objetivo es: ${objective}.
+
+Tono:
+- ${tone}
+- claro y humano
+- enfocado en ayudar
+- orientado a cerrar ventas
+
+Reglas:
+- No decir "no sé"
+- No inventar productos
+- Guiar la conversación
+- Mantener mensajes claros y útiles
+- No usar lenguaje técnico complejo
+`;
+
+    /*
+    ========================================
+    4. CONTEXTO DEL CLIENTE
+    ========================================
+    */
+
+    const userContext = `
+Cliente escribió:
+"${text}"
+
+Canal: WhatsApp
+Cliente ID: ${phone}
+`;
+
+    /*
+    ========================================
+    5. CONTEXTO DE PRODUCTOS
+    ========================================
+    */
+
+    const productContext = `
+Productos disponibles:
+${catalogText}
+`;
+
+    /*
+    ========================================
+    6. PROMPT FINAL
+    ========================================
+    */
+
+    const prompt = `
+${instructions}
+
+${userContext}
+
+${productContext}
+
+Responde en español.
+Respuesta:
+`;
+
+    return prompt.trim();
+
+  } catch (err) {
+    console.error("❌ PROMPT BUILDER ERROR:", err);
+    return null;
   }
-
-  return catalog
-    .slice(0, 10) // limitar para no explotar tokens
-    .map((p, i) => {
-      return `${i + 1}. ${p.name || "Producto"}
-- Precio: ${p.price || "No especificado"}
-- Descripción: ${p.description || "Sin descripción"}
-- Categoría: ${p.category || "General"}`;
-    })
-    .join("\n\n");
-}
-
-function formatMessages(messages = []) {
-  if (!Array.isArray(messages) || messages.length === 0) {
-    return "Sin historial previo.";
-  }
-
-  return messages
-    .slice(-6) // últimos mensajes
-    .map((m) => {
-      return `${m.role === "assistant" ? "EVA" : "CLIENTE"}: ${m.content}`;
-    })
-    .join("\n");
-}
-
-function formatRules(rules = []) {
-  if (!Array.isArray(rules) || rules.length === 0) {
-    return `
-- No inventar precios
-- No prometer stock si no es seguro
-- No ofrecer descuentos no autorizados
-- Siempre cerrar con siguiente paso
-`;
-  }
-
-  return rules.map((r) => `- ${r}`).join("\n");
-}
-
-export function buildEvaPrompt({
-  organization = {},
-  conversation = {},
-  lead = {},
-  messages = [],
-  catalog = [],
-  business_rules = [],
-  tone = null,
-  objectives = []
-} = {}) {
-  const businessName = organization?.name || "el negocio";
-  const businessType = organization?.type || "negocio";
-
-  const toneText =
-    tone ||
-    "Cercano, profesional, claro, humano. No robótico. No técnico. Máximo 1 emoji.";
-
-  const objectivesText =
-    objectives?.length > 0
-      ? objectives.map((o) => `- ${o}`).join("\n")
-      : `
-- Entender qué necesita el cliente
-- Recomendar la mejor opción
-- Generar confianza
-- Llevar a una acción (visita, compra o contacto)
-`;
-
-  const system = `
-Eres EVA, una asistente comercial experta en ventas por WhatsApp.
-
-Trabajas para ${businessName}, un ${businessType}.
-
-Tu objetivo es ayudar al cliente, entender su necesidad y guiarlo hacia una decisión de compra.
-
-ESTILO:
-${toneText}
-
-REGLAS IMPORTANTES:
-${formatRules(business_rules)}
-
-OBJETIVOS:
-${objectivesText}
-
-CATÁLOGO:
-${formatCatalog(catalog)}
-
-INSTRUCCIONES CRÍTICAS:
-- Responde de forma natural y humana
-- No inventes información
-- No respondas como bot
-- No des explicaciones técnicas complejas
-- Siempre intenta avanzar la conversación
-- Mantén mensajes claros y no muy largos
-
-FORMATO DE RESPUESTA (OBLIGATORIO JSON):
-{
-  "reply": "mensaje listo para enviar por WhatsApp",
-  "intent": "BUY_INTENT | INFO | SUPPORT | GREETING | UNKNOWN",
-  "confidence": 0.0,
-  "stage": "UNQUALIFIED | QUALIFYING | RECOMMENDING | CLOSING",
-  "entities": {
-    "budget": null,
-    "use_case": null
-  },
-  "suggested_actions": [],
-  "escalate_to_human": false,
-  "reason": ""
-}
-`;
-
-  const user = `
-CONTEXTO DE LA CONVERSACIÓN:
-
-Cliente: ${lead?.name || "Cliente"}
-Teléfono: ${lead?.phone || "No disponible"}
-
-Estado actual: ${conversation?.stage || "UNQUALIFIED"}
-
-HISTORIAL:
-${formatMessages(messages)}
-
-MENSAJE ACTUAL DEL CLIENTE:
-"${messages?.[messages.length - 1]?.content || ""}"
-
-Genera la mejor respuesta posible siguiendo las reglas.
-`;
-
-  return {
-    system: system.trim(),
-    user: user.trim()
-  };
 }
