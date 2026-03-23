@@ -1,33 +1,64 @@
 /*
 ====================================================
-EVA SALES BRAIN — STABLE (NO AI)
+EVA SALES BRAIN — AI FIRST (STABLE + SAFE)
 ====================================================
 */
 
 /* ======================================
-   EVA CONFIG
+   OPENAI SAFE LOAD
+====================================== */
+
+let openai = null;
+
+async function getOpenAI() {
+  try {
+    if (openai) return openai;
+
+    const OpenAI = (await import("openai")).default;
+
+    openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY
+    });
+
+    return openai;
+  } catch (err) {
+    console.error("❌ OpenAI init error:", err.message);
+    return null;
+  }
+}
+
+/* ======================================
+   EVA CONFIG (BASE — luego será dinámico)
 ====================================== */
 
 const EVA_CONFIG = {
   business_name: "Compu Store Costa Rica",
   assistant_name: "Eva",
   tone: "profesional cercano",
-  primary_goal: "cerrar ventas"
+  primary_goal: "cerrar ventas",
+  rules: [
+    "no explicar cómo reparar equipos",
+    "siempre guiar a una acción",
+    "respuestas cortas",
+    "máximo 1 emoji",
+    "tono humano y natural",
+    "no sonar como bot"
+  ]
 };
 
 /* ======================================
-   MEMORY STORE (RAM)
+   MEMORY (RAM)
 ====================================== */
 
-const conversationMemory = new Map();
+const memory = new Map();
 
 function getMemory(phone) {
-  return conversationMemory.get(phone) || {};
+  return memory.get(phone) || {};
 }
 
 function setMemory(phone, data) {
-  const current = conversationMemory.get(phone) || {};
-  conversationMemory.set(phone, { ...current, ...data });
+  const current = memory.get(phone) || {};
+  memory.set(phone, { ...current, ...data });
 }
 
 /* ======================================
@@ -45,98 +76,96 @@ function normalize(text = "") {
 function buildContext(payload) {
   return {
     phone: payload.phone,
-    organization_id: payload.organization_id || null,
-    channel: payload.channel || "whatsapp",
     message: payload.text || "",
-    message_id: payload.message_id || null
+    channel: payload.channel || "whatsapp"
   };
 }
 
 /* ======================================
-   INTENT DETECTION
+   INTENT (SOLO APOYO, NO NÚCLEO)
 ====================================== */
 
 function detectIntent(text = "") {
   const t = normalize(text);
 
-  if (!t) return "UNKNOWN";
-
-  if (t.includes("hola") || t.includes("buenas")) return "GREETING";
-
-  if (t.includes("problema") || t.includes("no funciona"))
-    return "SUPPORT";
-
-  if (
-    t.includes("precio") ||
-    t.includes("cuanto") ||
-    t.includes("computadora") ||
-    t.includes("laptop")
-  )
-    return "BUY";
-
-  if (
-    t.includes("pago") ||
-    t.includes("sinpe") ||
-    t.includes("deposito") ||
-    t.includes("transferencia")
-  )
-    return "PAYMENT";
-
-  if (
-    t.includes("datos") ||
-    t.includes("cuenta") ||
-    t.includes("numero")
-  )
-    return "PAYMENT_INFO";
+  if (t.includes("hola")) return "GREETING";
+  if (t.includes("precio") || t.includes("laptop")) return "BUY";
+  if (t.includes("problema")) return "SUPPORT";
 
   return "UNKNOWN";
 }
 
 /* ======================================
-   RESPUESTAS
+   PROMPT ENGINE (🔥 CLAVE DEL SISTEMA)
 ====================================== */
 
-function buildSalesReply(intent, context) {
-  const t = normalize(context.message);
+function buildPrompt(context, config) {
+  return `
+Eres ${config.assistant_name}, asesora comercial experta de ${config.business_name}.
 
-  if (intent === "PAYMENT") {
-    return `Perfecto 👍
+Tu objetivo es: ${config.primary_goal}
 
-Podés realizar el pago por SINPE Móvil al 7038-2476.
+Tono: ${config.tone}
 
-A nombre de Compu Store Costa Rica.
+Reglas:
+${config.rules.map(r => `- ${r}`).join("\n")}
 
-Cuando lo hagás me pasás el comprobante 😊`;
+IMPORTANTE:
+- No des respuestas largas
+- Sé natural y humana
+- Habla como si estuvieras en WhatsApp
+- Siempre guía la conversación hacia una acción (compra, visita, consulta)
+
+Cliente dice:
+"${context.message}"
+
+Responde como ${config.assistant_name}.
+`;
+}
+
+/* ======================================
+   AI ENGINE (CORE)
+====================================== */
+
+async function generateAIResponse(context) {
+  try {
+    if (!process.env.OPENAI_API_KEY) return null;
+
+    const client = await getOpenAI();
+    if (!client) return null;
+
+    const prompt = buildPrompt(context, EVA_CONFIG);
+
+    const completion = await client.chat.completions.create({
+      model: "gpt-4.1-mini",
+      messages: [
+        {
+          role: "system",
+          content: "Eres una asesora de ventas experta en cerrar clientes."
+        },
+        {
+          role: "user",
+          content: prompt
+        }
+      ],
+      temperature: 0.7,
+      max_tokens: 120
+    });
+
+    return completion.choices?.[0]?.message?.content?.trim() || null;
+
+  } catch (err) {
+    console.error("❌ AI ERROR:", err.message);
+    return null;
   }
+}
 
-  if (intent === "PAYMENT_INFO") {
-    return `Claro 👍
+/* ======================================
+   FALLBACK (SOLO SI TODO FALLA)
+====================================== */
 
-SINPE: 7038-2476  
-A nombre de Compu Store Costa Rica  
-
-Indicá el producto en la descripción.
-
-Luego me enviás el comprobante 😊`;
-  }
-
-  if (intent === "GREETING") {
-    return "Hola 😊 ¿Buscás laptop o algún servicio?";
-  }
-
-  if (intent === "BUY") {
-    return "Claro 😊 ¿Para qué uso la necesitás?";
-  }
-
-  if (intent === "SUPPORT") {
-    return "Claro 👍 contame qué problema presenta el equipo.";
-  }
-
-  if (t.includes("laptop")) {
-    return "Perfecto 👍 ¿para estudio o trabajo?";
-  }
-
-  return "Claro 😊 contame qué estás buscando 👍";
+function fallbackReply(context) {
+  return "Hola 😊 contame qué estás buscando y con gusto te ayudo 🙌";
 }
 
 /* ======================================
@@ -148,39 +177,20 @@ export async function handleInboundMessage(payload) {
 
   const context = buildContext(payload);
 
+  // 🧠 memoria mínima
   const intent = detectIntent(context.message);
 
-  // 🧠 MEMORY
-  if (intent === "PAYMENT" || intent === "PAYMENT_INFO") {
-    setMemory(context.phone, { stage: intent });
+  if (intent === "BUY") {
+    setMemory(context.phone, { interest: "laptop" });
   }
 
-  const currentMemory = getMemory(context.phone);
+  // 🔥 AI PRINCIPAL
+  let reply = await generateAIResponse(context);
 
-  if (currentMemory.stage === "PAYMENT") {
-    return {
-      reply: `Perfecto 👍
-
-Podés pagar por SINPE al 7038-2476.
-
-Cuando lo hagás me pasás el comprobante 😊`,
-      media: []
-    };
+  // 🛟 fallback de seguridad
+  if (!reply) {
+    reply = fallbackReply(context);
   }
-
-  if (currentMemory.stage === "PAYMENT_INFO") {
-    return {
-      reply: `Claro 👍
-
-SINPE: 7038-2476  
-A nombre de Compu Store Costa Rica  
-
-Me enviás el comprobante cuando esté listo 😊`,
-      media: []
-    };
-  }
-
-  const reply = buildSalesReply(intent, context);
 
   return {
     reply,
