@@ -1,3 +1,6 @@
+console.log("🔍 Query:", query);
+console.log("📦 Catalog Results:", result.rows);
+
 // src/brain/utils/catalogEngine.js
 
 import { pool } from "../../db.js";
