@@ -6,6 +6,7 @@ import { buildReply } from "./brain/replies/replyEngine.js";
 import { runAI } from "./brain/engines/aiEngine.js";
 import { applyAIGuards } from "./brain/utils/aiGuards.js";
 import { buildPrompt } from "./brain/utils/promptBuilder.js";
+import { getPromptConfig } from "./brain/utils/getPromptConfig.js"; // ✅ FIX AQUÍ
 
 export async function handleInbound(payload) {
   try {
@@ -73,15 +74,10 @@ export async function handleInbound(payload) {
     /*
     ========================================
     4. CONFIG (TEMPORAL)
-    👉 luego vendrá de DB (prompt_config)
     ========================================
     */
 
-    import { getPromptConfig } from "./brain/utils/getPromptConfig.js";
-
-// ...
-
-const config = await getPromptConfig(organization_id);
+    const config = await getPromptConfig(organization_id);
 
     /*
     ========================================
