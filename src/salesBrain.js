@@ -51,23 +51,7 @@ export async function handleInboundMessage(payload) {
 
     /*
     =====================================
-    🧠 AQUÍ VA TU LÓGICA REAL
-    =====================================
-    */
-
-    // ❗ IMPORTANTE:
-    // Aquí debe ir TU lógica actual (NO este placeholder)
-
-    let reply;
-
-    // 👇 EJEMPLO: si tienes lógica previa, debe ir aquí
-    // reply = resultado de tu engine real
-
-    reply = "⚠️ ERROR: lógica no conectada";
-
-    /*
-    =====================================
-    💾 GUARDAR MENSAJE
+    💾 GUARDAR MENSAJE (USER)
     =====================================
     */
 
@@ -87,6 +71,39 @@ export async function handleInboundMessage(payload) {
         message_id || null,
         "user",
         text
+      ]
+    );
+
+    /*
+    =====================================
+    🧠 RESPUESTA BASE (ESTABLE)
+    =====================================
+    */
+
+    let reply = "Hola 😊 con gusto te ayudo. ¿Qué estás buscando exactamente? 🙌";
+
+    /*
+    =====================================
+    💾 GUARDAR MENSAJE (ASSISTANT)
+    =====================================
+    */
+
+    await pool.query(
+      `
+      INSERT INTO messages (
+        organization_id,
+        external_message_id,
+        role,
+        content,
+        created_at
+      )
+      VALUES ($1, $2, $3, $4, NOW())
+      `,
+      [
+        organization_id,
+        null,
+        "assistant",
+        reply
       ]
     );
 
