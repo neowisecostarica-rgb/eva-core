@@ -54,7 +54,7 @@ export async function authenticate(req, res, next) {
     );
 
     if (rows.length === 0) {
-      console.error("❌ Invalid API Key:", apiKey);
+      console.error("❌ Invalid API Key");
       return res.status(403).json({
         error: "Invalid API Key"
       });
@@ -79,6 +79,7 @@ export async function authenticate(req, res, next) {
 
   } catch (error) {
     console.error("❌ AUTH ERROR:", error);
+
     return res.status(500).json({
       error: "Auth internal error"
     });
