@@ -17,8 +17,15 @@ router.post("/inbound", authenticate, async (req, res) => {
   try {
     console.log("📩 RAW REQUEST:", req.body);
 
-    // 🔒 organization_id viene de auth
-    const organization_id = req.organization_id;
+    // 🔒 organization_id viene de auth (SOURCE OF TRUTH)
+    if (!req.organization || !req.organization.id) {
+      console.error("❌ AUTH ERROR: organization missing in request");
+      return res.status(401).json({
+        error: "Unauthorized - organization not resolved",
+      });
+    }
+
+    const organization_id = req.organization.id;
 
     // Validación básica
     const { valid, errors } = validateInbound(req.body);
