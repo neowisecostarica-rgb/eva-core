@@ -18,7 +18,6 @@ router.post("/inbound", async (req, res) => {
     }
 
     const payload = validation.data;
-
     const result = await handleInboundMessage(payload);
 
     const response = {
@@ -37,10 +36,8 @@ router.post("/inbound", async (req, res) => {
     console.log("📦 RESPONSE:", response);
 
     return res.json(response);
-
   } catch (error) {
     console.error("❌ INBOUND ERROR:", error);
-
     return res.status(500).json({
       success: false,
       error: "internal_error"
