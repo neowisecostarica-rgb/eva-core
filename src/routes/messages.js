@@ -1,10 +1,17 @@
 import express from "express";
 import { validateInbound } from "../validators.js";
 import { handleInboundMessage } from "../salesBrain.js";
+import { authenticate } from "../lib/auth.js";
 
 const router = express.Router();
 
-router.post("/inbound", async (req, res) => {
+/*
+====================================================
+INBOUND (SECURE VERSION - P0.2 FIX)
+====================================================
+*/
+
+router.post("/inbound", authenticate, async (req, res) => {
   try {
     console.log("📩 RAW REQUEST:", req.body);
 
@@ -17,7 +24,12 @@ router.post("/inbound", async (req, res) => {
       });
     }
 
-    const payload = validation.data;
+    // ⚠️ CRÍTICO: NO confiar en organization_id del cliente
+    const payload = {
+      ...validation.data,
+      organization_id: req.organization.id // ← viene del API KEY
+    };
+
     const result = await handleInboundMessage(payload);
 
     const response = {
@@ -36,8 +48,10 @@ router.post("/inbound", async (req, res) => {
     console.log("📦 RESPONSE:", response);
 
     return res.json(response);
+
   } catch (error) {
     console.error("❌ INBOUND ERROR:", error);
+
     return res.status(500).json({
       success: false,
       error: "internal_error"
