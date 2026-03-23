@@ -39,6 +39,8 @@ router.post("/inbound", authenticate, async (req, res) => {
 
     const { phone, text, channel, message_id } = req.body;
 
+const organization_id = req.organization_id; // 👈 fuerza AUTH
+
     const payload = {
       organization_id,
       phone,
