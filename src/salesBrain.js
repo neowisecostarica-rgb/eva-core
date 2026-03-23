@@ -2,7 +2,7 @@ import pool from "./db.js";
 
 /*
 ====================================================
-HANDLE INBOUND MESSAGE (SMART MEMORY V1)
+HANDLE INBOUND MESSAGE (CORE)
 ====================================================
 */
 
@@ -16,13 +16,7 @@ export async function handleInboundMessage(payload) {
       message_id
     } = payload;
 
-    console.log("🧠 EVA inbound:", {
-      phone,
-      text,
-      message_id
-    });
-
-    const normalizedText = text?.toLowerCase() || "";
+    console.log("🧠 EVA inbound:", { phone, text, message_id });
 
     /*
     =====================================
@@ -37,12 +31,8 @@ export async function handleInboundMessage(payload) {
       );
 
       if (existing.rows.length > 0) {
-        console.log("⚠️ Duplicate message detected:", message_id);
-
-        return {
-          reply: null,
-          media: []
-        };
+        console.log("⚠️ Duplicate message:", message_id);
+        return { reply: null, media: [] };
       }
     }
 
@@ -54,87 +44,30 @@ export async function handleInboundMessage(payload) {
 
     await pool.query(
       `
-      INSERT INTO messages (organization_id, external_message_id, role, content, created_at)
-      VALUES ($1, $2, $3, $4, NOW())
+      INSERT INTO messages (
+        organization_id,
+        external_message_id,
+        role,
+        content,
+        created_at
+      )
+      VALUES ($1, $2, 'user', $3, NOW())
       `,
-      [organization_id, message_id || null, "user", text]
+      [organization_id, message_id || null, text]
     );
 
     /*
     =====================================
-    🧠 LEER CONTEXTO RECIENTE
+    🧠 SALES BRAIN PIPELINE
     =====================================
     */
 
-    const history = await pool.query(
-      `
-      SELECT role, content
-      FROM messages
-      WHERE organization_id = $1
-      ORDER BY created_at DESC
-      LIMIT 6
-      `,
-      [organization_id]
-    );
-
-    const lastMessages = history.rows.reverse();
-
-    const lastUserMessage = lastMessages
-      .filter(m => m.role === "user")
-      .slice(-2)[0]?.content?.toLowerCase() || "";
-
-    const previousUserMessage = lastMessages
-      .filter(m => m.role === "user")
-      .slice(-3)[0]?.content?.toLowerCase() || "";
-
-    /*
-    =====================================
-    🧠 INTENT + CONTEXTO
-    =====================================
-    */
-
-    let reply = "";
-
-    // SALUDO
-    if (normalizedText.includes("hola") || normalizedText.includes("buenos")) {
-      reply = "Hola 😊 con gusto te ayudo. ¿Qué estás buscando exactamente? 🙌";
-    }
-
-    // INTERÉS GENERAL
-    else if (normalizedText.includes("laptop") || normalizedText.includes("computadora")) {
-      reply = "Claro 😊 tenemos laptops disponibles. ¿La estás buscando para estudio, trabajo o algo más avanzado? 💻";
-    }
-
-    // CONTEXTO: YA DIJO USO
-    else if (
-      previousUserMessage.includes("laptop") &&
-      (normalizedText.includes("estudio") || normalizedText.includes("clases"))
-    ) {
-      reply = "Perfecto 😊 para estudio o clases virtuales te recomiendo equipos con 8GB o 16GB de RAM y SSD para mejor velocidad. ¿Te gustaría ver algunas opciones disponibles? 💻";
-    }
-
-    // CONTEXTO MÁS AVANZADO
-    else if (
-      previousUserMessage.includes("estudio") &&
-      normalizedText.includes("virtual")
-    ) {
-      reply = "Excelente 😊 para clases virtuales es importante que el equipo sea rápido y estable. Tenemos varias opciones ideales. ¿Te gustaría que te comparta algunas con precio y fotos? 💻";
-    }
-
-    // PRECIO
-    else if (normalizedText.includes("precio") || normalizedText.includes("cuánto")) {
-      reply = "Con gusto 😊 tenemos opciones desde ₡115.000 en adelante dependiendo del modelo. ¿Qué tipo de uso le vas a dar? 💻";
-    }
-
-    // BOT
-    else if (normalizedText.includes("bot")) {
-      reply = "Soy Eva 😊 asistente de ventas de Compu Store. Estoy aquí para ayudarte a encontrar la mejor opción según lo que necesites 🙌";
-    }
-
-    // FALLBACK INTELIGENTE
-    else {
-      reply = "Perfecto 😊 contame un poco más qué estás buscando y te ayudo a encontrar la mejor opción 🙌";
-    }
+    const intent = analyzeIntent(text);
+    const entities = extractEntities(text);
+    const stage = determineStage(intent, entities);
+    const lead_score = calculateLeadScore(intent, entities);
+    const action = decideAction({ intent, stage, entities, lead_score });
+    const reply = buildReply({ action, entities });
 
     /*
     =====================================
@@ -144,23 +77,99 @@ export async function handleInboundMessage(payload) {
 
     await pool.query(
       `
-      INSERT INTO messages (organization_id, external_message_id, role, content, created_at)
-      VALUES ($1, $2, $3, $4, NOW())
+      INSERT INTO messages (
+        organization_id,
+        role,
+        content,
+        created_at
+      )
+      VALUES ($1, 'assistant', $2, NOW())
       `,
-      [organization_id, null, "assistant", reply]
+      [organization_id, reply]
     );
 
     return {
       reply,
-      media: []
+      media: [],
+      intent,
+      stage,
+      lead_score,
+      entities,
+      should_followup: lead_score > 60
     };
 
   } catch (error) {
-    console.error("❌ ERROR EN salesBrain:", error);
+    console.error("❌ ERROR salesBrain:", error);
 
     return {
       reply: "Hubo un error procesando el mensaje",
       media: []
     };
+  }
+}
+
+/*
+====================================================
+🧠 FUNCIONES INTERNAS
+====================================================
+*/
+
+function analyzeIntent(text) {
+  const t = text.toLowerCase();
+
+  if (t.includes("hola")) return "GREETING";
+  if (t.includes("precio") || t.includes("tiene")) return "BUY";
+  if (t.includes("problema") || t.includes("reparar")) return "SUPPORT";
+
+  return "INFO";
+}
+
+function extractEntities(text) {
+  const t = text.toLowerCase();
+
+  return {
+    product: t.includes("laptop") ? "laptop" : null,
+    brand: t.includes("lenovo") ? "lenovo" : null,
+    use_case: t.includes("estudio") ? "estudio" : null,
+    budget: null
+  };
+}
+
+function determineStage(intent, entities) {
+  if (intent === "GREETING") return "NEW";
+  if (entities.use_case) return "QUALIFYING";
+  if (entities.product || entities.brand) return "OFFERING";
+  return "NEW";
+}
+
+function calculateLeadScore(intent, entities) {
+  let score = 0;
+
+  if (intent === "BUY") score += 40;
+  if (entities.product) score += 20;
+  if (entities.use_case) score += 20;
+  if (entities.brand) score += 10;
+
+  return score;
+}
+
+function decideAction({ stage }) {
+  if (stage === "NEW") return "ASK_QUESTION";
+  if (stage === "QUALIFYING") return "ASK_DETAILS";
+  if (stage === "OFFERING") return "SHOW_OPTIONS";
+
+  return "ASK_QUESTION";
+}
+
+function buildReply({ action }) {
+  switch (action) {
+    case "ASK_DETAILS":
+      return "Perfecto 😊 ¿la necesitás para estudio, trabajo o algo más específico?";
+
+    case "SHOW_OPTIONS":
+      return "Claro 🙌 tenemos varias opciones disponibles. ¿Querés que te recomiende según tu uso?";
+
+    default:
+      return "Hola 😊 con gusto te ayudo. ¿Qué estás buscando exactamente?";
   }
 }
