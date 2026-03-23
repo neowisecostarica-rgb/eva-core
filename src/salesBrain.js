@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA SALES BRAIN — V3 (AI ACTIVE + SAFE FALLBACK)
+EVA SALES BRAIN — V4 (AI + BUSINESS KNOWLEDGE FIXED)
 ====================================================
 */
 
@@ -23,9 +23,42 @@ const EVA_CONFIG = {
   ]
 };
 
+/* ======================================
+   BUSINESS KNOWLEDGE (TEMP — FUTURE DB)
+====================================== */
+
+const BUSINESS_KNOWLEDGE = {
+  services: {
+    printer_maintenance: {
+      keywords: ["impresora", "mantenimiento", "tinta", "epson", "hp"],
+      price_range: "₡20.000 – ₡30.000",
+      description: "mantenimiento completo con limpieza interna y revisión",
+      action: "agendar revisión o traer equipo"
+    }
+  },
+
+  products: {
+    laptops: {
+      keywords: ["laptop", "computadora", "portatil"],
+      examples: [
+        {
+          name: "Lenovo ThinkPad 11e",
+          price: "₡125.000",
+          use: "estudio",
+          highlights: ["resistente", "rápida", "ideal estudiantes"]
+        }
+      ]
+    }
+  }
+};
+
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
+
+/* ======================================
+   HELPERS
+====================================== */
 
 function normalize(text = "") {
   return String(text).toLowerCase().trim();
@@ -71,10 +104,67 @@ function detectIntent(text = "") {
 }
 
 /* ======================================
-   PROMPT BUILDER (CORE AI)
+   BUSINESS CONTEXT DETECTOR
+====================================== */
+
+function detectBusinessContext(message) {
+  const t = normalize(message);
+
+  // SERVICES
+  for (const key in BUSINESS_KNOWLEDGE.services) {
+    const service = BUSINESS_KNOWLEDGE.services[key];
+
+    if (service.keywords.some(k => t.includes(k))) {
+      return { type: "service", data: service };
+    }
+  }
+
+  // PRODUCTS
+  for (const key in BUSINESS_KNOWLEDGE.products) {
+    const product = BUSINESS_KNOWLEDGE.products[key];
+
+    if (product.keywords.some(k => t.includes(k))) {
+      return { type: "product", data: product };
+    }
+  }
+
+  return null;
+}
+
+/* ======================================
+   PROMPT BUILDER (AI CORE)
 ====================================== */
 
 function buildPrompt(context, config) {
+  const businessContext = detectBusinessContext(context.message);
+
+  let knowledgeSection = "";
+
+  if (businessContext?.type === "service") {
+    const s = businessContext.data;
+
+    knowledgeSection = `
+SERVICIO DETECTADO:
+- Precio estimado: ${s.price_range}
+- Detalle: ${s.description}
+- Acción: ${s.action}
+`;
+  }
+
+  if (businessContext?.type === "product") {
+    const p = businessContext.data;
+
+    knowledgeSection = `
+PRODUCTOS DISPONIBLES:
+${p.examples.map(e => `
+- ${e.name}
+  Precio: ${e.price}
+  Ideal para: ${e.use}
+  Beneficios: ${e.highlights.join(", ")}
+`).join("\n")}
+`;
+  }
+
   return `
 Eres ${config.assistant_name}, asesora comercial de ${config.business_name}.
 
@@ -87,11 +177,15 @@ ${config.tone}
 REGLAS:
 ${config.rules.map(r => `- ${r}`).join("\n")}
 
+${knowledgeSection}
+
 CONTEXTO CLIENTE:
 Mensaje: "${context.message}"
 
 INSTRUCCIÓN:
-Responde como una asesora real buscando avanzar la venta.
+Responde como una asesora real.
+Si hay precio, menciónalo naturalmente.
+Siempre guía a una acción.
 `;
 }
 
@@ -106,7 +200,7 @@ async function tryAIResponse(context) {
       return null;
     }
 
-   const prompt = buildPrompt(context, EVA_CONFIG);
+    const prompt = buildPrompt(context, EVA_CONFIG);
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4.1-mini",
@@ -173,10 +267,10 @@ export async function handleInboundMessage(payload) {
   const intent = detectIntent(context.message);
   console.log("🧠 INTENT:", intent);
 
-  // 🔥 1. TRY AI FIRST
+  // 🔥 AI FIRST
   let reply = await tryAIResponse(context);
 
-  // 🛟 2. FALLBACK
+  // 🛟 FALLBACK
   if (!reply) {
     console.log("⚠️ FALLBACK ACTIVATED");
     reply = buildSalesReply(intent, context);
