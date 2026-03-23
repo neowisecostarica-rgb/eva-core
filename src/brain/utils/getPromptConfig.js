@@ -1,6 +1,6 @@
 // src/brain/utils/getPromptConfig.js
 
-import { pool } from "../../db.js";
+import pool from "../../db.js";
 
 export async function getPromptConfig(organization_id) {
   try {
