@@ -6,7 +6,7 @@ const router = express.Router();
 
 router.post("/inbound", async (req, res) => {
   try {
-    console.log("📩 INBOUND REQUEST:", req.body);
+    console.log("📩 RAW REQUEST:", req.body);
 
     const validation = validateInbound(req.body);
 
@@ -17,7 +17,9 @@ router.post("/inbound", async (req, res) => {
       });
     }
 
-    const result = await handleInboundMessage(validation.data);
+    const payload = validation.data;
+
+    const result = await handleInboundMessage(payload);
 
     const response = {
       success: true,
@@ -26,17 +28,19 @@ router.post("/inbound", async (req, res) => {
         media: result.media || []
       },
       meta: {
-        organization_id: validation.data.organization_id,
-        channel: validation.data.channel,
-        message_id: validation.data.message_id
+        organization_id: payload.organization_id,
+        channel: payload.channel,
+        message_id: payload.message_id
       }
     };
 
-    console.log("📦 EVA RAW RESPONSE:", response);
+    console.log("📦 RESPONSE:", response);
 
     return res.json(response);
+
   } catch (error) {
     console.error("❌ INBOUND ERROR:", error);
+
     return res.status(500).json({
       success: false,
       error: "internal_error"
