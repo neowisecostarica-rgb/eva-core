@@ -9,7 +9,7 @@ function normalize(text = "") {
 }
 
 /* ======================================
-   CONTEXT BUILDER (NEW)
+   CONTEXT BUILDER
 ====================================== */
 
 function buildContext(payload) {
@@ -51,17 +51,30 @@ function detectIntent(text = "") {
 
   if (t.includes("trabajo") || t.includes("oficina")) return "USE_WORK";
 
-  if (t.includes("edicion") || t.includes("diseño")) return "USE_HEAVY";
+  if (
+    t.includes("edicion") ||
+    t.includes("edición") ||
+    t.includes("diseño") ||
+    t.includes("video")
+  ) return "USE_HEAVY";
 
   if (
     t.includes("precio") ||
     t.includes("cuanto") ||
-    t.includes("laptop")
+    t.includes("cuánto") ||
+    t.includes("informacion") ||
+    t.includes("información") ||
+    t.includes("tienen") ||
+    t.includes("busco") ||
+    t.includes("me interesa") ||
+    t.includes("laptop") ||
+    t.includes("computadora")
   ) return "BUY";
 
   if (
     t.includes("problema") ||
-    t.includes("no funciona")
+    t.includes("no funciona") ||
+    t.includes("error")
   ) return "SUPPORT";
 
   return "UNKNOWN";
@@ -92,6 +105,20 @@ function buildSalesReply(intent, context) {
     );
   }
 
+  if (intent === "USE_WORK") {
+    return (
+      "Perfecto 👍 para trabajo te puedo recomendar opciones un poco más potentes.\n\n" +
+      "¿Qué tipo de trabajo realizás? Así te recomiendo algo más preciso."
+    );
+  }
+
+  if (intent === "USE_HEAVY") {
+    return (
+      "Perfecto 👍 para edición o diseño ocupás algo más potente.\n\n" +
+      "¿Querés que te pase opciones disponibles?"
+    );
+  }
+
   if (intent === "PRODUCT_QUESTION") {
     return (
       "Claro 👍\n\n" +
@@ -105,7 +132,7 @@ function buildSalesReply(intent, context) {
     return "Claro 👍 contame qué problema presenta el equipo y te orientamos.";
   }
 
-  if (t.includes("laptop")) {
+  if (t.includes("laptop") || t.includes("computadora")) {
     return "Perfecto 👍 ¿Para qué uso la necesitás?";
   }
 
@@ -120,7 +147,6 @@ export async function handleInboundMessage(payload) {
   console.log("📩 INBOUND:", payload);
 
   const context = buildContext(payload);
-
   const intent = detectIntent(context.message);
 
   console.log("🧠 INTENT:", intent);
