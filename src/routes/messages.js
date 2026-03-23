@@ -1,80 +1,62 @@
+// src/routes/messages.js
+
 import express from "express";
-import { validateInbound } from "../validators.js";
-import { handleInboundMessage } from "../salesBrain.js";
 import { authenticate } from "../lib/auth.js";
+import { validateInbound } from "../validators.js";
+import { handleInbound } from "../salesBrain.js";
 
 const router = express.Router();
 
 /*
-====================================================
-INBOUND (SECURE VERSION - P0.2 FIX HARDENED)
-====================================================
+========================================
+POST /v1/messages/inbound
+========================================
 */
 
 router.post("/inbound", authenticate, async (req, res) => {
   try {
-    // 🔒 Guardrail crítico post-auth
-    if (!req.organization || !req.organization.id) {
-      console.error("❌ AUTH FAILED: organization missing");
-      return res.status(401).json({
-        success: false,
-        error: "unauthorized"
-      });
-    }
+    console.log("📩 RAW REQUEST:", req.body);
 
-    console.log("📩 Incoming:", {
-      phone: req.body?.phone,
-      text: req.body?.text,
-      channel: req.body?.channel
-    });
+    // 🔒 organization_id viene de auth
+    const organization_id = req.organization_id;
 
-    const validation = validateInbound(req.body);
+    // Validación básica
+    const { valid, errors } = validateInbound(req.body);
 
-    if (!validation.valid) {
+    if (!valid) {
       return res.status(400).json({
-        success: false,
-        error: validation.error
+        error: "Payload inválido",
+        details: errors,
       });
     }
 
-    // 🔒 Nunca confiar en organization_id del cliente
+    const { phone, text, channel, message_id } = req.body;
+
     const payload = {
-      phone: validation.data.phone,
-      text: validation.data.text,
-      channel: validation.data.channel,
-      message_id: validation.data.message_id || null,
-      organization_id: req.organization.id
+      organization_id,
+      phone,
+      text,
+      channel,
+      message_id: message_id || null,
     };
 
-    const result = await handleInboundMessage(payload);
+    console.log("🧠 EVA inbound:", payload);
 
-    const response = {
+    // 👉 Llamada al cerebro
+    const result = await handleInbound(payload);
+
+    console.log("📦 RESPONSE:", result);
+
+    return res.json({
       success: true,
-      reply: {
-        text: result.reply,
-        media: result.media || []
-      },
-      meta: {
-        organization_id: payload.organization_id,
-        channel: payload.channel,
-        message_id: payload.message_id
-      }
-    };
-
-    console.log("📦 RESPONSE:", {
-      ok: true,
-      org: payload.organization_id,
-      text_length: result.reply?.length || 0
+      ...result,
     });
 
-    return res.json(response);
-
-  } catch (error) {
-    console.error("❌ INBOUND ERROR:", error);
+  } catch (err) {
+    console.error("❌ ERROR /inbound:", err);
 
     return res.status(500).json({
-      success: false,
-      error: "internal_error"
+      error: "Error procesando mensaje",
     });
   }
 });
