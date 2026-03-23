@@ -1,7 +1,7 @@
 // src/salesBrain.js
 
 import { searchCatalogSmart } from "./brain/utils/catalogEngine.js";
-import { buildReply } from "./brain/replies/replyEngine.js";
+import { generateReply } from "./brain/replies/replyEngine.js";
 
 import { runAI } from "./brain/engines/aiEngine.js";
 import { applyAIGuards } from "./brain/utils/aiGuards.js";
