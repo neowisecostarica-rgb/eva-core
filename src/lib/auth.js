@@ -1,87 +1,52 @@
-/*
-====================================================
-EVA AUTH MIDDLEWARE (MULTI-TENANT SECURE)
-====================================================
-*/
-
-import pool from "../db.js";
-
-/*
-====================================================
-HELPER: GET API KEY FROM REQUEST
-====================================================
-*/
-
-function getApiKey(req) {
-  return (
-    req.headers["x-api-key"] ||
-    req.headers["authorization"]?.replace("Bearer ", "") ||
-    null
-  );
-}
-
-/*
-====================================================
-AUTH MIDDLEWARE
-====================================================
-*/
+// src/lib/auth.js
 
 export async function authenticate(req, res, next) {
   try {
-    const apiKey = getApiKey(req);
+    const apiKey = req.headers["x-api-key"];
 
     if (!apiKey) {
-      console.error("❌ Missing API Key");
       return res.status(401).json({
-        error: "Missing API Key"
+        error: "API key requerida",
       });
     }
 
-    /*
-    =====================================
-    VALIDATE API KEY IN DB
-    =====================================
-    */
+    // 👉 Aquí puedes luego conectar con DB si quieres validar por tabla organizations
+    // Por ahora usamos ENV (estable y simple)
 
-    const { rows } = await pool.query(
-      `
-      SELECT id, name
-      FROM organizations
-      WHERE api_key = $1
-      LIMIT 1
-      `,
-      [apiKey]
-    );
+    const VALID_API_KEY = process.env.EVA_API_KEY;
 
-    if (rows.length === 0) {
-      console.error("❌ Invalid API Key");
+    if (!VALID_API_KEY) {
+      console.error("❌ EVA_API_KEY no configurada en ENV");
+      return res.status(500).json({
+        error: "Server misconfigured",
+      });
+    }
+
+    if (apiKey !== VALID_API_KEY) {
       return res.status(403).json({
-        error: "Invalid API Key"
+        error: "API key inválida",
       });
     }
 
-    const org = rows[0];
+    // 🔒 IMPORTANTE: organization_id se define AQUÍ
+    // (fuente única de verdad por ahora)
 
-    /*
-    =====================================
-    ATTACH TO REQUEST
-    =====================================
-    */
+    req.organization_id = process.env.ORG_PRIMARY;
 
-    req.organization = {
-      id: org.id,
-      name: org.name
-    };
+    if (!req.organization_id) {
+      console.error("❌ ORG_PRIMARY no definido");
+      return res.status(500).json({
+        error: "Organization no configurada",
+      });
+    }
 
-    console.log("🔐 AUTH OK:", org.id);
+    console.log("🔐 AUTH OK:", req.organization_id);
 
     next();
-
-  } catch (error) {
-    console.error("❌ AUTH ERROR:", error);
-
+  } catch (err) {
+    console.error("❌ AUTH ERROR:", err);
     return res.status(500).json({
-      error: "Auth internal error"
+      error: "Error en autenticación",
     });
   }
 }
