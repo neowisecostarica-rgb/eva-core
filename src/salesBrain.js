@@ -51,19 +51,23 @@ export async function handleInboundMessage(payload) {
 
     /*
     =====================================
-    🧠 TU LÓGICA ACTUAL (NO TOCADA)
+    🧠 AQUÍ VA TU LÓGICA REAL
     =====================================
     */
 
-    // ⚠️ IMPORTANTE:
-    // Aquí deberías tener tu lógica real actual (intents, catalog, etc.)
-    // NO la estoy cambiando para no romper nada
+    // ❗ IMPORTANTE:
+    // Aquí debe ir TU lógica actual (NO este placeholder)
 
-    let reply = "Claro 😊 contame un poco más para ayudarte mejor 🙌";
+    let reply;
+
+    // 👇 EJEMPLO: si tienes lógica previa, debe ir aquí
+    // reply = resultado de tu engine real
+
+    reply = "⚠️ ERROR: lógica no conectada";
 
     /*
     =====================================
-    💾 GUARDAR MENSAJE (IMPORTANTE PARA IDEMPOTENCIA)
+    💾 GUARDAR MENSAJE
     =====================================
     */
 
