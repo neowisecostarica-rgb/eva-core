@@ -3,9 +3,9 @@
 import { searchCatalogSmart } from "./brain/utils/catalogEngine.js";
 import { buildReply } from "./brain/replies/replyEngine.js";
 
-// 🔥 (FUTURO / SIGUIENTE PASO)
-// import { runAI } from "./brain/engines/aiEngine.js";
-// import { applyAIGuards } from "./brain/utils/aiGuards.js";
+import { runAI } from "./brain/engines/aiEngine.js";
+import { applyAIGuards } from "./brain/utils/aiGuards.js";
+import { buildPrompt } from "./brain/utils/promptBuilder.js";
 
 export async function handleInbound(payload) {
   try {
@@ -17,11 +17,7 @@ export async function handleInbound(payload) {
       message_id,
     } = payload;
 
-    console.log("🧠 [Brain] Processing message:", {
-      phone,
-      text,
-      organization_id,
-    });
+    console.log("🧠 [Brain] Processing:", { phone, text });
 
     /*
     ========================================
@@ -40,7 +36,7 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    2. DETECCIÓN BÁSICA (NO AI)
+    2. DETECCIÓN BÁSICA (FALLBACK)
     ========================================
     */
 
@@ -52,7 +48,10 @@ export async function handleInbound(payload) {
       intent = "GREETING";
     } else if (lowerText.includes("precio") || lowerText.includes("cuesta")) {
       intent = "PRICE";
-    } else if (lowerText.includes("laptop") || lowerText.includes("computadora")) {
+    } else if (
+      lowerText.includes("laptop") ||
+      lowerText.includes("computadora")
+    ) {
       intent = "PRODUCT_SEARCH";
     }
 
@@ -73,43 +72,84 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    4. DECISIÓN COMERCIAL
+    4. CONFIG (TEMPORAL)
+    👉 luego vendrá de DB (prompt_config)
     ========================================
     */
 
-    let stage = "DISCOVERY";
+    const config = {
+      business_name: "tu negocio",
+      assistant_name: "Eva",
+      tone: "profesional cercano",
+      objective: "ayudar al cliente y guiarlo a una compra",
+    };
 
-    if (intent === "PRODUCT_SEARCH") {
-      stage = "QUALIFYING";
+    /*
+    ========================================
+    5. INTENTO AI
+    ========================================
+    */
+
+    let aiText = null;
+
+    try {
+      const prompt = buildPrompt({
+        context,
+        catalogResults,
+        config,
+      });
+
+      const aiResponse = await runAI({
+        context,
+        catalogResults,
+        prompt,
+      });
+
+      const guarded = applyAIGuards({
+        aiResponse,
+        context,
+      });
+
+      if (guarded?.text) {
+        aiText = guarded.text;
+      }
+
+    } catch (err) {
+      console.warn("⚠️ AI fallback activado:", err);
     }
 
     /*
     ========================================
-    5. RESPUESTA (NO AI TODAVÍA)
+    6. FALLBACK (SI AI FALLA)
     ========================================
     */
 
-    let replyText = "";
-
-    if (intent === "GREETING") {
-      replyText = "Hola 😊 con gusto te ayudo, ¿qué estás buscando exactamente?";
-    }
-
-    if (intent === "PRODUCT_SEARCH" && catalogResults.length > 0) {
-      replyText = `Claro 🙌 te puedo recomendar estas opciones:\n\n${catalogResults
-        .slice(0, 3)
-        .map((p, i) => `${i + 1}. ${p.name} — ₡${p.price}`)
-        .join("\n")}`;
-    }
+    let replyText = aiText;
 
     if (!replyText) {
-      replyText =
-        "Claro 😊 contame un poco más qué estás buscando y con gusto te ayudo a encontrar la mejor opción 🙌";
+      console.log("🧠 Using fallback logic");
+
+      if (intent === "GREETING") {
+        replyText =
+          "Hola 😊 con gusto te ayudo, ¿qué estás buscando exactamente?";
+      }
+
+      if (intent === "PRODUCT_SEARCH" && catalogResults.length > 0) {
+        replyText = `Claro 🙌 te puedo recomendar estas opciones:\n\n${catalogResults
+          .slice(0, 3)
+          .map((p, i) => `${i + 1}. ${p.name} — ₡${p.price}`)
+          .join("\n")}`;
+      }
+
+      if (!replyText) {
+        replyText =
+          "Claro 😊 contame un poco más qué estás buscando y con gusto te ayudo a encontrar la mejor opción 🙌";
+      }
     }
 
     /*
     ========================================
-    6. BUILD FINAL RESPONSE
+    7. BUILD RESPONSE
     ========================================
     */
 
@@ -120,21 +160,21 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    7. META (PARA FUTURO CRM / ANALYTICS)
+    8. META
     ========================================
     */
 
     const meta = {
       organization_id,
       intent,
-      stage,
       channel,
       phone,
+      usedAI: !!aiText,
     };
 
     /*
     ========================================
-    8. RETURN FINAL
+    9. RETURN
     ========================================
     */
 
@@ -142,12 +182,13 @@ export async function handleInbound(payload) {
       reply,
       meta,
     };
+
   } catch (err) {
-    console.error("❌ ERROR en salesBrain:", err);
+    console.error("❌ ERROR salesBrain:", err);
 
     return {
       reply: {
-        text: "Disculpá 🙏 tuvimos un problema procesando tu mensaje, intentá de nuevo en un momento.",
+        text: "Disculpá 🙏 tuvimos un problema, intentá de nuevo en un momento.",
         media: [],
       },
       meta: {
