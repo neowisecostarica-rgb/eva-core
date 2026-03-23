@@ -6,6 +6,23 @@ EVA SALES BRAIN — V3 (AI ACTIVE + SAFE FALLBACK)
 
 import OpenAI from "openai";
 
+/* ======================================
+   EVA CONFIG (TEMP — FUTURE DB)
+====================================== */
+
+const EVA_CONFIG = {
+  business_name: "Compu Store Costa Rica",
+  assistant_name: "Eva",
+  tone: "profesional cercano",
+  primary_goal: "cerrar ventas",
+  rules: [
+    "no explicar cómo reparar equipos",
+    "siempre guiar a una acción",
+    "respuestas cortas",
+    "máximo 1 emoji"
+  ]
+};
+
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
@@ -57,24 +74,18 @@ function detectIntent(text = "") {
    PROMPT BUILDER (CORE AI)
 ====================================== */
 
-function buildPrompt(context) {
+function buildPrompt(context, config) {
   return `
-Eres Eva, asesora comercial de Compu Store Costa Rica.
+Eres ${config.assistant_name}, asesora comercial de ${config.business_name}.
 
 OBJETIVO:
-Convertir conversaciones en ventas.
+${config.primary_goal}
 
 TONO:
-- Profesional pero cercana
-- Natural (no robot)
-- Máximo 1 emoji por mensaje
-- No usar lenguaje técnico complejo
+${config.tone}
 
 REGLAS:
-- No explicar cómo reparar equipos
-- Siempre guiar a una acción (comprar, ver fotos, visitar)
-- Respuestas cortas (máximo 4-5 líneas)
-- Sonar humana, no como bot
+${config.rules.map(r => `- ${r}`).join("\n")}
 
 CONTEXTO CLIENTE:
 Mensaje: "${context.message}"
