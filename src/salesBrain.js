@@ -148,10 +148,11 @@ export async function handleInbound(payload) {
     ========================================
     */
 
-    const reply = buildReply({
-      text: replyText,
-      media: [],
-    });
+    const reply = generateReply({
+  text: replyText,
+  intent,
+  products: catalogResults,
+});
 
     /*
     ========================================
