@@ -1,13 +1,13 @@
 /*
 ====================================================
-EVA SALES BRAIN — V4 (AI + BUSINESS KNOWLEDGE FIXED)
+EVA SALES BRAIN — V5 (AI + KNOWLEDGE + MEMORY FIX)
 ====================================================
 */
 
 import OpenAI from "openai";
 
 /* ======================================
-   EVA CONFIG (TEMP — FUTURE DB)
+   EVA CONFIG
 ====================================== */
 
 const EVA_CONFIG = {
@@ -24,7 +24,22 @@ const EVA_CONFIG = {
 };
 
 /* ======================================
-   BUSINESS KNOWLEDGE (TEMP — FUTURE DB)
+   MEMORY STORE (RAM)
+====================================== */
+
+const conversationMemory = new Map();
+
+function getMemory(phone) {
+  return conversationMemory.get(phone) || {};
+}
+
+function setMemory(phone, data) {
+  const current = conversationMemory.get(phone) || {};
+  conversationMemory.set(phone, { ...current, ...data });
+}
+
+/* ======================================
+   BUSINESS KNOWLEDGE
 ====================================== */
 
 const BUSINESS_KNOWLEDGE = {
@@ -79,7 +94,7 @@ function buildContext(payload) {
 }
 
 /* ======================================
-   INTENT DETECTION (GUARDRAIL)
+   INTENT DETECTION
 ====================================== */
 
 function detectIntent(text = "") {
@@ -100,7 +115,6 @@ function detectIntent(text = "") {
   )
     return "BUY";
 
-  // 🔥 NUEVO
   if (
     t.includes("pago") ||
     t.includes("sinpe") ||
@@ -111,7 +125,7 @@ function detectIntent(text = "") {
 
   if (
     t.includes("datos") ||
-    t.includes("cuentas") ||
+    t.includes("cuenta") ||
     t.includes("numero")
   )
     return "PAYMENT_INFO";
@@ -120,27 +134,23 @@ function detectIntent(text = "") {
 }
 
 /* ======================================
-   BUSINESS CONTEXT DETECTOR
+   BUSINESS CONTEXT
 ====================================== */
 
 function detectBusinessContext(message) {
   const t = normalize(message);
 
-  // SERVICES
   for (const key in BUSINESS_KNOWLEDGE.services) {
-    const service = BUSINESS_KNOWLEDGE.services[key];
-
-    if (service.keywords.some(k => t.includes(k))) {
-      return { type: "service", data: service };
+    const s = BUSINESS_KNOWLEDGE.services[key];
+    if (s.keywords.some(k => t.includes(k))) {
+      return { type: "service", data: s };
     }
   }
 
-  // PRODUCTS
   for (const key in BUSINESS_KNOWLEDGE.products) {
-    const product = BUSINESS_KNOWLEDGE.products[key];
-
-    if (product.keywords.some(k => t.includes(k))) {
-      return { type: "product", data: product };
+    const p = BUSINESS_KNOWLEDGE.products[key];
+    if (p.keywords.some(k => t.includes(k))) {
+      return { type: "product", data: p };
     }
   }
 
@@ -148,60 +158,51 @@ function detectBusinessContext(message) {
 }
 
 /* ======================================
-   PROMPT BUILDER (AI CORE)
+   PROMPT BUILDER
 ====================================== */
 
 function buildPrompt(context, config) {
   const businessContext = detectBusinessContext(context.message);
 
-  let knowledgeSection = "";
+  let knowledge = "";
 
   if (businessContext?.type === "service") {
     const s = businessContext.data;
 
-    knowledgeSection = `
-SERVICIO DETECTADO:
-- Precio estimado: ${s.price_range}
-- Detalle: ${s.description}
-- Acción: ${s.action}
+    knowledge = `
+SERVICIO:
+Precio: ${s.price_range}
+Detalle: ${s.description}
+Acción: ${s.action}
 `;
   }
 
   if (businessContext?.type === "product") {
     const p = businessContext.data;
 
-    knowledgeSection = `
-PRODUCTOS DISPONIBLES:
+    knowledge = `
+PRODUCTOS:
 ${p.examples.map(e => `
-- ${e.name}
-  Precio: ${e.price}
-  Ideal para: ${e.use}
-  Beneficios: ${e.highlights.join(", ")}
-`).join("\n")}
+- ${e.name} (${e.price})
+`).join("")}
 `;
   }
 
   return `
 Eres ${config.assistant_name}, asesora comercial de ${config.business_name}.
 
-OBJETIVO:
-${config.primary_goal}
-
-TONO:
-${config.tone}
+OBJETIVO: ${config.primary_goal}
+TONO: ${config.tone}
 
 REGLAS:
 ${config.rules.map(r => `- ${r}`).join("\n")}
 
-${knowledgeSection}
+${knowledge}
 
-CONTEXTO CLIENTE:
-Mensaje: "${context.message}"
+CLIENTE:
+"${context.message}"
 
-INSTRUCCIÓN:
-Responde como una asesora real.
-Si hay precio, menciónalo naturalmente.
-Siempre guía a una acción.
+Responde como humana y guía a cierre.
 `;
 }
 
@@ -211,88 +212,73 @@ Siempre guía a una acción.
 
 async function tryAIResponse(context) {
   try {
-    if (!process.env.OPENAI_API_KEY) {
-      console.log("⚠️ OPENAI_API_KEY missing → fallback");
-      return null;
-    }
-
-    const prompt = buildPrompt(context, EVA_CONFIG);
+    if (!process.env.OPENAI_API_KEY) return null;
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4.1-mini",
       messages: [
-        {
-          role: "system",
-          content: "Eres una asesora de ventas experta."
-        },
-        {
-          role: "user",
-          content: prompt
-        }
+        { role: "system", content: "Eres experta en ventas." },
+        { role: "user", content: buildPrompt(context, EVA_CONFIG) }
       ],
       temperature: 0.7,
       max_tokens: 150
     });
 
-    const text = completion.choices?.[0]?.message?.content;
-
-    if (!text) return null;
-
-    return text.trim();
-  } catch (error) {
-    console.error("❌ AI ERROR:", error.message);
+    return completion.choices?.[0]?.message?.content?.trim() || null;
+  } catch {
     return null;
   }
 }
 
 /* ======================================
-   FALLBACK ENGINE (SAFE)
+   FALLBACK
 ====================================== */
 
 function buildSalesReply(intent, context) {
   const t = normalize(context.message);
 
-  if (intent === "GREETING") {
-    return "Hola 😊 con gusto te ayudo.\n\n¿Buscás laptop para estudio, trabajo o algo más específico?";
-  }
-
-  if (intent === "BUY") {
-    return "Claro 😊\n\n¿La necesitás para estudio, trabajo o algo más exigente?";
-  }
-
-  if (intent === "SUPPORT") {
-    return "Claro 👍 contame qué problema presenta el equipo y te orientamos.";
-  }
-
-  if (t.includes("laptop") || t.includes("computadora")) {
-    return "Perfecto 👍 ¿Para qué uso la necesitás?";
-  }
-
-  return "Claro 😊 contame qué estás buscando y te ayudo 👍";
-}
-
-if (intent === "PAYMENT") {
-  return `Perfecto 👍
+  if (intent === "PAYMENT") {
+    return `Perfecto 👍
 
 Podés realizar el pago por SINPE Móvil al 7038-2476.
 
 A nombre de Compu Store Costa Rica.
 
-Cuando lo hagás, me pasás el comprobante y te confirmo de una 😊`;
-}
+Cuando lo hagás me pasás el comprobante 😊`;
+  }
 
-if (intent === "PAYMENT_INFO") {
-  return `Claro 👍
+  if (intent === "PAYMENT_INFO") {
+    return `Claro 👍
 
-SINPE Móvil: 7038-2476  
+SINPE: 7038-2476  
 A nombre de Compu Store Costa Rica  
 
-Solo indicá el producto en la descripción.
+Indicá el producto en la descripción.
 
-Cuando hagás el pago me enviás el comprobante y listo 😊`;
+Luego me enviás el comprobante 😊`;
+  }
+
+  if (intent === "GREETING") {
+    return "Hola 😊 ¿Buscás laptop o algún servicio?";
+  }
+
+  if (intent === "BUY") {
+    return "Claro 😊 ¿Para qué uso la necesitás?";
+  }
+
+  if (intent === "SUPPORT") {
+    return "Claro 👍 contame qué problema presenta el equipo.";
+  }
+
+  if (t.includes("laptop")) {
+    return "Perfecto 👍 ¿para estudio o trabajo?";
+  }
+
+  return "Claro 😊 contame qué estás buscando 👍";
 }
+
 /* ======================================
-   MAIN HANDLER
+   MAIN
 ====================================== */
 
 export async function handleInboundMessage(payload) {
@@ -300,24 +286,51 @@ export async function handleInboundMessage(payload) {
 
   const context = buildContext(payload);
 
-  const intent = detectIntent(context.message);
-  console.log("🧠 INTENT:", intent);
+  // 🧠 MEMORY
+  const memory = getMemory(context.phone);
 
-  // 🔥 AI FIRST
+  const intent = detectIntent(context.message);
+
+  if (intent === "PAYMENT" || intent === "PAYMENT_INFO") {
+    setMemory(context.phone, { stage: intent });
+  }
+
+  const currentMemory = getMemory(context.phone);
+
+  // 🔥 PRIORIDAD: MEMORY
+  if (currentMemory.stage === "PAYMENT") {
+    return {
+      reply: `Perfecto 👍
+
+Podés pagar por SINPE al 7038-2476.
+
+Cuando lo hagás me pasás el comprobante 😊`,
+      media: []
+    };
+  }
+
+  if (currentMemory.stage === "PAYMENT_INFO") {
+    return {
+      reply: `Claro 👍
+
+SINPE: 7038-2476  
+A nombre de Compu Store Costa Rica  
+
+Me enviás el comprobante cuando esté listo 😊`,
+      media: []
+    };
+  }
+
+  // 🔥 AI
   let reply = await tryAIResponse(context);
 
   // 🛟 FALLBACK
   if (!reply) {
-    console.log("⚠️ FALLBACK ACTIVATED");
     reply = buildSalesReply(intent, context);
   }
 
-  const result = {
+  return {
     reply,
     media: []
   };
-
-  console.log("🧠 FINAL RESPONSE:", result);
-
-  return result;
 }
