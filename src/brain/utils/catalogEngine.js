@@ -1,6 +1,3 @@
-console.log("🔍 Query:", query);
-console.log("📦 Catalog Results:", result.rows);
-
 // src/brain/utils/catalogEngine.js
 
 import { pool } from "../../db.js";
@@ -9,7 +6,24 @@ export async function searchCatalogSmart({ organization_id, query }) {
   try {
     if (!query) return [];
 
-    const q = `%${query.toLowerCase()}%`;
+    /*
+    ========================================
+    1. NORMALIZAR QUERY
+    ========================================
+    */
+
+    const words = query.toLowerCase().split(" ");
+    const keyword = words[words.length - 1]; // última palabra
+    const q = `%${keyword}%`;
+
+    console.log("🔍 Query original:", query);
+    console.log("🔍 Keyword usada:", keyword);
+
+    /*
+    ========================================
+    2. BUSQUEDA PRINCIPAL
+    ========================================
+    */
 
     const result = await pool.query(
       `
@@ -27,11 +41,18 @@ export async function searchCatalogSmart({ organization_id, query }) {
       [organization_id, q]
     );
 
+    console.log("📦 Catalog Results:", result.rows);
+
     if (result.rows.length > 0) {
       return result.rows;
     }
 
-    // 🔥 fallback inteligente (trae top productos)
+    /*
+    ========================================
+    3. FALLBACK (SI NO HAY MATCH)
+    ========================================
+    */
+
     const fallback = await pool.query(
       `
       SELECT id, name, description, price, category
@@ -43,6 +64,8 @@ export async function searchCatalogSmart({ organization_id, query }) {
       `,
       [organization_id]
     );
+
+    console.log("📦 Fallback Results:", fallback.rows);
 
     return fallback.rows;
 
