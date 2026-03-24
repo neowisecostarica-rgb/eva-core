@@ -8,6 +8,9 @@ import { applyAIGuards } from "./brain/utils/aiGuards.js";
 import { buildPrompt } from "./brain/utils/promptBuilder.js";
 import { getPromptConfig } from "./brain/utils/getPromptConfig.js";
 
+// 🔒 NUEVO: DB
+import { findOrCreateLead } from "./db.js";
+
 export async function handleInbound(payload) {
   try {
     const {
@@ -22,7 +25,26 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    1. CONTEXTO BASE
+    1. LEAD (SOURCE OF TRUTH CRM)
+    ========================================
+    */
+
+    let lead = null;
+
+    try {
+      lead = await findOrCreateLead({
+        organization_id,
+        phone,
+      });
+
+      console.log("👤 Lead:", lead?.id);
+    } catch (err) {
+      console.error("❌ Lead error:", err);
+    }
+
+    /*
+    ========================================
+    2. CONTEXTO BASE
     ========================================
     */
 
@@ -32,12 +54,13 @@ export async function handleInbound(payload) {
       text,
       channel,
       message_id,
+      lead_id: lead?.id || null,
       timestamp: new Date().toISOString(),
     };
 
     /*
     ========================================
-    2. CATÁLOGO (SIEMPRE DISPONIBLE PARA AI)
+    3. CATÁLOGO
     ========================================
     */
 
@@ -54,7 +77,7 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    3. CONFIG
+    4. CONFIG
     ========================================
     */
 
@@ -62,7 +85,7 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    4. AI (CORE)
+    5. AI
     ========================================
     */
 
@@ -96,7 +119,7 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    5. FALLBACK MÍNIMO (SOLO SEGURIDAD)
+    6. FALLBACK
     ========================================
     */
 
@@ -111,7 +134,7 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    6. RESPONSE
+    7. RESPONSE
     ========================================
     */
 
@@ -123,7 +146,7 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    7. META
+    8. META
     ========================================
     */
 
@@ -131,13 +154,14 @@ export async function handleInbound(payload) {
       organization_id,
       channel,
       phone,
+      lead_id: lead?.id || null,
       usedAI: !!aiText,
       fallback: !aiText,
     };
 
     /*
     ========================================
-    8. RETURN
+    9. RETURN
     ========================================
     */
 
