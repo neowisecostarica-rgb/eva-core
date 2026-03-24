@@ -10,9 +10,6 @@ export async function authenticate(req, res, next) {
       });
     }
 
-    // 👉 Aquí puedes luego conectar con DB si quieres validar por tabla organizations
-    // Por ahora usamos ENV (estable y simple)
-
     const VALID_API_KEY = process.env.EVA_API_KEY;
 
     if (!VALID_API_KEY) {
@@ -28,21 +25,21 @@ export async function authenticate(req, res, next) {
       });
     }
 
-    // 🔒 IMPORTANTE: organization_id se define AQUÍ
-    // (fuente única de verdad por ahora)
+    const orgId = process.env.ORG_PRIMARY;
 
-   req.organization = {
-  id: process.env.ORG_PRIMARY,
-};
-
-    if (!req.organization_id) {
+    if (!orgId) {
       console.error("❌ ORG_PRIMARY no definido");
       return res.status(500).json({
         error: "Organization no configurada",
       });
     }
 
-    console.log("🔐 AUTH OK:", req.organization_id);
+    // 🔒 SOURCE OF TRUTH (FORMATO CORRECTO)
+    req.organization = {
+      id: orgId,
+    };
+
+    console.log("🔐 AUTH OK:", orgId);
 
     next();
   } catch (err) {
