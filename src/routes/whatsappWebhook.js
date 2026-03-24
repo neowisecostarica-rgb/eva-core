@@ -6,7 +6,7 @@ WHATSAPP WEBHOOK — EVA CORE (FINAL STABLE VERSION)
 
 import express from "express";
 import fetch from "node-fetch";
-
+import { splitReply } from "../brain/utils/splitReply.js";
 const router = express.Router();
 
 /* ======================================
@@ -123,7 +123,7 @@ router.post("/", async (req, res) => {
       console.warn("⚠️ EVA sin respuesta");
       return res.sendStatus(200);
     }
-    import { splitReply } from "../brain/utils/splitReply.js";
+    
      
    /* ======================================
    SEND TO WHATSAPP (SPLIT FIX)
