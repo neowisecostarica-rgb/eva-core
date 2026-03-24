@@ -27,8 +27,26 @@ router.post("/inbound", authenticate, async (req, res) => {
 
     const organization_id = req.organization.id;
 
-    // Validación básica
-    const { valid, errors } = validateInbound(req.body);
+    /*
+    ========================================
+    🔒 SANITIZE INPUT (NO confiar en req.body)
+    ========================================
+    */
+
+    const safeInput = {
+      phone: req.body.phone,
+      text: req.body.text,
+      channel: req.body.channel,
+      message_id: req.body.message_id || null,
+    };
+
+    /*
+    ========================================
+    VALIDACIÓN SOLO DEL INPUT CONTROLADO
+    ========================================
+    */
+
+    const { valid, errors } = validateInbound(safeInput);
 
     if (!valid) {
       return res.status(400).json({
@@ -37,14 +55,15 @@ router.post("/inbound", authenticate, async (req, res) => {
       });
     }
 
-    const { phone, text, channel, message_id } = req.body;
+    /*
+    ========================================
+    PAYLOAD FINAL (SOURCE OF TRUTH)
+    ========================================
+    */
 
     const payload = {
       organization_id,
-      phone,
-      text,
-      channel,
-      message_id: message_id || null,
+      ...safeInput,
     };
 
     console.log("🧠 EVA inbound:", payload);
