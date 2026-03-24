@@ -23,6 +23,36 @@ export async function handleInbound(payload) {
     console.log("🧠 [Brain] Processing:", { phone, text });
 
     /*
+========================================
+0. IDEMPOTENCY CHECK (CRÍTICO)
+========================================
+*/
+
+if (message_id) {
+  try {
+    const existing = await db.query(
+      `SELECT id FROM messages WHERE message_id = $1 LIMIT 1`,
+      [message_id]
+    );
+
+    if (existing.rows.length > 0) {
+      console.log("⚠️ Duplicate message skipped:", message_id);
+
+      return {
+        reply: {
+          text: null
+        },
+        meta: {
+          duplicate: true
+        }
+      };
+    }
+  } catch (err) {
+    console.warn("⚠️ Idempotency check error:", err);
+  }
+}
+    
+    /*
     ========================================
     1. LEAD (SOURCE OF TRUTH CRM)
     ========================================
