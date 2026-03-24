@@ -123,30 +123,38 @@ router.post("/", async (req, res) => {
       console.warn("⚠️ EVA sin respuesta");
       return res.sendStatus(200);
     }
+    import { splitReply } from "../brain/utils/splitReply.js";
+     
+   /* ======================================
+   SEND TO WHATSAPP (SPLIT FIX)
+====================================== */
 
-    /* ======================================
-       SEND TO WHATSAPP
-    ====================================== */
+const messages = splitReply(replyText);
 
-    const waResponse = await fetch(
-      `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${WHATSAPP_TOKEN}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          messaging_product: "whatsapp",
-          to: phone,
-          text: { body: replyText }
-        })
-      }
-    );
+for (const msg of messages) {
+  const waResponse = await fetch(
+    `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${WHATSAPP_TOKEN}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        to: phone,
+        text: { body: msg }
+      })
+    }
+  );
 
-    const waData = await waResponse.json();
+  const waData = await waResponse.json();
 
-    console.log("✅ WhatsApp OK:", waData);
+  console.log("✅ WhatsApp OK:", waData);
+
+  // delay humano
+  await new Promise((res) => setTimeout(res, 1200));
+}
 
     return res.sendStatus(200);
 
