@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA REPLY ENGINE (HARDENED SAFE VERSION)
+EVA REPLY ENGINE (AI-FIRST VERSION)
 ====================================================
 */
 
@@ -11,21 +11,6 @@ import { extractProductImages } from "../engines/mediaEngine.js";
 HELPERS
 ====================================================
 */
-
-function formatPrice(value) {
-  if (!value) return "Consultar precio";
-
-  const numberValue = Number(value);
-  if (Number.isNaN(numberValue)) return "Consultar precio";
-
-  return `₡${numberValue.toLocaleString()}`;
-}
-
-function getMainCatalogItem(products = []) {
-  return Array.isArray(products) && products.length > 0
-    ? products[0]
-    : null;
-}
 
 function safeExtractMedia(product) {
   try {
@@ -43,107 +28,10 @@ function safeExtractMedia(product) {
   }
 }
 
-function buildResponse(text, product = null) {
-  return {
-    text,
-    media: safeExtractMedia(product)
-  };
-}
-
-/*
-====================================================
-SMART FALLBACK
-====================================================
-*/
-
-function smartFallbackReply() {
-  return buildResponse("Claro 😊 contame un poco más qué estás buscando y te ayudo 🙌");
-}
-
-/*
-====================================================
-PRODUCT REPLY (VENTAS)
-====================================================
-*/
-
-function productReply({ products = [], intent = "UNKNOWN", text = "" }) {
-
-  const item = getMainCatalogItem(products);
-
-  if (!item) {
-    return smartFallbackReply();
-  }
-
-  const name = item.name || "Equipo disponible";
-  const price = formatPrice(item.price_crc);
-
-  /*
-  ============================================
-  HIGH INTENT (COMPRA)
-  ============================================
-  */
-
-  if (intent === "BUY") {
-    return buildResponse(`Esta opción es de las más buscadas 👇
-
-💻 ${name}
-💰 ${price}
-
-✅ Línea corporativa
-✅ SSD rápido
-✅ 1 año de garantía
-
-Nos quedan pocas unidades.
-
-Puedes apartarla con ₡20.000 🙌
-
-¿Te la reservo?`, item);
-  }
-
-  /*
-  ============================================
-  PRICE INTENT
-  ============================================
-  */
-
-  if (intent === "PRICE") {
-    return buildResponse(`Claro 🙌 te comparto una opción 👇
-
-💻 ${name}
-💰 ${price}
-
-Es una excelente opción para trabajo y estudio.
-
-Si quieres te envío fotos reales o te ayudo a reservar una.`, item);
-  }
-
-  /*
-  ============================================
-  PRODUCT SEARCH
-  ============================================
-  */
-
-  if (intent === "PRODUCT_SEARCH") {
-    return buildResponse(`Tenemos esta opción disponible 👇
-
-💻 ${name}
-💰 ${price}
-
-¿La estarías usando para estudio o trabajo?`, item);
-  }
-
-  /*
-  ============================================
-  DEFAULT
-  ============================================
-  */
-
-  return buildResponse(`Te recomiendo esta opción 👇
-
-💻 ${name}
-💰 ${price}
-
-¿La necesitas para estudio o trabajo?`, item);
+function getMainCatalogItem(products = []) {
+  return Array.isArray(products) && products.length > 0
+    ? products[0]
+    : null;
 }
 
 /*
@@ -154,7 +42,7 @@ MAIN EXPORT
 
 export function generateReply({
   text = "",
-  intent = "UNKNOWN",
+  intent = "AI",
   products = []
 }) {
 
@@ -165,16 +53,28 @@ export function generateReply({
   });
 
   /*
-  PRIORIDAD: PRODUCTOS
+  ============================================
+  1. SI HAY TEXTO (AI) → USARLO
+  ============================================
   */
 
-  if (products && products.length > 0) {
-    return productReply({ products, intent, text });
+  if (text && text.trim().length > 0) {
+    const mainProduct = getMainCatalogItem(products);
+
+    return {
+      text,
+      media: safeExtractMedia(mainProduct)
+    };
   }
 
   /*
-  FALLBACK
+  ============================================
+  2. FALLBACK MÍNIMO (SOLO SEGURIDAD)
+  ============================================
   */
 
-  return smartFallbackReply();
+  return {
+    text: "Hola 😊 contame un poco más qué estás buscando y te ayudo.",
+    media: []
+  };
 }
