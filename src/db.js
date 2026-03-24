@@ -108,4 +108,100 @@ export async function findOrCreateLead({ organization_id, phone }) {
   }
 }
 
+/*
+========================================
+CONVERSATIONS + MESSAGES
+========================================
+*/
+
+export async function findOrCreateConversation({
+  organization_id,
+  phone,
+  channel,
+  lead_id
+}) {
+  try {
+    const existing = await pool.query(
+      `
+      SELECT *
+      FROM conversations
+      WHERE organization_id = $1
+        AND phone = $2
+        AND channel = $3
+      LIMIT 1
+      `,
+      [organization_id, phone, channel]
+    );
+
+    if (existing.rows.length > 0) {
+      return existing.rows[0];
+    }
+
+    const created = await pool.query(
+      `
+      INSERT INTO conversations (
+        organization_id,
+        lead_id,
+        phone,
+        channel,
+        created_at,
+        updated_at,
+        last_message_at
+      )
+      VALUES ($1, $2, $3, $4, NOW(), NOW(), NOW())
+      RETURNING *
+      `,
+      [organization_id, lead_id, phone, channel]
+    );
+
+    return created.rows[0];
+
+  } catch (err) {
+    console.error("❌ findOrCreateConversation error:", err);
+    return null;
+  }
+}
+
+
+export async function saveMessage({
+  organization_id,
+  conversation_id,
+  lead_id,
+  role,
+  text,
+  message_id = null
+}) {
+  try {
+    await pool.query(
+      `
+      INSERT INTO messages (
+        organization_id,
+        conversation_id,
+        lead_id,
+        role,
+        text,
+        message_id,
+        created_at
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, NOW())
+      `,
+      [organization_id, conversation_id, lead_id, role, text, message_id]
+    );
+
+    // actualizar conversación
+    await pool.query(
+      `
+      UPDATE conversations
+      SET last_message_at = NOW(),
+          updated_at = NOW()
+      WHERE id = $1
+      `,
+      [conversation_id]
+    );
+
+  } catch (err) {
+    console.error("❌ saveMessage error:", err);
+  }
+}
+
 export default pool;
