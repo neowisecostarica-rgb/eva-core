@@ -3,7 +3,6 @@
 import { findOrCreateLead, findOrCreateConversation, saveMessage } from "./db.js";
 import db from "./db.js";
 import { searchCatalogSmart } from "./brain/utils/catalogEngine.js";
-import { generateReply } from "./brain/replies/replyEngine.js";
 
 import { runAI } from "./brain/engines/aiEngine.js";
 import { applyAIGuards } from "./brain/utils/aiGuards.js";
@@ -24,7 +23,7 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    0. IDEMPOTENCY CHECK
+    0. IDEMPOTENCY
     ========================================
     */
 
@@ -44,7 +43,7 @@ export async function handleInbound(payload) {
           };
         }
       } catch (err) {
-        console.warn("⚠️ Idempotency check error:", err);
+        console.warn("⚠️ Idempotency error:", err);
       }
     }
 
@@ -61,8 +60,6 @@ export async function handleInbound(payload) {
         organization_id,
         phone,
       });
-
-      console.log("👤 Lead:", lead?.id);
     } catch (err) {
       console.error("❌ Lead error:", err);
     }
@@ -82,8 +79,6 @@ export async function handleInbound(payload) {
         channel,
         lead_id: lead?.id,
       });
-
-      console.log("💬 Conversation:", conversation?.id);
     } catch (err) {
       console.error("❌ Conversation error:", err);
     }
@@ -107,7 +102,7 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    2. LOAD HISTORY
+    2. HISTORY
     ========================================
     */
 
@@ -126,10 +121,9 @@ export async function handleInbound(payload) {
         );
 
         history = result.rows;
-        console.log("🧠 History loaded:", history.length);
       }
     } catch (err) {
-      console.warn("⚠️ History load error:", err);
+      console.warn("⚠️ History error:", err);
     }
 
     /*
@@ -150,7 +144,7 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    4. CATÁLOGO
+    4. CATÁLOGO (SOLO CONTEXTO)
     ========================================
     */
 
@@ -175,80 +169,11 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    🧠 FLOW CONTROL (GUIDED SALE INTELIGENTE)
+    6. AI — SIEMPRE
     ========================================
     */
 
-    const needsHuman = !catalogResults || catalogResults.length === 0;
-
-    const lastUserMessages = history
-      .filter(m => m.role === "user")
-      .map(m => m.text.toLowerCase());
-
-    const alreadyGaveUse = lastUserMessages.some(msg =>
-      msg.includes("estudio") ||
-      msg.includes("trabajo")
-    );
-
-    if (needsHuman) {
-      console.log("🚨 HANDOFF SUGGESTED:", {
-        organization_id,
-        phone,
-        text,
-        reason: "no_catalog_match",
-      });
-
-      let guidedText = "";
-
-      if (!alreadyGaveUse) {
-        // PASO 1
-        guidedText = `Hola 😊 claro que sí, con gusto te ayudo 🙌
-
-¿La estás buscando para estudio, trabajo o algo más específico? 👍`;
-      } else {
-        // PASO 2 (AVANZA VENTA)
-        guidedText = `Perfecto 👍 para estudio te recomiendo equipos rápidos y confiables.
-
-Tenemos opciones con SSD y buen rendimiento para tareas, clases virtuales y uso diario 💻
-
-Si querés, te paso fotos reales y precios de las disponibles para que elijás la que mejor te funcione 😊`;
-      }
-
-      if (conversation?.id && guidedText) {
-        await saveMessage({
-          organization_id,
-          conversation_id: conversation.id,
-          lead_id: lead?.id,
-          role: "assistant",
-          text: guidedText,
-        });
-      }
-
-      return {
-        reply: generateReply({
-          text: guidedText,
-          intent: "GUIDED_SALE",
-          products: [],
-        }),
-        meta: {
-          organization_id,
-          channel,
-          phone,
-          lead_id: lead?.id || null,
-          usedAI: false,
-          fallback: false,
-          guided: true,
-        },
-      };
-    }
-
-    /*
-    ========================================
-    6. AI (SOLO SI HAY CATÁLOGO)
-    ========================================
-    */
-
-    let aiText = null;
+    let replyText = null;
 
     try {
       const prompt = buildPrompt({
@@ -270,8 +195,9 @@ Si querés, te paso fotos reales y precios de las disponibles para que elijás l
       });
 
       if (guarded?.text) {
-        aiText = guarded.text;
+        replyText = guarded.text;
       }
+
     } catch (err) {
       console.warn("⚠️ AI error:", err);
     }
@@ -282,8 +208,6 @@ Si querés, te paso fotos reales y precios de las disponibles para que elijás l
     ========================================
     */
 
-    let replyText = aiText;
-
     if (!replyText) {
       replyText =
         "Hola 😊 con gusto te ayudo. Contame un poco más qué estás buscando y te guío.";
@@ -291,7 +215,7 @@ Si querés, te paso fotos reales y precios de las disponibles para que elijás l
 
     /*
     ========================================
-    8. SAVE ASSISTANT MESSAGE
+    8. SAVE ASSISTANT
     ========================================
     */
 
@@ -311,24 +235,18 @@ Si querés, te paso fotos reales y precios de las disponibles para que elijás l
     ========================================
     */
 
-    const reply = generateReply({
-      text: replyText,
-      intent: "AI",
-      products: catalogResults,
-    });
-
-    const meta = {
-      organization_id,
-      channel,
-      phone,
-      lead_id: lead?.id || null,
-      usedAI: !!aiText,
-      fallback: !aiText,
-    };
-
     return {
-      reply,
-      meta,
+      reply: {
+        text: replyText,
+        products: catalogResults,
+      },
+      meta: {
+        organization_id,
+        channel,
+        phone,
+        lead_id: lead?.id || null,
+        usedAI: true,
+      },
     };
 
   } catch (err) {
@@ -337,7 +255,6 @@ Si querés, te paso fotos reales y precios de las disponibles para que elijás l
     return {
       reply: {
         text: "Disculpá 🙏 tuvimos un problema. Intentá de nuevo en un momento.",
-        media: [],
       },
       meta: {
         error: true,
