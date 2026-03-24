@@ -23,38 +23,34 @@ export async function handleInbound(payload) {
     console.log("🧠 [Brain] Processing:", { phone, text });
 
     /*
-========================================
-0. IDEMPOTENCY CHECK (CRÍTICO)
-========================================
-*/
+    ========================================
+    0. IDEMPOTENCY CHECK
+    ========================================
+    */
 
-if (message_id) {
-  try {
-    const existing = await db.query(
-      `SELECT id FROM messages WHERE message_id = $1 LIMIT 1`,
-      [message_id]
-    );
+    if (message_id) {
+      try {
+        const existing = await db.query(
+          `SELECT id FROM messages WHERE message_id = $1 LIMIT 1`,
+          [message_id]
+        );
 
-    if (existing.rows.length > 0) {
-      console.log("⚠️ Duplicate message skipped:", message_id);
+        if (existing.rows.length > 0) {
+          console.log("⚠️ Duplicate message skipped:", message_id);
 
-      return {
-        reply: {
-          text: null
-        },
-        meta: {
-          duplicate: true
+          return {
+            reply: { text: null },
+            meta: { duplicate: true },
+          };
         }
-      };
+      } catch (err) {
+        console.warn("⚠️ Idempotency check error:", err);
+      }
     }
-  } catch (err) {
-    console.warn("⚠️ Idempotency check error:", err);
-  }
-}
-    
+
     /*
     ========================================
-    1. LEAD (SOURCE OF TRUTH CRM)
+    1. LEAD
     ========================================
     */
 
@@ -84,7 +80,7 @@ if (message_id) {
         organization_id,
         phone,
         channel,
-        lead_id: lead?.id
+        lead_id: lead?.id,
       });
 
       console.log("💬 Conversation:", conversation?.id);
@@ -94,7 +90,7 @@ if (message_id) {
 
     /*
     ========================================
-    1.2 SAVE USER MESSAGE (ANTES DEL AI)
+    1.2 SAVE USER MESSAGE
     ========================================
     */
 
@@ -105,40 +101,40 @@ if (message_id) {
         lead_id: lead?.id,
         role: "user",
         text,
-        message_id
+        message_id,
       });
     }
 
     /*
-========================================
-2.1 LOAD CONVERSATION HISTORY (BÁSICO)
-========================================
-*/
+    ========================================
+    2. LOAD HISTORY
+    ========================================
+    */
 
-let history = [];
+    let history = [];
 
-try {
-  if (conversation?.id) {
-    const result = await db.query(
-      `
-     SELECT role, content as text FROM messages
-      WHERE conversation_id = $1
-      ORDER BY created_at ASC
-      LIMIT 10
-      `,
-      [conversation.id]
-    );
+    try {
+      if (conversation?.id) {
+        const result = await db.query(
+          `
+          SELECT role, content as text FROM messages
+          WHERE conversation_id = $1
+          ORDER BY created_at ASC
+          LIMIT 10
+          `,
+          [conversation.id]
+        );
 
-    history = result.rows;
-    console.log("🧠 History loaded:", history.length);
-  }
-} catch (err) {
-  console.warn("⚠️ History load error:", err);
-}
-    
+        history = result.rows;
+        console.log("🧠 History loaded:", history.length);
+      }
+    } catch (err) {
+      console.warn("⚠️ History load error:", err);
+    }
+
     /*
     ========================================
-    2. CONTEXTO BASE
+    3. CONTEXT
     ========================================
     */
 
@@ -154,7 +150,7 @@ try {
 
     /*
     ========================================
-    3. CATÁLOGO
+    4. CATÁLOGO
     ========================================
     */
 
@@ -171,7 +167,7 @@ try {
 
     /*
     ========================================
-    4. CONFIG
+    5. CONFIG
     ========================================
     */
 
@@ -179,19 +175,88 @@ try {
 
     /*
     ========================================
-    5. AI
+    🧠 FLOW CONTROL (GUIDED SALE INTELIGENTE)
+    ========================================
+    */
+
+    const needsHuman = !catalogResults || catalogResults.length === 0;
+
+    const lastUserMessages = history
+      .filter(m => m.role === "user")
+      .map(m => m.text.toLowerCase());
+
+    const alreadyGaveUse = lastUserMessages.some(msg =>
+      msg.includes("estudio") ||
+      msg.includes("trabajo")
+    );
+
+    if (needsHuman) {
+      console.log("🚨 HANDOFF SUGGESTED:", {
+        organization_id,
+        phone,
+        text,
+        reason: "no_catalog_match",
+      });
+
+      let guidedText = "";
+
+      if (!alreadyGaveUse) {
+        // PASO 1
+        guidedText = `Hola 😊 claro que sí, con gusto te ayudo 🙌
+
+¿La estás buscando para estudio, trabajo o algo más específico? 👍`;
+      } else {
+        // PASO 2 (AVANZA VENTA)
+        guidedText = `Perfecto 👍 para estudio te recomiendo equipos rápidos y confiables.
+
+Tenemos opciones con SSD y buen rendimiento para tareas, clases virtuales y uso diario 💻
+
+Si querés, te paso fotos reales y precios de las disponibles para que elijás la que mejor te funcione 😊`;
+      }
+
+      if (conversation?.id && guidedText) {
+        await saveMessage({
+          organization_id,
+          conversation_id: conversation.id,
+          lead_id: lead?.id,
+          role: "assistant",
+          text: guidedText,
+        });
+      }
+
+      return {
+        reply: generateReply({
+          text: guidedText,
+          intent: "GUIDED_SALE",
+          products: [],
+        }),
+        meta: {
+          organization_id,
+          channel,
+          phone,
+          lead_id: lead?.id || null,
+          usedAI: false,
+          fallback: false,
+          guided: true,
+        },
+      };
+    }
+
+    /*
+    ========================================
+    6. AI (SOLO SI HAY CATÁLOGO)
     ========================================
     */
 
     let aiText = null;
 
     try {
-     const prompt = buildPrompt({
-  context,
-  catalogResults,
-  history,
-  config,
-});
+      const prompt = buildPrompt({
+        context,
+        catalogResults,
+        history,
+        config,
+      });
 
       const aiResponse = await runAI({
         context,
@@ -207,74 +272,26 @@ try {
       if (guarded?.text) {
         aiText = guarded.text;
       }
-
     } catch (err) {
       console.warn("⚠️ AI error:", err);
     }
 
     /*
-========================================
-5.5 HANDOFF DETECTION (BÁSICO)
-========================================
-*/
-
-const needsHuman = !catalogResults || catalogResults.length === 0;
-
-if (needsHuman) {
-  console.log("🚨 HANDOFF SUGGESTED:", {
-    organization_id,
-    phone,
-    text,
-    reason: "no_catalog_match"
-  });
-
-  /*
-  ========================================
-  🛑 OVERRIDE COMERCIAL (CRÍTICO)
-  ========================================
-  */
-
-  return {
-    reply: generateReply({
-      text: `Hola 😊 claro que sí, con gusto te ayudo 🙌
-
-Trabajamos ese tipo de producto.
-
-¿Lo estás buscando para estudio, trabajo o algo más específico? 👍
-Así te recomiendo la mejor opción según lo que necesités.`,
-      intent: "GUIDED_SALE",
-      products: [],
-    }),
-    meta: {
-      organization_id,
-      channel,
-      phone,
-      lead_id: lead?.id || null,
-      usedAI: false,
-      fallback: false,
-      guided: true,
-    },
-  };
-}
-    
-    /*
     ========================================
-    6. FALLBACK
+    7. FALLBACK
     ========================================
     */
 
     let replyText = aiText;
 
     if (!replyText) {
-      console.log("⚠️ AI FALLBACK ACTIVATED");
-
       replyText =
         "Hola 😊 con gusto te ayudo. Contame un poco más qué estás buscando y te guío.";
     }
 
     /*
     ========================================
-    6.1 SAVE ASSISTANT MESSAGE
+    8. SAVE ASSISTANT MESSAGE
     ========================================
     */
 
@@ -284,13 +301,13 @@ Así te recomiendo la mejor opción según lo que necesités.`,
         conversation_id: conversation.id,
         lead_id: lead?.id,
         role: "assistant",
-        text: replyText
+        text: replyText,
       });
     }
 
     /*
     ========================================
-    7. RESPONSE
+    9. RESPONSE
     ========================================
     */
 
@@ -300,12 +317,6 @@ Así te recomiendo la mejor opción según lo que necesités.`,
       products: catalogResults,
     });
 
-    /*
-    ========================================
-    8. META
-    ========================================
-    */
-
     const meta = {
       organization_id,
       channel,
@@ -314,12 +325,6 @@ Así te recomiendo la mejor opción según lo que necesités.`,
       usedAI: !!aiText,
       fallback: !aiText,
     };
-
-    /*
-    ========================================
-    9. RETURN
-    ========================================
-    */
 
     return {
       reply,
