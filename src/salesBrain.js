@@ -1,6 +1,7 @@
 // src/salesBrain.js
 
 import { findOrCreateLead, findOrCreateConversation, saveMessage } from "./db.js";
+import { db } from "./db.js";
 import { searchCatalogSmart } from "./brain/utils/catalogEngine.js";
 import { generateReply } from "./brain/replies/replyEngine.js";
 
@@ -78,6 +79,34 @@ export async function handleInbound(payload) {
       });
     }
 
+    /*
+========================================
+2.1 LOAD CONVERSATION HISTORY (BÁSICO)
+========================================
+*/
+
+let history = [];
+
+try {
+  if (conversation?.id) {
+    const result = await db.query(
+      `
+      SELECT role, text
+      FROM messages
+      WHERE conversation_id = $1
+      ORDER BY created_at ASC
+      LIMIT 10
+      `,
+      [conversation.id]
+    );
+
+    history = result.rows;
+    console.log("🧠 History loaded:", history.length);
+  }
+} catch (err) {
+  console.warn("⚠️ History load error:", err);
+}
+    
     /*
     ========================================
     2. CONTEXTO BASE
