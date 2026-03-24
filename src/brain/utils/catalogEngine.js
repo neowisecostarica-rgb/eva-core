@@ -2,44 +2,69 @@
 
 import pool from "../../db.js";
 
+function extractKeywords(query) {
+  if (!query) return [];
+
+  return query
+    .toLowerCase()
+    .replace(/[^\w\s]/gi, "")
+    .split(" ")
+    .filter(w => w.length > 2);
+}
+
 export async function searchCatalogSmart({ organization_id, query }) {
   try {
     if (!query) return [];
 
     /*
     ========================================
-    1. NORMALIZAR QUERY
+    1. KEYWORDS
     ========================================
     */
 
-    const words = query.toLowerCase().split(" ");
-    const keyword = words[words.length - 1]; // última palabra
-    const q = `%${keyword}%`;
+    const keywords = extractKeywords(query);
 
-    console.log("🔍 Query original:", query);
-    console.log("🔍 Keyword usada:", keyword);
+    console.log("🔍 Keywords:", keywords);
 
     /*
     ========================================
-    2. BUSQUEDA PRINCIPAL
+    2. BUILD QUERY DINÁMICA
     ========================================
     */
 
-    const result = await pool.query(
-      `
+    const conditions = keywords.map((_, i) => `
+      (
+        LOWER(name) LIKE $${i + 2}
+        OR LOWER(description) LIKE $${i + 2}
+        OR LOWER(category) LIKE $${i + 2}
+      )
+    `);
+
+    const values = [
+      organization_id,
+      ...keywords.map(k => `%${k}%`)
+    ];
+
+    let sql = `
       SELECT id, name, description, price, category
       FROM product_catalog
       WHERE organization_id = $1
       AND is_active = true
-      AND (
-        LOWER(name) LIKE $2
-        OR LOWER(description) LIKE $2
-        OR LOWER(category) LIKE $2
-      )
-      LIMIT 5
-      `,
-      [organization_id, q]
-    );
+    `;
+
+    if (conditions.length > 0) {
+      sql += ` AND (${conditions.join(" OR ")})`;
+    }
+
+    sql += ` LIMIT 3`;
+
+    /*
+    ========================================
+    3. EJECUTAR
+    ========================================
+    */
+
+    const result = await pool.query(sql, values);
 
     console.log("📦 Catalog Results:", result.rows);
 
@@ -49,7 +74,7 @@ export async function searchCatalogSmart({ organization_id, query }) {
 
     /*
     ========================================
-    3. FALLBACK (SI NO HAY MATCH)
+    4. FALLBACK (TOP PRODUCTOS)
     ========================================
     */
 
@@ -60,7 +85,7 @@ export async function searchCatalogSmart({ organization_id, query }) {
       WHERE organization_id = $1
       AND is_active = true
       ORDER BY created_at DESC
-      LIMIT 3
+      LIMIT 2
       `,
       [organization_id]
     );
