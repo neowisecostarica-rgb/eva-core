@@ -154,6 +154,23 @@ export async function handleInbound(payload) {
     }
 
     /*
+========================================
+5.5 HANDOFF DETECTION (BÁSICO)
+========================================
+*/
+
+const needsHuman = !catalogResults || catalogResults.length === 0;
+
+if (needsHuman) {
+  console.log("🚨 HANDOFF SUGGESTED:", {
+    organization_id,
+    phone,
+    text,
+    reason: "no_catalog_match"
+  });
+}
+    
+    /*
     ========================================
     6. FALLBACK
     ========================================
