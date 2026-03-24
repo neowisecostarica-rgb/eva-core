@@ -1,7 +1,7 @@
 // src/salesBrain.js
 
 import { findOrCreateLead, findOrCreateConversation, saveMessage } from "./db.js";
-import { db } from "./db.js";
+import db from "./db.js";
 import { searchCatalogSmart } from "./brain/utils/catalogEngine.js";
 import { generateReply } from "./brain/replies/replyEngine.js";
 
