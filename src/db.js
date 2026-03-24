@@ -34,12 +34,6 @@ FIND OR CREATE LEAD (SOT CRM)
 
 export async function findOrCreateLead({ organization_id, phone }) {
   try {
-    /*
-    ========================================
-    1. BUSCAR LEAD EXISTENTE
-    ========================================
-    */
-
     const existing = await pool.query(
       `
       SELECT * 
@@ -53,7 +47,6 @@ export async function findOrCreateLead({ organization_id, phone }) {
     if (existing.rows.length > 0) {
       const lead = existing.rows[0];
 
-      // opcional: actualizar last_contact_at
       await pool.query(
         `
         UPDATE leads
@@ -66,12 +59,6 @@ export async function findOrCreateLead({ organization_id, phone }) {
 
       return lead;
     }
-
-    /*
-    ========================================
-    2. CREAR NUEVO LEAD
-    ========================================
-    */
 
     const created = await pool.query(
       `
@@ -121,12 +108,18 @@ export async function findOrCreateConversation({
   lead_id
 }) {
   try {
+    /*
+    ========================================
+    BUSCAR EXISTENTE
+    ========================================
+    */
+
     const existing = await pool.query(
       `
       SELECT *
       FROM conversations
       WHERE organization_id = $1
-        AND phone = $2
+        AND external_user_id = $2
         AND channel = $3
       LIMIT 1
       `,
@@ -137,12 +130,18 @@ export async function findOrCreateConversation({
       return existing.rows[0];
     }
 
+    /*
+    ========================================
+    CREAR NUEVA
+    ========================================
+    */
+
     const created = await pool.query(
       `
       INSERT INTO conversations (
         organization_id,
         lead_id,
-        phone,
+        external_user_id,
         channel,
         created_at,
         updated_at,
@@ -162,6 +161,11 @@ export async function findOrCreateConversation({
   }
 }
 
+/*
+========================================
+SAVE MESSAGE
+========================================
+*/
 
 export async function saveMessage({
   organization_id,
@@ -188,7 +192,6 @@ export async function saveMessage({
       [organization_id, conversation_id, lead_id, role, text, message_id]
     );
 
-    // actualizar conversación
     await pool.query(
       `
       UPDATE conversations
