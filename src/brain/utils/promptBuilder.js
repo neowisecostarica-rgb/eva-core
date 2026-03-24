@@ -1,13 +1,16 @@
-export function buildPrompt({ context, catalogResults, config }) {
-  const {
-    text,
-  } = context;
+export function buildPrompt({ context, catalogResults, history = [], config }) {
+  const { text } = context;
 
   const tone = config?.tone || "cercano_profesional";
   const businessName = config?.business_name || "Compu Store";
   const assistantName = config?.assistant_name || "Eva";
 
   const hasProducts = catalogResults && catalogResults.length > 0;
+
+  // ✅ HISTORIA (FUERA del template)
+  const historyText = history
+    .map((m) => `${m.role === "user" ? "Cliente" : "Asistente"}: ${m.text}`)
+    .join("\n");
 
   return `
 Eres ${assistantName}, asistente comercial de ${businessName}.
@@ -48,6 +51,12 @@ Permitime un minuto para revisar opciones y recomendarte lo mejor 👍"
 - Mantén control de la conversación
 `
 }
+
+========================================
+HISTORIAL RECIENTE
+========================================
+
+${historyText || "Sin historial previo"}
 
 ========================================
 MENSAJE DEL CLIENTE
