@@ -6,7 +6,7 @@ import { generateReply } from "./brain/replies/replyEngine.js";
 import { runAI } from "./brain/engines/aiEngine.js";
 import { applyAIGuards } from "./brain/utils/aiGuards.js";
 import { buildPrompt } from "./brain/utils/promptBuilder.js";
-import { getPromptConfig } from "./brain/utils/getPromptConfig.js"; // ✅ FIX AQUÍ
+import { getPromptConfig } from "./brain/utils/getPromptConfig.js";
 
 export async function handleInbound(payload) {
   try {
@@ -37,43 +37,24 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    2. DETECCIÓN BÁSICA (FALLBACK)
-    ========================================
-    */
-
-    const lowerText = text.toLowerCase();
-
-    let intent = "UNKNOWN";
-
-    if (lowerText.includes("hola") || lowerText.includes("buenas")) {
-      intent = "GREETING";
-    } else if (lowerText.includes("precio") || lowerText.includes("cuesta")) {
-      intent = "PRICE";
-    } else if (
-      lowerText.includes("laptop") ||
-      lowerText.includes("computadora")
-    ) {
-      intent = "PRODUCT_SEARCH";
-    }
-
-    /*
-    ========================================
-    3. CATÁLOGO
+    2. CATÁLOGO (SIEMPRE DISPONIBLE PARA AI)
     ========================================
     */
 
     let catalogResults = [];
 
-    if (intent === "PRODUCT_SEARCH" || intent === "PRICE") {
+    try {
       catalogResults = await searchCatalogSmart({
         organization_id,
         query: text,
       });
+    } catch (err) {
+      console.warn("⚠️ Catalog error:", err);
     }
 
     /*
     ========================================
-    4. CONFIG (TEMPORAL)
+    3. CONFIG
     ========================================
     */
 
@@ -81,7 +62,7 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    5. INTENTO AI
+    4. AI (CORE)
     ========================================
     */
 
@@ -110,67 +91,53 @@ export async function handleInbound(payload) {
       }
 
     } catch (err) {
-      console.warn("⚠️ AI fallback activado:", err);
+      console.warn("⚠️ AI error:", err);
     }
 
     /*
     ========================================
-    6. FALLBACK (SI AI FALLA)
+    5. FALLBACK MÍNIMO (SOLO SEGURIDAD)
     ========================================
     */
 
     let replyText = aiText;
 
     if (!replyText) {
-      console.log("🧠 Using fallback logic");
+      console.log("⚠️ AI FALLBACK ACTIVATED");
 
-      if (intent === "GREETING") {
-        replyText =
-          "Hola 😊 con gusto te ayudo, ¿qué estás buscando exactamente?";
-      }
-
-      if (intent === "PRODUCT_SEARCH" && catalogResults.length > 0) {
-        replyText = `Claro 🙌 te puedo recomendar estas opciones:\n\n${catalogResults
-          .slice(0, 3)
-          .map((p, i) => `${i + 1}. ${p.name} — ₡${p.price}`)
-          .join("\n")}`;
-      }
-
-      if (!replyText) {
-        replyText =
-          "Claro 😊 contame un poco más qué estás buscando y con gusto te ayudo a encontrar la mejor opción 🙌";
-      }
+      replyText =
+        "Hola 😊 con gusto te ayudo. Contame un poco más qué estás buscando y te guío.";
     }
 
     /*
     ========================================
-    7. BUILD RESPONSE
+    6. RESPONSE
     ========================================
     */
 
     const reply = generateReply({
-  text: replyText,
-  intent,
-  products: catalogResults,
-});
+      text: replyText,
+      intent: "AI",
+      products: catalogResults,
+    });
 
     /*
     ========================================
-    8. META
+    7. META
     ========================================
     */
 
     const meta = {
       organization_id,
-      intent,
       channel,
       phone,
       usedAI: !!aiText,
+      fallback: !aiText,
     };
 
     /*
     ========================================
-    9. RETURN
+    8. RETURN
     ========================================
     */
 
@@ -184,7 +151,7 @@ export async function handleInbound(payload) {
 
     return {
       reply: {
-        text: "Disculpá 🙏 tuvimos un problema, intentá de nuevo en un momento.",
+        text: "Disculpá 🙏 tuvimos un problema. Intentá de nuevo en un momento.",
         media: [],
       },
       meta: {
