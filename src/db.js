@@ -170,7 +170,6 @@ SAVE MESSAGE
 export async function saveMessage({
   organization_id,
   conversation_id,
-  lead_id,
   role,
   text,
   message_id = null
@@ -181,15 +180,14 @@ export async function saveMessage({
       INSERT INTO messages (
         organization_id,
         conversation_id,
-        lead_id,
         role,
-        text,
-        message_id,
+        content,
+        external_message_id,
         created_at
       )
-      VALUES ($1, $2, $3, $4, $5, $6, NOW())
+      VALUES ($1, $2, $3, $4, $5, NOW())
       `,
-      [organization_id, conversation_id, lead_id, role, text, message_id]
+      [organization_id, conversation_id, role, text, message_id]
     );
 
     await pool.query(
@@ -201,6 +199,8 @@ export async function saveMessage({
       `,
       [conversation_id]
     );
+
+    console.log("💬 Message saved");
 
   } catch (err) {
     console.error("❌ saveMessage error:", err);
