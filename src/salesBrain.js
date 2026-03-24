@@ -4,6 +4,7 @@ import { findOrCreateLead, findOrCreateConversation, saveMessage } from "./db.js
 import db from "./db.js";
 import { searchCatalogSmart } from "./brain/utils/catalogEngine.js";
 
+import { enforceAIRuntime } from "./system/contracts/aiRuntime.js";
 import { runAI } from "./brain/engines/aiEngine.js";
 import { applyAIGuards } from "./brain/utils/aiGuards.js";
 import { buildPrompt } from "./brain/utils/promptBuilder.js";
@@ -169,7 +170,7 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    6. AI — SIEMPRE
+    6. AI — SIEMPRE (FLOW CORRECTO)
     ========================================
     */
 
@@ -194,6 +195,12 @@ export async function handleInbound(payload) {
         context,
       });
 
+      // 🔒 SYSTEM CONTRACT ENFORCEMENT
+      enforceAIRuntime({
+        aiResponse: guarded,
+        source: "salesBrain",
+      });
+
       if (guarded?.text) {
         replyText = guarded.text;
       }
@@ -204,7 +211,7 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    7. FALLBACK
+    7. FALLBACK (ÚNICO HARD-CODE PERMITIDO)
     ========================================
     */
 
