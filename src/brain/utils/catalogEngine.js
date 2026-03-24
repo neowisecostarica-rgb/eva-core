@@ -2,37 +2,34 @@
 
 import pool from "../../db.js";
 
-function extractKeywords(query) {
-  if (!query) return [];
-
-  return query
-    .toLowerCase()
-    .replace(/[^\w\s]/gi, "")
-    .split(" ")
-    .filter(w => w.length > 2);
-}
-
 export async function searchCatalogSmart({ organization_id, query }) {
   try {
     if (!query) return [];
 
     /*
     ========================================
-    1. KEYWORDS
+    1. NORMALIZAR QUERY
     ========================================
     */
 
-    const keywords = extractKeywords(query);
+    const words = query
+      .toLowerCase()
+      .replace(/[^\w\s]/gi, "")
+      .split(" ")
+      .filter(w => w.length > 2); // evitar ruido tipo "de", "la"
 
-    console.log("🔍 Keywords:", keywords);
+    if (words.length === 0) return [];
+
+    console.log("🔍 Query:", query);
+    console.log("🔍 Keywords:", words);
 
     /*
     ========================================
-    2. BUILD QUERY DINÁMICA
+    2. BUILD CONDITIONS DINÁMICAS
     ========================================
     */
 
-    const conditions = keywords.map((_, i) => `
+    const conditions = words.map((_, i) => `
       (
         LOWER(name) LIKE $${i + 2}
         OR LOWER(description) LIKE $${i + 2}
@@ -42,60 +39,80 @@ export async function searchCatalogSmart({ organization_id, query }) {
 
     const values = [
       organization_id,
-      ...keywords.map(k => `%${k}%`)
+      ...words.map(w => `%${w}%`)
     ];
 
-    let sql = `
-      SELECT id, name, description, price, category
-      FROM product_catalog
-      WHERE organization_id = $1
-      AND is_active = true
-    `;
-
-    if (conditions.length > 0) {
-      sql += ` AND (${conditions.join(" OR ")})`;
-    }
-
-    sql += ` LIMIT 3`;
-
     /*
     ========================================
-    3. EJECUTAR
+    3. SCORE BÁSICO (COUNT MATCHES)
     ========================================
     */
 
-    const result = await pool.query(sql, values);
+    const scoreCases = words.map((_, i) => `
+      CASE
+        WHEN LOWER(name) LIKE $${i + 2}
+          OR LOWER(description) LIKE $${i + 2}
+          OR LOWER(category) LIKE $${i + 2}
+        THEN 1 ELSE 0
+      END
+    `);
 
-    console.log("📦 Catalog Results:", result.rows);
-
-    if (result.rows.length > 0) {
-      return result.rows;
-    }
+    const scoreExpression = scoreCases.join(" + ");
 
     /*
     ========================================
-    4. FALLBACK (TOP PRODUCTOS)
+    4. QUERY FINAL
     ========================================
     */
 
-    const fallback = await pool.query(
+    const result = await pool.query(
       `
-      SELECT id, name, description, price, category
+      SELECT
+        id,
+        name,
+        description,
+        price,
+        category,
+        (${scoreExpression}) AS relevance_score
       FROM product_catalog
       WHERE organization_id = $1
       AND is_active = true
-      ORDER BY created_at DESC
-      LIMIT 2
+      AND (
+        ${conditions.join(" OR ")}
+      )
+      ORDER BY relevance_score DESC
+      LIMIT 5
       `,
-      [organization_id]
+      values
     );
 
-    console.log("📦 Fallback Results:", fallback.rows);
+    /*
+    ========================================
+    5. FALLBACK (si no encuentra nada)
+    ========================================
+    */
 
-    return fallback.rows;
+    if (result.rows.length === 0) {
+      console.log("⚠️ No results, fallback simple");
+
+      const fallback = await pool.query(
+        `
+        SELECT id, name, description, price, category
+        FROM product_catalog
+        WHERE organization_id = $1
+        AND is_active = true
+        LIMIT 5
+        `,
+        [organization_id]
+      );
+
+      return fallback.rows;
+    }
+
+    return result.rows;
 
   } catch (err) {
-    console.error("❌ catalogEngine error:", err);
+    console.error("❌ Catalog search error:", err);
     return [];
   }
 }
