@@ -104,16 +104,9 @@ CONVERSATIONS + MESSAGES
 export async function findOrCreateConversation({
   organization_id,
   phone,
-  channel,
-  lead_id
+  channel
 }) {
   try {
-    /*
-    ========================================
-    BUSCAR EXISTENTE
-    ========================================
-    */
-
     const existing = await pool.query(
       `
       SELECT *
@@ -130,27 +123,20 @@ export async function findOrCreateConversation({
       return existing.rows[0];
     }
 
-    /*
-    ========================================
-    CREAR NUEVA
-    ========================================
-    */
-
     const created = await pool.query(
       `
       INSERT INTO conversations (
         organization_id,
-        lead_id,
         external_user_id,
         channel,
         created_at,
         updated_at,
         last_message_at
       )
-      VALUES ($1, $2, $3, $4, NOW(), NOW(), NOW())
+      VALUES ($1, $2, $3, NOW(), NOW(), NOW())
       RETURNING *
       `,
-      [organization_id, lead_id, phone, channel]
+      [organization_id, phone, channel]
     );
 
     return created.rows[0];
