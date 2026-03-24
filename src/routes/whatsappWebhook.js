@@ -101,11 +101,10 @@ router.post("/", async (req, res) => {
         "x-api-key": EVA_API_KEY
       },
       body: JSON.stringify({
-        organization_id: process.env.DEFAULT_ORG_ID || "default-org",
-        phone,
-        text,
-        channel: "whatsapp"
-      })
+  phone,
+  text,
+  channel: "whatsapp"
+})
     });
 
     if (!evaResponse.ok) {
