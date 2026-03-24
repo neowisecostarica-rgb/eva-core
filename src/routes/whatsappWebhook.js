@@ -7,6 +7,7 @@ WHATSAPP WEBHOOK — EVA CORE (FINAL STABLE VERSION)
 import express from "express";
 import fetch from "node-fetch";
 import { splitReply } from "../brain/utils/splitReply.js";
+
 const router = express.Router();
 
 /* ======================================
@@ -50,7 +51,7 @@ router.get("/", (req, res) => {
 });
 
 /* ======================================
-   EXTRACT MESSAGE SAFELY (NEW)
+   EXTRACT MESSAGE SAFELY
 ====================================== */
 
 function extractText(message) {
@@ -60,7 +61,6 @@ function extractText(message) {
     return message.text?.body || "";
   }
 
-  // 👇 FUTURE: voice/image handling
   return "[unsupported_message_type]";
 }
 
@@ -79,10 +79,14 @@ router.post("/", async (req, res) => {
     const phone = message.from;
     const text = extractText(message);
 
+    // ✅ FIX CRÍTICO: extraer message_id real de WhatsApp
+    const message_id = message.id || null;
+
     console.log("📩 Incoming:", {
       phone,
       text,
-      type: message.type
+      type: message.type,
+      message_id
     });
 
     if (!EVA_ENDPOINT || !EVA_API_KEY) {
@@ -101,10 +105,11 @@ router.post("/", async (req, res) => {
         "x-api-key": EVA_API_KEY
       },
       body: JSON.stringify({
-  phone,
-  text,
-  channel: "whatsapp"
-})
+        phone,
+        text,
+        channel: "whatsapp",
+        message_id // ✅ ahora sí lo enviamos
+      })
     });
 
     if (!evaResponse.ok) {
@@ -123,38 +128,36 @@ router.post("/", async (req, res) => {
       console.warn("⚠️ EVA sin respuesta");
       return res.sendStatus(200);
     }
-    
-     
-   /* ======================================
-   SEND TO WHATSAPP (SPLIT FIX)
-====================================== */
 
-const messages = splitReply(replyText);
+    /* ======================================
+       SEND TO WHATSAPP (SPLIT FIX)
+    ====================================== */
 
-for (const msg of messages) {
-  const waResponse = await fetch(
-    `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${WHATSAPP_TOKEN}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        messaging_product: "whatsapp",
-        to: phone,
-        text: { body: msg }
-      })
+    const messages = splitReply(replyText);
+
+    for (const msg of messages) {
+      const waResponse = await fetch(
+        `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${WHATSAPP_TOKEN}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            messaging_product: "whatsapp",
+            to: phone,
+            text: { body: msg }
+          })
+        }
+      );
+
+      const waData = await waResponse.json();
+
+      console.log("✅ WhatsApp OK:", waData);
+
+      await new Promise((res) => setTimeout(res, 1200));
     }
-  );
-
-  const waData = await waResponse.json();
-
-  console.log("✅ WhatsApp OK:", waData);
-
-  // delay humano
-  await new Promise((res) => setTimeout(res, 1200));
-}
 
     return res.sendStatus(200);
 
