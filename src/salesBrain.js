@@ -157,11 +157,12 @@ try {
     let aiText = null;
 
     try {
-      const prompt = buildPrompt({
-        context,
-        catalogResults,
-        config,
-      });
+     const prompt = buildPrompt({
+  context,
+  catalogResults,
+  history,
+  config,
+});
 
       const aiResponse = await runAI({
         context,
