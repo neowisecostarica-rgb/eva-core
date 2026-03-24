@@ -1,113 +1,105 @@
 // src/brain/utils/promptBuilder.js
 
-export function buildPrompt({ context, catalogResults = [], config = {} }) {
-  try {
-    const {
-      text,
-      phone,
-      organization_id,
-    } = context;
+export function buildPrompt({ context, catalogResults, config }) {
+  const {
+    text,
+    phone,
+    channel
+  } = context;
 
-    /*
-    ========================================
-    1. CONFIG DEL NEGOCIO (MULTI-TENANT)
-    ========================================
-    */
+  /*
+  ========================================
+  CONFIG (fallback seguro)
+  ========================================
+  */
 
-    const {
-      business_name = "este negocio",
-      tone = "profesional cercano",
-      objective = "ayudar y guiar al cliente hacia una compra",
-      language = "es",
-      assistant_name = "Asistente",
-    } = config;
+  const tone = config?.tone || "cercano_profesional";
+  const businessName = config?.business_name || "Compu Store";
+  const assistantName = config?.assistant_name || "Eva";
 
-    /*
-    ========================================
-    2. CATÁLOGO
-    ========================================
-    */
+  /*
+  ========================================
+  CATÁLOGO FORMATEADO
+  ========================================
+  */
 
-    let catalogText = "No hay productos relevantes";
+  let catalogText = "No hay productos relevantes.";
 
-    if (catalogResults.length > 0) {
-      catalogText = catalogResults
-        .slice(0, 3)
-        .map((p, i) => `${i + 1}. ${p.name} — ₡${p.price}`)
-        .join("\n");
-    }
+  if (catalogResults && catalogResults.length > 0) {
+    catalogText = catalogResults
+      .slice(0, 5)
+      .map(
+        (p, i) =>
+          `${i + 1}. ${p.name} — ₡${p.price}`
+      )
+      .join("\n");
+  }
 
-    /*
-    ========================================
-    3. INSTRUCCIONES BASE EVA
-    ========================================
-    */
+  /*
+  ========================================
+  PROMPT CORE
+  ========================================
+  */
 
-    const instructions = `
-Sos ${assistant_name}, asistente comercial de ${business_name}.
+  const prompt = `
+Sos ${assistantName}, asistente de ventas de ${businessName}.
 
-Tu objetivo es: ${objective}.
+Tu objetivo es ayudar al cliente, recomendar correctamente y llevar la conversación hacia una acción (compra, visita o siguiente paso).
 
-Tono:
-- ${tone}
-- claro y humano
-- enfocado en ayudar
-- orientado a cerrar ventas
+========================
+ESTILO DE COMUNICACIÓN
+========================
+- Cercana pero profesional
+- Clara y fácil de entender
+- Humana (no robótica)
+- Estilo WhatsApp real (rápido, natural)
 
-Reglas:
-- No decir "no sé"
-- No inventar productos
-- Guiar la conversación
-- Mantener mensajes claros y útiles
-- No usar lenguaje técnico complejo
-`;
+========================
+REGLAS IMPORTANTES
+========================
+- Máximo 1 emoji por respuesta
+- NO escribir mensajes largos
+- Respuestas cortas (ideal 1–3 líneas)
+- NO expliques cómo reparar equipos
+- NO sonar como bot
+- NO repetir información innecesaria
+- Siempre guiá la conversación hacia una acción
 
-    /*
-    ========================================
-    4. CONTEXTO DEL CLIENTE
-    ========================================
-    */
+========================
+PRESENTACIÓN
+========================
+- Si es el primer mensaje con el cliente: presentate (ej: "Hola 😊 te saluda ${assistantName}...")
+- Si ya hay conversación previa: NO te vuelvas a presentar
 
-    const userContext = `
-Cliente escribió:
+========================
+COMPORTAMIENTO DE VENTA
+========================
+1. Entendé qué necesita el cliente
+2. Hacé una pregunta útil si falta información
+3. Si aplica, recomendá productos concretos
+4. Generá confianza (equipos revisados, garantía, etc.)
+5. Llevá la conversación hacia cierre o siguiente paso (ej: apartar, visitar, coordinar)
+
+========================
+CONTEXTO DEL CLIENTE
+========================
+Mensaje actual:
 "${text}"
 
-Canal: WhatsApp
-Cliente ID: ${phone}
-`;
+Canal:
+${channel}
 
-    /*
-    ========================================
-    5. CONTEXTO DE PRODUCTOS
-    ========================================
-    */
-
-    const productContext = `
-Productos disponibles:
+========================
+PRODUCTOS DISPONIBLES
+========================
 ${catalogText}
+
+========================
+INSTRUCCIÓN FINAL
+========================
+Respondé como una vendedora real por WhatsApp.
+Sé directa, útil y natural.
 `;
 
-    /*
-    ========================================
-    6. PROMPT FINAL
-    ========================================
-    */
-
-    const prompt = `
-${instructions}
-
-${userContext}
-
-${productContext}
-
-Responde en español.
-Respuesta:
-`;
-
-    return prompt.trim();
-
-  } catch (err) {
-    console.error("❌ PROMPT BUILDER ERROR:", err);
-    return null;
-  }
+  return prompt;
 }
