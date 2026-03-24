@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA REPLY ENGINE (AI-FIRST VERSION)
+EVA REPLY ENGINE (AI-FIRST + SALES OPTIMIZED)
 ====================================================
 */
 
@@ -28,6 +28,23 @@ function safeExtractMedia(product) {
   }
 }
 
+function formatPrice(price) {
+  if (!price) return "";
+  return `₡${Number(price).toLocaleString("es-CR")}`;
+}
+
+function formatProducts(products = []) {
+  if (!products.length) return "";
+
+  return products
+    .slice(0, 2)
+    .map(p => {
+      return `💻 ${p.name}
+${formatPrice(p.price)}`;
+    })
+    .join("\n\n");
+}
+
 function getMainCatalogItem(products = []) {
   return Array.isArray(products) && products.length > 0
     ? products[0]
@@ -47,29 +64,55 @@ export function generateReply({
 }) {
 
   console.log("🧠 GENERATE REPLY:", {
-    text,
     intent,
     products_count: products?.length || 0
   });
 
+  const mainProduct = getMainCatalogItem(products);
+
   /*
   ============================================
-  1. SI HAY TEXTO (AI) → USARLO
+  1. SI HAY TEXTO AI → MEJORARLO (NO REEMPLAZAR)
   ============================================
   */
 
   if (text && text.trim().length > 0) {
-    const mainProduct = getMainCatalogItem(products);
+    let finalText = text;
+
+    if (products && products.length > 0) {
+      finalText += `\n\n${formatProducts(products)}\n\n¿Te interesa alguna o querés que te recomiende mejor según tu uso? 👍`;
+    }
 
     return {
-      text,
+      text: finalText,
       media: safeExtractMedia(mainProduct)
     };
   }
 
   /*
   ============================================
-  2. FALLBACK MÍNIMO (SOLO SEGURIDAD)
+  2. SIN AI → RESPUESTA COMERCIAL DIRECTA
+  ============================================
+  */
+
+  if (products && products.length > 0) {
+    return {
+      text: `Hola 😊 claro que sí 🙌
+
+Te recomiendo estas opciones 👇
+
+${formatProducts(products)}
+
+Son equipos corporativos reacondicionados, muy duraderos y con garantía 👌
+
+¿Buscás algo para estudio, trabajo o uso más avanzado? 👍`,
+      media: safeExtractMedia(mainProduct)
+    };
+  }
+
+  /*
+  ============================================
+  3. FALLBACK
   ============================================
   */
 
