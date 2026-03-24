@@ -91,8 +91,7 @@ try {
   if (conversation?.id) {
     const result = await db.query(
       `
-      SELECT role, text
-      FROM messages
+     SELECT role, content as text FROM messages
       WHERE conversation_id = $1
       ORDER BY created_at ASC
       LIMIT 10
