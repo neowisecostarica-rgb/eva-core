@@ -227,6 +227,34 @@ if (needsHuman) {
     text,
     reason: "no_catalog_match"
   });
+
+  /*
+  ========================================
+  🛑 OVERRIDE COMERCIAL (CRÍTICO)
+  ========================================
+  */
+
+  return {
+    reply: generateReply({
+      text: `Hola 😊 claro que sí, con gusto te ayudo 🙌
+
+Trabajamos ese tipo de producto.
+
+¿Lo estás buscando para estudio, trabajo o algo más específico? 👍
+Así te recomiendo la mejor opción según lo que necesités.`,
+      intent: "GUIDED_SALE",
+      products: [],
+    }),
+    meta: {
+      organization_id,
+      channel,
+      phone,
+      lead_id: lead?.id || null,
+      usedAI: false,
+      fallback: false,
+      guided: true,
+    },
+  };
 }
     
     /*
