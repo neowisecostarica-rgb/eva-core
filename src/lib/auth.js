@@ -31,7 +31,9 @@ export async function authenticate(req, res, next) {
     // 🔒 IMPORTANTE: organization_id se define AQUÍ
     // (fuente única de verdad por ahora)
 
-    req.organization_id = process.env.ORG_PRIMARY;
+   req.organization = {
+  id: process.env.ORG_PRIMARY,
+};
 
     if (!req.organization_id) {
       console.error("❌ ORG_PRIMARY no definido");
