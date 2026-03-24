@@ -1,5 +1,6 @@
 // src/salesBrain.js
 
+import { findOrCreateLead, findOrCreateConversation, saveMessage } from "./db.js";
 import { searchCatalogSmart } from "./brain/utils/catalogEngine.js";
 import { generateReply } from "./brain/replies/replyEngine.js";
 
@@ -7,9 +8,6 @@ import { runAI } from "./brain/engines/aiEngine.js";
 import { applyAIGuards } from "./brain/utils/aiGuards.js";
 import { buildPrompt } from "./brain/utils/promptBuilder.js";
 import { getPromptConfig } from "./brain/utils/getPromptConfig.js";
-
-// 🔒 NUEVO: DB
-import { findOrCreateLead } from "./db.js";
 
 export async function handleInbound(payload) {
   try {
@@ -40,6 +38,44 @@ export async function handleInbound(payload) {
       console.log("👤 Lead:", lead?.id);
     } catch (err) {
       console.error("❌ Lead error:", err);
+    }
+
+    /*
+    ========================================
+    1.1 CONVERSATION
+    ========================================
+    */
+
+    let conversation = null;
+
+    try {
+      conversation = await findOrCreateConversation({
+        organization_id,
+        phone,
+        channel,
+        lead_id: lead?.id
+      });
+
+      console.log("💬 Conversation:", conversation?.id);
+    } catch (err) {
+      console.error("❌ Conversation error:", err);
+    }
+
+    /*
+    ========================================
+    1.2 SAVE USER MESSAGE (ANTES DEL AI)
+    ========================================
+    */
+
+    if (conversation?.id) {
+      await saveMessage({
+        organization_id,
+        conversation_id: conversation.id,
+        lead_id: lead?.id,
+        role: "user",
+        text,
+        message_id
+      });
     }
 
     /*
@@ -130,6 +166,22 @@ export async function handleInbound(payload) {
 
       replyText =
         "Hola 😊 con gusto te ayudo. Contame un poco más qué estás buscando y te guío.";
+    }
+
+    /*
+    ========================================
+    6.1 SAVE ASSISTANT MESSAGE
+    ========================================
+    */
+
+    if (conversation?.id && replyText) {
+      await saveMessage({
+        organization_id,
+        conversation_id: conversation.id,
+        lead_id: lead?.id,
+        role: "assistant",
+        text: replyText
+      });
     }
 
     /*
