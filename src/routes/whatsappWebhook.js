@@ -79,7 +79,7 @@ router.post("/", async (req, res) => {
     const phone = message.from;
     const text = extractText(message);
 
-    // ✅ FIX CRÍTICO: extraer message_id real de WhatsApp
+    // ✅ ID REAL DE WHATSAPP (CLAVE PARA IDEMPOTENCIA)
     const message_id = message.id || null;
 
     console.log("📩 Incoming:", {
@@ -95,7 +95,7 @@ router.post("/", async (req, res) => {
     }
 
     /* ======================================
-       CALL EVA
+       CALL EVA CORE
     ====================================== */
 
     const evaResponse = await fetch(`${EVA_ENDPOINT}/v1/messages/inbound`, {
@@ -108,7 +108,7 @@ router.post("/", async (req, res) => {
         phone,
         text,
         channel: "whatsapp",
-        message_id // ✅ ahora sí lo enviamos
+        message_id
       })
     });
 
@@ -123,14 +123,29 @@ router.post("/", async (req, res) => {
     console.log("🧠 EVA RESPONSE:", data);
 
     const replyText = data?.reply?.text;
+    const isDuplicate = data?.meta?.duplicate === true;
+
+    /* ======================================
+       IDEMPOTENCY HANDLING
+    ====================================== */
 
     if (!replyText) {
-      console.warn("⚠️ EVA sin respuesta");
+      if (isDuplicate) {
+        console.log("♻️ Duplicate detected — no reply sent");
+      } else {
+        console.warn("⚠️ EVA sin respuesta válida");
+      }
+
+      return res.sendStatus(200);
+    }
+
+    // 🔒 Protección extra
+    if (isDuplicate) {
       return res.sendStatus(200);
     }
 
     /* ======================================
-       SEND TO WHATSAPP (SPLIT FIX)
+       SEND TO WHATSAPP
     ====================================== */
 
     const messages = splitReply(replyText);
@@ -156,6 +171,7 @@ router.post("/", async (req, res) => {
 
       console.log("✅ WhatsApp OK:", waData);
 
+      // delay humano
       await new Promise((res) => setTimeout(res, 1200));
     }
 
