@@ -1,7 +1,6 @@
 // src/routes/messages.js
 
 import express from "express";
-import pool from "../db.js";
 import { authenticate } from "../lib/auth.js";
 import { validateInbound } from "../validators.js";
 import { handleInbound } from "../salesBrain.js";
@@ -20,12 +19,13 @@ router.post("/inbound", authenticate, async (req, res) => {
 
     /*
     ========================================
-    🔒 AUTH — SOURCE OF TRUTH
+    🔒 AUTH (SOURCE OF TRUTH)
     ========================================
     */
 
     if (!req.organization || !req.organization.id) {
-      console.error("❌ AUTH ERROR: organization missing in request");
+      console.error("❌ AUTH ERROR: organization missing");
+
       return res.status(401).json({
         error: "Unauthorized - organization not resolved",
       });
@@ -35,99 +35,57 @@ router.post("/inbound", authenticate, async (req, res) => {
 
     /*
     ========================================
-    🔒 INPUT CRUDO (SIN TRANSFORMAR)
+    ✅ VALIDATION (CONTRACT)
     ========================================
     */
 
-    const rawInput = {
-      phone: req.body.phone,
-      text: req.body.text,
-      channel: req.body.channel,
-      message_id: req.body.message_id,
-    };
+    const validated = validateInbound(req.body);
 
-    /*
-    ========================================
-    VALIDACIÓN + SANITIZE (SOURCE OF TRUTH)
-    ========================================
-    */
+    if (validated.error) {
+      console.warn("⚠️ INVALID INPUT:", validated.message);
 
-    const { valid, errors, sanitized } = validateInbound(rawInput);
-
-    if (!valid) {
       return res.status(400).json({
-        error: "Payload inválido",
-        details: errors,
+        error: validated.message,
       });
     }
 
     /*
     ========================================
-    PAYLOAD FINAL (SOT)
+    🧠 FINAL PAYLOAD (CLEAN)
     ========================================
     */
 
     const payload = {
       organization_id,
-      ...sanitized,
+      ...validated,
     };
 
-    console.log("🧠 EVA inbound:", payload);
+    console.log("🧼 CLEAN PAYLOAD:", payload);
 
     /*
     ========================================
-    🧠 IDEMPOTENCIA INBOUND (P1.4)
-    ========================================
-    */
-
-    if (payload.message_id) {
-      try {
-        const existing = await pool.query(
-          `
-          SELECT id
-          FROM messages
-          WHERE organization_id = $1
-          AND external_message_id = $2
-          LIMIT 1
-          `,
-          [organization_id, payload.message_id]
-        );
-
-        if (existing.rows.length > 0) {
-          console.log("⚠️ Duplicate message detected, skipping:", payload.message_id);
-
-          return res.json({
-            success: true,
-            duplicate: true,
-          });
-        }
-
-      } catch (err) {
-        console.error("❌ Idempotency check error:", err);
-        // no bloqueamos flujo
-      }
-    }
-
-    /*
-    ========================================
-    🚀 EJECUCIÓN CORE
+    🧠 EVA CORE
     ========================================
     */
 
     const result = await handleInbound(payload);
 
-    console.log("📦 RESPONSE:", result);
+    /*
+    ========================================
+    ✅ RESPONSE
+    ========================================
+    */
 
     return res.json({
       success: true,
-      ...result,
+      data: result,
     });
 
   } catch (err) {
-    console.error("❌ ERROR /inbound:", err);
+    console.error("❌ INBOUND ERROR:", err);
 
     return res.status(500).json({
-      error: "Error procesando mensaje",
+      error: "Internal server error",
     });
   }
 });
