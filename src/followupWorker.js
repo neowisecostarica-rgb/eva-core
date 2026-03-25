@@ -13,13 +13,12 @@ MESSAGE BUILDER (CONTEXTUAL)
 */
 
 function buildFollowupMessage(followup, memory = {}) {
-
   const { reason } = followup;
 
   const useCaseText = {
     ESTUDIO: "para estudio",
     TRABAJO: "para trabajo",
-    GAMING: "para gaming"
+    GAMING: "para gaming",
   };
 
   const useCase = memory?.use_case
@@ -67,7 +66,6 @@ PROCESS FOLLOWUPS
 
 export async function processFollowups(sendMessage) {
   try {
-
     const result = await pool.query(`
       SELECT *
       FROM followups
@@ -81,9 +79,7 @@ export async function processFollowups(sendMessage) {
     if (!followups.length) return;
 
     for (const f of followups) {
-
       try {
-
         /*
         ------------------------------------------------
         LOCK (CRÍTICO)
@@ -113,7 +109,6 @@ export async function processFollowups(sendMessage) {
         */
 
         try {
-
           // ya fue enviado antes
           if (followup.sent === true) {
             await pool.query(
@@ -122,7 +117,7 @@ export async function processFollowups(sendMessage) {
               SET status = 'CANCELLED',
                   updated_at = NOW()
               WHERE id = $1
-              `,
+            `,
               [followup.id]
             );
             continue;
@@ -131,17 +126,18 @@ export async function processFollowups(sendMessage) {
           // existe uno más reciente → cancelar este
           const newer = await pool.query(
             `
-            SELECT id FROM followups
+            SELECT id
+            FROM followups
             WHERE organization_id = $1
             AND lead_phone = $2
             AND status = 'PENDING'
             AND scheduled_for > $3
             LIMIT 1
-            `,
+          `,
             [
               followup.organization_id,
               followup.lead_phone,
-              followup.scheduled_for
+              followup.scheduled_for,
             ]
           );
 
@@ -152,12 +148,11 @@ export async function processFollowups(sendMessage) {
               SET status = 'CANCELLED',
                   updated_at = NOW()
               WHERE id = $1
-              `,
+            `,
               [followup.id]
             );
             continue;
           }
-
         } catch (err) {
           console.warn("⚠️ anti-spam error", err.message);
         }
@@ -169,7 +164,6 @@ export async function processFollowups(sendMessage) {
         */
 
         if (!followup.lead_phone) {
-
           await pool.query(
             `
             UPDATE followups
@@ -197,13 +191,13 @@ export async function processFollowups(sendMessage) {
             SELECT use_case, budget_crc, product_interest
             FROM leads
             WHERE phone = $1
+            AND organization_id = $2
             LIMIT 1
-            `,
-            [followup.lead_phone]
+          `,
+            [followup.lead_phone, followup.organization_id]
           );
 
           memory = memResult.rows[0] || {};
-
         } catch (err) {
           console.warn("⚠️ memory error", err.message);
         }
@@ -224,7 +218,7 @@ export async function processFollowups(sendMessage) {
 
         await sendMessage({
           phone: followup.lead_phone,
-          message
+          message,
         });
 
         /*
@@ -241,7 +235,7 @@ export async function processFollowups(sendMessage) {
               sent_at = NOW(),
               updated_at = NOW()
           WHERE id = $1
-          `,
+        `,
           [followup.id]
         );
 
@@ -252,7 +246,6 @@ export async function processFollowups(sendMessage) {
         */
 
         try {
-
           let nextDelay = null;
           let nextReason = null;
 
@@ -265,7 +258,6 @@ export async function processFollowups(sendMessage) {
           }
 
           if (nextDelay && nextReason) {
-
             const scheduledFor = new Date(Date.now() + nextDelay);
 
             await pool.query(
@@ -283,23 +275,20 @@ export async function processFollowups(sendMessage) {
                 updated_at
               )
               VALUES ($1, $2, $3, $4, $5, 'PENDING', 0, false, NOW(), NOW())
-              `,
+            `,
               [
                 followup.organization_id,
                 followup.lead_phone,
                 followup.conversation_id,
                 nextReason,
-                scheduledFor
+                scheduledFor,
               ]
             );
           }
-
         } catch (err) {
           console.error("FOLLOWUP SEQUENCE ERROR", err.message);
         }
-
       } catch (err) {
-
         console.error("FOLLOWUP ERROR", err);
 
         await pool.query(
@@ -309,12 +298,11 @@ export async function processFollowups(sendMessage) {
               attempt = COALESCE(attempt, 0) + 1,
               updated_at = NOW()
           WHERE id = $1
-          `,
+        `,
           [f.id]
         );
       }
     }
-
   } catch (err) {
     console.error("FOLLOWUP WORKER ERROR", err);
   }
@@ -329,11 +317,9 @@ WORKER LOOP
 let isRunning = false;
 
 export function startFollowupWorker(sendMessage) {
-
   console.log("EVA FOLLOWUP WORKER STARTED");
 
   setInterval(async () => {
-
     if (isRunning) return;
 
     try {
@@ -344,6 +330,5 @@ export function startFollowupWorker(sendMessage) {
     } finally {
       isRunning = false;
     }
-
   }, 120000);
 }
