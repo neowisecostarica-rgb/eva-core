@@ -35,36 +35,24 @@ router.post("/inbound", authenticate, async (req, res) => {
 
     /*
     ========================================
-    🔒 SANITIZE INPUT
+    🔒 INPUT CRUDO (SIN TRANSFORMAR)
     ========================================
     */
 
-    const safeInput = {
+    const rawInput = {
       phone: req.body.phone,
-      text: (req.body.text || "").trim(),
-      channel: (req.body.channel || "whatsapp").toLowerCase().trim(),
-      message_id: req.body.message_id || null,
+      text: req.body.text,
+      channel: req.body.channel,
+      message_id: req.body.message_id,
     };
 
     /*
     ========================================
-    🛡️ GUARDRAIL BÁSICO
+    VALIDACIÓN + SANITIZE (SOURCE OF TRUTH)
     ========================================
     */
 
-    if (!safeInput.phone || !safeInput.text) {
-      return res.status(400).json({
-        error: "Missing required fields",
-      });
-    }
-
-    /*
-    ========================================
-    VALIDACIÓN
-    ========================================
-    */
-
-    const { valid, errors } = validateInbound(safeInput);
+    const { valid, errors, sanitized } = validateInbound(rawInput);
 
     if (!valid) {
       return res.status(400).json({
@@ -81,7 +69,7 @@ router.post("/inbound", authenticate, async (req, res) => {
 
     const payload = {
       organization_id,
-      ...safeInput,
+      ...sanitized,
     };
 
     console.log("🧠 EVA inbound:", payload);
