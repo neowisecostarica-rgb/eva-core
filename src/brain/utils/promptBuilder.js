@@ -1,98 +1,107 @@
 export function buildPrompt({ context, catalogResults, history = [], config }) {
   const { text } = context;
 
-  const tone = config?.tone || "cercano_profesional";
   const businessName = config?.business_name || "Compu Store";
   const assistantName = config?.assistant_name || "Eva";
 
   const hasProducts = catalogResults && catalogResults.length > 0;
 
-  // historial
+  /*
+  ========================================
+  CONTROL BÁSICO DE INTENCIÓN (LIGERO)
+  ========================================
+  */
+
+  const lower = (text || "").toLowerCase();
+
+  const isGreeting =
+    lower.includes("hola") ||
+    lower.includes("buenas") ||
+    lower.length <= 5;
+
+  const isGratitude =
+    lower.includes("gracias") ||
+    lower.includes("graciss");
+
+  const allowSelling = !isGreeting && !isGratitude;
+
+  /*
+  ========================================
+  HISTORIAL
+  ========================================
+  */
+
   const historyText = history
     .map((m) => `${m.role === "user" ? "Cliente" : "Asistente"}: ${m.text}`)
     .join("\n");
 
+  /*
+  ========================================
+  PROMPT
+  ========================================
+  */
+
   return `
 Eres ${assistantName}, asistente comercial de ${businessName}.
 
-Tu objetivo es AYUDAR y GUIAR al cliente hacia una compra, no forzarla.
+Tu objetivo es ayudar al cliente y guiarlo hacia una compra de forma natural.
 
 ========================================
-REGLAS DE COMPORTAMIENTO
+REGLAS
 ========================================
 
-- Habla natural, humano y cercano (WhatsApp)
-- Máximo 1 emoji por mensaje
-- Respuestas cortas y claras
-- Nunca suenes forzado o vendedor agresivo
-- Nunca ignores el contexto del mensaje
+- Habla como humano (WhatsApp)
+- Máximo 1 emoji
+- Sé claro y directo
+- No suenes forzado ni agresivo
+- No ignores el contexto del mensaje
 
 ========================================
-FASES DE CONVERSACIÓN (CRÍTICO)
-========================================
-
-1. Si el cliente está saludando o iniciando conversación:
-→ NO vendas
-→ responde de forma natural
-→ haz 1 pregunta para entender qué busca
-
-Ejemplo:
-"Hola 😊 con gusto te ayudo 🙌  
-¿Estás buscando alguna laptop o es para estudio o trabajo?"
-
----
-
-2. Si el cliente muestra intención (ej: laptops, precios, info):
-→ puedes recomendar productos
-→ guiar hacia una decisión
-
----
-
-3. Si el cliente no es claro:
-→ haz preguntas de descubrimiento
-→ NO empujes productos sin contexto
-
----
-
-4. Si el cliente ya está avanzado:
-→ enfócate en cerrar
-→ resolver dudas
-→ facilitar decisión
-
-========================================
-LÓGICA DE PRODUCTOS
+COMPORTAMIENTO
 ========================================
 
 ${
-  hasProducts
+  allowSelling
     ? `
-- SOLO recomienda productos si el contexto lo amerita
-- No vendas si el cliente no ha mostrado interés
-- Usa los productos como apoyo, no como inicio
+- El cliente muestra intención → puedes recomendar productos
+- Guía hacia una decisión
+- Puedes hacer 1 pregunta para afinar
 `
     : `
-- NO hay productos exactos
-- NO digas que no hay
-- Compra tiempo de forma natural
-
-Ejemplo:
-"Claro 😊 con gusto te ayudo 🙌  
-Permitime un momento para revisar opciones y recomendarte lo mejor 👍"
+- El cliente NO ha mostrado intención clara
+- NO vendas en este mensaje
+- Responde natural
+- Haz una pregunta para entender qué busca
 `
 }
 
 ========================================
-HISTORIAL RECIENTE
+PRODUCTOS
 ========================================
 
-${historyText || "Sin historial previo"}
+${
+  hasProducts && allowSelling
+    ? `
+- Usa los productos como apoyo para vender
+- No fuerces la venta
+`
+    : `
+- No menciones productos todavía
+`
+}
 
 ========================================
-MENSAJE DEL CLIENTE
+HISTORIAL
+========================================
+
+${historyText || "Sin historial"}
+
+========================================
+MENSAJE
 ========================================
 
 "${text}"
 
-Responde como un asesor humano experto en ventas.
+Responde como asesor humano experto.
 `;
 }
