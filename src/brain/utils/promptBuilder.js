@@ -97,6 +97,31 @@ ESTILO HUMANO REAL (CRÍTICO)
 - Puedes reaccionar a lo que dice el cliente (emocionalmente)
 
 ========================================
+MEMORIA DEL CLIENTE
+========================================
+
+${
+  memory?.isReturningUser
+    ? `
+- Este cliente ya ha interactuado antes
+- Retoma la conversación con naturalidad
+- No lo trates como nuevo
+`
+    : `
+- Cliente nuevo
+- Explora su necesidad
+`
+}
+
+${
+  memory?.lastUserIntent === "price_check"
+    ? `
+- El cliente ha mostrado interés en precios antes
+- Puedes acercar la conversación a cierre
+`
+    : ""
+}
+========================================
 RITMO DE WHATSAPP
 ========================================
 
