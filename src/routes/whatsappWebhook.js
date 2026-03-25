@@ -122,7 +122,17 @@ router.post("/", async (req, res) => {
 
     console.log("🧠 EVA RESPONSE:", data);
 
-    const replyText = data?.reply?.text;
+    /*
+    ======================================
+    🔥 FIX CRÍTICO (SOT ALINEADO)
+    ======================================
+    */
+
+    const replyText =
+      data?.data?.reply?.text && typeof data.data.reply.text === "string"
+        ? data.data.reply.text
+        : null;
+
     const isDuplicate = data?.meta?.duplicate === true;
 
     /* ======================================
@@ -133,7 +143,7 @@ router.post("/", async (req, res) => {
       if (isDuplicate) {
         console.log("♻️ Duplicate detected — no reply sent");
       } else {
-        console.warn("⚠️ EVA sin respuesta válida");
+        console.warn("⚠️ EVA sin respuesta válida", data);
       }
 
       return res.sendStatus(200);
