@@ -1,63 +1,103 @@
-// src/validators.js
+/*
+====================================================
+EVA VALIDATORS — INPUT CONTRACT (P1.4)
+====================================================
+*/
 
-export function validateInbound(body) {
-  const errors = [];
+export function validateInbound(body = {}) {
+  try {
+    /*
+    ========================================
+    EXTRACT
+    ========================================
+    */
 
-  if (!body || typeof body !== "object") {
-    return { valid: false, errors: ["Body requerido y debe ser objeto"] };
-  }
-
-  /*
-  ========================================
-  NORMALIZACIÓN (SOURCE OF TRUTH)
-  ========================================
-  */
-
-  const phone = typeof body.phone === "string" ? body.phone.trim() : "";
-  const text = typeof body.text === "string" ? body.text.trim() : "";
-  const channel = typeof body.channel === "string"
-    ? body.channel.trim().toLowerCase()
-    : "whatsapp"; // default controlado aquí
-  const message_id = body.message_id || null;
-
-  /*
-  ========================================
-  VALIDACIONES
-  ========================================
-  */
-
-  if (!phone) {
-    errors.push("phone requerido");
-  } else if (!/^\d{8,15}$/.test(phone)) {
-    errors.push("phone inválido (solo números, 8–15 dígitos)");
-  }
-
-  if (!text) {
-    errors.push("text requerido");
-  } else if (text.length < 1) {
-    errors.push("text inválido");
-  }
-
-  if (!channel) {
-    errors.push("channel requerido");
-  } else if (!["whatsapp", "web", "instagram"].includes(channel)) {
-    errors.push("channel inválido");
-  }
-
-  /*
-  ========================================
-  RESULTADO
-  ========================================
-  */
-
-  return {
-    valid: errors.length === 0,
-    errors,
-    sanitized: {
+    let {
       phone,
       text,
       channel,
-      message_id,
-    },
-  };
+      message_id
+    } = body;
+
+    /*
+    ========================================
+    PHONE (REQUIRED)
+    ========================================
+    */
+
+    if (!phone || typeof phone !== "string") {
+      throw new Error("Invalid phone");
+    }
+
+    phone = phone.replace(/\D/g, "");
+
+    if (phone.length < 8) {
+      throw new Error("Invalid phone format");
+    }
+
+    /*
+    ========================================
+    TEXT (REQUIRED)
+    ========================================
+    */
+
+    if (!text || typeof text !== "string") {
+      throw new Error("Invalid text");
+    }
+
+    text = text.trim();
+
+    if (text.length === 0) {
+      throw new Error("Empty text");
+    }
+
+    if (text.length > 1000) {
+      text = text.slice(0, 1000);
+    }
+
+    /*
+    ========================================
+    CHANNEL (DEFAULT)
+    ========================================
+    */
+
+    const allowedChannels = ["whatsapp", "web", "instagram"];
+
+    if (!channel || !allowedChannels.includes(channel)) {
+      channel = "whatsapp";
+    }
+
+    /*
+    ========================================
+    MESSAGE ID (OPTIONAL)
+    ========================================
+    */
+
+    if (message_id && typeof message_id !== "string") {
+      message_id = null;
+    }
+
+    if (message_id && message_id.length > 120) {
+      message_id = message_id.slice(0, 120);
+    }
+
+    /*
+    ========================================
+    OUTPUT CLEAN
+    ========================================
+    */
+
+    return {
+      phone,
+      text,
+      channel,
+      message_id: message_id || null
+    };
+
+  } catch (err) {
+    return {
+      error: true,
+      message: err.message || "Invalid input"
+    };
+  }
 }
