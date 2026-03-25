@@ -8,7 +8,6 @@ import { applyAIGuards } from "./brain/utils/aiGuards.js";
 import { buildPrompt } from "./brain/utils/promptBuilder.js";
 import { getPromptConfig } from "./brain/utils/getPromptConfig.js";
 
-
 export async function handleInbound(payload) {
   try {
     const {
@@ -135,48 +134,48 @@ export async function handleInbound(payload) {
     }
 
     /*
-========================================
-2.1 MEMORY SNAPSHOT (BLOQUE 2.4)
-========================================
-*/
+    ========================================
+    2.1 MEMORY SNAPSHOT
+    ========================================
+    */
 
-let memory = {
-  hasHistory: history.length > 2,
-  lastUserIntent: null,
-  isReturningUser: false,
-};
+    let memory = {
+      hasHistory: history.length > 2,
+      lastUserIntent: null,
+      isReturningUser: false,
+    };
 
-try {
-  if (history.length > 0) {
-    memory.isReturningUser = true;
+    try {
+      if (history.length > 0) {
+        memory.isReturningUser = true;
 
-    const lastUserMessage = [...history]
-      .reverse()
-      .find((m) => m.role === "user");
+        const lastUserMessage = [...history]
+          .reverse()
+          .find((m) => m.role === "user");
 
-    if (lastUserMessage?.text) {
-      const lowerPrev = lastUserMessage.text.toLowerCase();
+        if (lastUserMessage?.text) {
+          const lowerPrev = lastUserMessage.text.toLowerCase();
 
-      if (
-        lowerPrev.includes("precio") ||
-        lowerPrev.includes("cuánto") ||
-        lowerPrev.includes("cuanto")
-      ) {
-        memory.lastUserIntent = "price_check";
+          if (
+            lowerPrev.includes("precio") ||
+            lowerPrev.includes("cuánto") ||
+            lowerPrev.includes("cuanto")
+          ) {
+            memory.lastUserIntent = "price_check";
+          }
+
+          if (
+            lowerPrev.includes("busco") ||
+            lowerPrev.includes("quiero")
+          ) {
+            memory.lastUserIntent = "exploring";
+          }
+        }
       }
-
-      if (
-        lowerPrev.includes("busco") ||
-        lowerPrev.includes("quiero")
-      ) {
-        memory.lastUserIntent = "exploring";
-      }
+    } catch (err) {
+      console.warn("⚠️ Memory snapshot error:", err);
     }
-  }
-} catch (err) {
-  console.warn("⚠️ Memory snapshot error:", err);
-}
-    
+
     /*
     ========================================
     3. CONTEXT
@@ -212,19 +211,11 @@ try {
 
     /*
     ========================================
-    🧠 INTENT + SALES MODE (BLOQUE 2.1)
+    5. SALES MODE
     ========================================
     */
 
     const lower = (text || "").toLowerCase();
-
-    const isGreeting =
-      lower.includes("hola") ||
-      lower.includes("buenas") ||
-      lower.length <= 5;
-
-    const isGratitude =
-      lower.includes("gracias");
 
     const isBuyingIntent =
       lower.includes("precio") ||
@@ -260,13 +251,9 @@ try {
       safeCatalog = catalogResults.slice(0, 2);
     }
 
-    if (salesMode === "conversation") {
-      safeCatalog = [];
-    }
-
     /*
     ========================================
-    5. CONFIG
+    6. CONFIG
     ========================================
     */
 
@@ -274,24 +261,22 @@ try {
 
     /*
     ========================================
-    6. AI
+    7. AI
     ========================================
     */
 
     let replyText = null;
 
     try {
-     const prompt = buildPrompt({
-  context,
-  catalogResults: safeCatalog,
-  history,
-  memory,
-  config,
-});
-
-      const aiResponse = await runAI({
+      const prompt = buildPrompt({
         context,
         catalogResults: safeCatalog,
+        history,
+        memory,
+        config,
+      });
+
+      const aiResponse = await runAI({
         prompt,
       });
 
@@ -314,7 +299,7 @@ try {
 
     /*
     ========================================
-    7. FALLBACK
+    8. FALLBACK
     ========================================
     */
 
@@ -325,7 +310,7 @@ try {
 
     /*
     ========================================
-    8. SAVE ASSISTANT
+    9. SAVE ASSISTANT
     ========================================
     */
 
@@ -341,7 +326,7 @@ try {
 
     /*
     ========================================
-    9. RESPONSE
+    10. RESPONSE
     ========================================
     */
 
