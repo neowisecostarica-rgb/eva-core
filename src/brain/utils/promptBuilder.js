@@ -1,4 +1,4 @@
-export function buildPrompt({ context, catalogResults, history = [], config }) {
+export function buildPrompt({ context, catalogResults, history = [], memory = {}, config }) {
   const { text } = context;
 
   const businessName = config?.business_name || "Compu Store";
@@ -79,6 +79,7 @@ REGLAS DE COMUNICACIÓN
 - No uses lenguaje técnico complejo
 - No suenes como bot
 - Siempre mantén control de la conversación
+
 ========================================
 ESTILO HUMANO REAL (CRÍTICO)
 ========================================
@@ -121,6 +122,7 @@ ${
 `
     : ""
 }
+
 ========================================
 RITMO DE WHATSAPP
 ========================================
@@ -139,7 +141,7 @@ CIERRE NATURAL
   - "mañana coordinamos"
   - "te aviso en un momento"
   - "ya casi te confirmo"
-  
+
 ========================================
 ESTRATEGIA DE VENTA
 ========================================
