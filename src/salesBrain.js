@@ -29,8 +29,14 @@ export async function handleInbound(payload) {
     if (message_id) {
       try {
         const existing = await db.query(
-          `SELECT id FROM messages WHERE message_id = $1 LIMIT 1`,
-          [message_id]
+          `
+          SELECT id
+          FROM messages
+          WHERE organization_id = $1
+          AND external_message_id = $2
+          LIMIT 1
+          `,
+          [organization_id, message_id]
         );
 
         if (existing.rows.length > 0) {
@@ -111,12 +117,14 @@ export async function handleInbound(payload) {
       if (conversation?.id) {
         const result = await db.query(
           `
-          SELECT role, content as text FROM messages
+          SELECT role, content as text
+          FROM messages
           WHERE conversation_id = $1
+          AND organization_id = $2
           ORDER BY created_at ASC
           LIMIT 10
           `,
-          [conversation.id]
+          [conversation.id, organization_id]
         );
 
         history = result.rows;
@@ -177,7 +185,7 @@ export async function handleInbound(payload) {
     const allowSelling = !isGreeting && !isGratitude;
 
     // 🔒 FILTRAR CATÁLOGO
-    let safeCatalog = allowSelling ? catalogResults : [];
+    const safeCatalog = allowSelling ? catalogResults : [];
 
     /*
     ========================================
@@ -198,14 +206,14 @@ export async function handleInbound(payload) {
     try {
       const prompt = buildPrompt({
         context,
-        catalogResults: safeCatalog, // 🔥 FIX
+        catalogResults: safeCatalog,
         history,
         config,
       });
 
       const aiResponse = await runAI({
         context,
-        catalogResults: safeCatalog, // 🔥 FIX
+        catalogResults: safeCatalog,
         prompt,
       });
 
@@ -222,7 +230,6 @@ export async function handleInbound(payload) {
       if (guarded?.text) {
         replyText = guarded.text;
       }
-
     } catch (err) {
       console.warn("⚠️ AI error:", err);
     }
@@ -263,7 +270,7 @@ export async function handleInbound(payload) {
     return {
       reply: {
         text: replyText,
-        products: safeCatalog, // 🔥 FIX FINAL
+        products: safeCatalog,
       },
       meta: {
         organization_id,
@@ -273,7 +280,6 @@ export async function handleInbound(payload) {
         usedAI: true,
       },
     };
-
   } catch (err) {
     console.error("❌ ERROR salesBrain:", err);
 
