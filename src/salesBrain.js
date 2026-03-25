@@ -8,6 +8,7 @@ import { applyAIGuards } from "./brain/utils/aiGuards.js";
 import { buildPrompt } from "./brain/utils/promptBuilder.js";
 import { getPromptConfig } from "./brain/utils/getPromptConfig.js";
 
+export function buildPrompt({ context, catalogResults, history = [], memory = {}, config })
 export async function handleInbound(payload) {
   try {
     const {
@@ -280,12 +281,13 @@ try {
     let replyText = null;
 
     try {
-      const prompt = buildPrompt({
-        context,
-        catalogResults: safeCatalog,
-        history,
-        config,
-      });
+     const prompt = buildPrompt({
+  context,
+  catalogResults: safeCatalog,
+  history,
+  memory,
+  config,
+});
 
       const aiResponse = await runAI({
         context,
