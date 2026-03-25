@@ -34,7 +34,7 @@ export async function authenticate(req, res, next) {
       });
     }
 
-    // 🔒 SOURCE OF TRUTH (FORMATO CORRECTO)
+    // 🔒 SOURCE OF TRUTH
     req.organization = {
       id: orgId,
     };
