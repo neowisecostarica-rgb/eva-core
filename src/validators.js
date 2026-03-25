@@ -1,8 +1,12 @@
 /*
 ====================================================
-EVA VALIDATORS — INPUT CONTRACT (P1.4)
+EVA VALIDATORS — INPUT CONTRACT (STABILIZATION v1)
 ====================================================
 */
+
+function isNonEmptyString(value) {
+  return typeof value === "string" && value.trim().length > 0;
+}
 
 export function validateInbound(body = {}) {
   try {
@@ -25,7 +29,7 @@ export function validateInbound(body = {}) {
     ========================================
     */
 
-    if (!phone || typeof phone !== "string") {
+    if (!isNonEmptyString(phone)) {
       throw new Error("Invalid phone");
     }
 
@@ -41,15 +45,11 @@ export function validateInbound(body = {}) {
     ========================================
     */
 
-    if (!text || typeof text !== "string") {
+    if (!isNonEmptyString(text)) {
       throw new Error("Invalid text");
     }
 
     text = text.trim();
-
-    if (text.length === 0) {
-      throw new Error("Empty text");
-    }
 
     if (text.length > 1000) {
       text = text.slice(0, 1000);
@@ -57,23 +57,23 @@ export function validateInbound(body = {}) {
 
     /*
     ========================================
-    CHANNEL (DEFAULT)
+    CHANNEL (CONTROLLED)
     ========================================
     */
 
     const allowedChannels = ["whatsapp", "web", "instagram"];
 
-    if (!channel || !allowedChannels.includes(channel)) {
+    if (!isNonEmptyString(channel) || !allowedChannels.includes(channel)) {
       channel = "whatsapp";
     }
 
     /*
     ========================================
-    MESSAGE ID (OPTIONAL)
+    MESSAGE ID (OPTIONAL NORMALIZED)
     ========================================
     */
 
-    if (message_id && typeof message_id !== "string") {
+    if (!isNonEmptyString(message_id)) {
       message_id = null;
     }
 
@@ -83,7 +83,7 @@ export function validateInbound(body = {}) {
 
     /*
     ========================================
-    OUTPUT CLEAN
+    OUTPUT (CONTRACT SAFE)
     ========================================
     */
 
@@ -91,7 +91,7 @@ export function validateInbound(body = {}) {
       phone,
       text,
       channel,
-      message_id: message_id || null
+      message_id
     };
 
   } catch (err) {
