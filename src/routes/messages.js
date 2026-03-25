@@ -9,6 +9,12 @@ import { handleInbound } from "../salesBrain.js";
 import { createLogger } from "../lib/logger.js";
 import { checkRateLimit } from "../lib/rateLimiter.js";
 
+// 🔥 NUEVO: contrato runtime
+import {
+  validateHandleInboundResult,
+  buildMessagesRouteResponse,
+} from "../system/contracts/runtimeContract.js";
+
 const router = express.Router();
 
 /*
@@ -66,12 +72,11 @@ router.post("/inbound", authenticate, async (req, res) => {
 
     /*
     ========================================
-    🔒 RATE LIMIT (CLAVE)
+    🔒 RATE LIMIT
     ========================================
     */
 
     const rateKey = `${organization_id}:${validated.phone}`;
-
     const rate = checkRateLimit(rateKey);
 
     if (rate.blocked) {
@@ -111,14 +116,32 @@ router.post("/inbound", authenticate, async (req, res) => {
 
     /*
     ========================================
-    RESPONSE
+    🔥 CONTRACT VALIDATION (CLAVE)
     ========================================
     */
 
-    return res.json({
-      success: true,
-      data: result,
-    });
+    try {
+      validateHandleInboundResult(result);
+    } catch (contractError) {
+      log.error("CONTRACT_VIOLATION", {
+        message: contractError.message,
+        result,
+      });
+
+      return res.status(500).json({
+        error: "Invalid brain response contract",
+      });
+    }
+
+    /*
+    ========================================
+    🔥 BUILD OFFICIAL RESPONSE
+    ========================================
+    */
+
+    const response = buildMessagesRouteResponse(result);
+
+    return res.json(response);
 
   } catch (err) {
     log.error("INBOUND_ERROR", {
