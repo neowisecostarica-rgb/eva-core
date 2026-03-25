@@ -8,7 +8,7 @@ import { applyAIGuards } from "./brain/utils/aiGuards.js";
 import { buildPrompt } from "./brain/utils/promptBuilder.js";
 import { getPromptConfig } from "./brain/utils/getPromptConfig.js";
 
-export function buildPrompt({ context, catalogResults, history = [], memory = {}, config })
+
 export async function handleInbound(payload) {
   try {
     const {
