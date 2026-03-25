@@ -269,12 +269,13 @@ export async function handleInbound(payload) {
 
     try {
       const prompt = buildPrompt({
-        context,
-        catalogResults: safeCatalog,
-        history,
-        memory,
-        config,
-      });
+  context,
+  catalogResults: safeCatalog,
+  history,
+  memory,
+  config,
+  salesMode,
+});
 
       const aiResponse = await runAI({
         prompt,
