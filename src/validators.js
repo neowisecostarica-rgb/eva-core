@@ -9,13 +9,16 @@ export function validateInbound(body) {
 
   /*
   ========================================
-  NORMALIZACIÓN
+  NORMALIZACIÓN (SOURCE OF TRUTH)
   ========================================
   */
 
   const phone = typeof body.phone === "string" ? body.phone.trim() : "";
   const text = typeof body.text === "string" ? body.text.trim() : "";
-  const channel = typeof body.channel === "string" ? body.channel.trim().toLowerCase() : "";
+  const channel = typeof body.channel === "string"
+    ? body.channel.trim().toLowerCase()
+    : "whatsapp"; // default controlado aquí
+  const message_id = body.message_id || null;
 
   /*
   ========================================
@@ -54,7 +57,7 @@ export function validateInbound(body) {
       phone,
       text,
       channel,
-      message_id: body.message_id || null,
+      message_id,
     },
   };
 }
