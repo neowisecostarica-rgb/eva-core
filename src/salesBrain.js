@@ -1,5 +1,18 @@
-import { findOrCreateLead, findOrCreateConversation, saveMessage } from "./db.js";
+/*
+====================================================
+EVA CORE — SALES BRAIN (FINAL STABLE MVP)
+SOURCE OF TRUTH — NO PATCH ZONE
+====================================================
+*/
+
+import {
+  findOrCreateLead,
+  findOrCreateConversation,
+  saveMessage,
+} from "./db.js";
+
 import db from "./db.js";
+
 import { searchCatalogSmart } from "./brain/utils/catalogEngine.js";
 
 import { enforceAIRuntime } from "./system/contracts/aiRuntime.js";
@@ -7,6 +20,12 @@ import { runAI } from "./brain/engines/aiEngine.js";
 import { applyAIGuards } from "./brain/utils/aiGuards.js";
 import { buildPrompt } from "./brain/utils/promptBuilder.js";
 import { getPromptConfig } from "./brain/utils/getPromptConfig.js";
+
+/*
+====================================================
+MAIN HANDLER
+====================================================
+*/
 
 export async function handleInbound(payload) {
   try {
@@ -22,7 +41,7 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    0. IDEMPOTENCY
+    0. IDEMPOTENCY (HARD GUARD)
     ========================================
     */
 
@@ -71,7 +90,7 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    1.1 CONVERSATION
+    2. CONVERSATION
     ========================================
     */
 
@@ -90,7 +109,7 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    1.2 SAVE USER MESSAGE
+    3. SAVE USER MESSAGE
     ========================================
     */
 
@@ -107,7 +126,7 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    2. HISTORY
+    4. HISTORY
     ========================================
     */
 
@@ -135,50 +154,7 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    2.1 MEMORY SNAPSHOT
-    ========================================
-    */
-
-    let memory = {
-      hasHistory: history.length > 2,
-      lastUserIntent: null,
-      isReturningUser: false,
-    };
-
-    try {
-      if (history.length > 0) {
-        memory.isReturningUser = true;
-
-        const lastUserMessage = [...history]
-          .reverse()
-          .find((m) => m.role === "user");
-
-        if (lastUserMessage?.text) {
-          const lowerPrev = lastUserMessage.text.toLowerCase();
-
-          if (
-            lowerPrev.includes("precio") ||
-            lowerPrev.includes("cuánto") ||
-            lowerPrev.includes("cuanto")
-          ) {
-            memory.lastUserIntent = "price_check";
-          }
-
-          if (
-            lowerPrev.includes("busco") ||
-            lowerPrev.includes("quiero")
-          ) {
-            memory.lastUserIntent = "exploring";
-          }
-        }
-      }
-    } catch (err) {
-      console.warn("⚠️ Memory snapshot error:", err);
-    }
-
-    /*
-    ========================================
-    3. CONTEXT
+    5. CONTEXT (SOURCE OF TRUTH)
     ========================================
     */
 
@@ -194,7 +170,7 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    4. CATÁLOGO
+    6. CATÁLOGO
     ========================================
     */
 
@@ -211,33 +187,28 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    5. SALES MODE
+    7. SALES MODE (MVP CONTROLLED)
     ========================================
     */
 
     const lower = (text || "").toLowerCase();
 
-    const isBuyingIntent =
+    let salesMode = "conversation";
+
+    if (
       lower.includes("precio") ||
       lower.includes("cuánto") ||
       lower.includes("cuanto") ||
       lower.includes("vale") ||
       lower.includes("disponible") ||
-      lower.includes("tienen") ||
-      lower.includes("tenés") ||
-      lower.includes("tenes");
-
-    const isExploring =
+      lower.includes("tienen")
+    ) {
+      salesMode = "closing";
+    } else if (
       lower.includes("busco") ||
       lower.includes("necesito") ||
-      lower.includes("quiero") ||
-      lower.includes("ocupo");
-
-    let salesMode = "conversation";
-
-    if (isBuyingIntent) {
-      salesMode = "closing";
-    } else if (isExploring) {
+      lower.includes("quiero")
+    ) {
       salesMode = "discovery";
     }
 
@@ -253,32 +224,38 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    6. CONFIG
+    8. CONFIG
     ========================================
     */
 
-    const config = await getPromptConfig(organization_id);
+    let config = {};
+
+    try {
+      config = await getPromptConfig(organization_id);
+    } catch (err) {
+      console.warn("⚠️ Config error:", err);
+    }
 
     /*
     ========================================
-    7. AI
+    9. AI (SINGLE ENTRY POINT)
     ========================================
     */
 
     let replyText = null;
+    let usedAI = false;
 
     try {
       const prompt = buildPrompt({
-  context,
-  catalogResults: safeCatalog,
-  history,
-  memory,
-  config,
-  salesMode,
-});
+        context,
+        catalogResults: safeCatalog,
+        history,
+        config,
+        salesMode,
+      });
 
       const aiResponse = await runAI({
-        prompt,
+        prompt, // 🔒 ÚNICO CONTRATO
       });
 
       const guarded = applyAIGuards({
@@ -291,16 +268,18 @@ export async function handleInbound(payload) {
         source: "salesBrain",
       });
 
-      if (guarded?.text) {
-        replyText = guarded.text;
+      if (guarded && typeof guarded.text === "string" && guarded.text.trim().length > 0) {
+        replyText = guarded.text.trim();
+        usedAI = true;
       }
+
     } catch (err) {
       console.warn("⚠️ AI error:", err);
     }
 
     /*
     ========================================
-    8. FALLBACK
+    10. FALLBACK (HARD SAFE)
     ========================================
     */
 
@@ -311,23 +290,27 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    9. SAVE ASSISTANT
+    11. SAVE ASSISTANT MESSAGE
     ========================================
     */
 
     if (conversation?.id && replyText) {
-      await saveMessage({
-        organization_id,
-        conversation_id: conversation.id,
-        lead_id: lead?.id,
-        role: "assistant",
-        text: replyText,
-      });
+      try {
+        await saveMessage({
+          organization_id,
+          conversation_id: conversation.id,
+          lead_id: lead?.id,
+          role: "assistant",
+          text: replyText,
+        });
+      } catch (err) {
+        console.warn("⚠️ Save assistant error:", err);
+      }
     }
 
     /*
     ========================================
-    10. RESPONSE
+    12. FINAL RESPONSE (CONTRACT GUARANTEED)
     ========================================
     */
 
@@ -341,11 +324,12 @@ export async function handleInbound(payload) {
         channel,
         phone,
         lead_id: lead?.id || null,
-        usedAI: true,
+        usedAI,
       },
     };
+
   } catch (err) {
-    console.error("❌ ERROR salesBrain:", err);
+    console.error("❌ FATAL salesBrain:", err);
 
     return {
       reply: {
