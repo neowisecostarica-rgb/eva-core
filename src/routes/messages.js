@@ -1,9 +1,12 @@
 // src/routes/messages.js
 
 import express from "express";
+import crypto from "crypto";
+
 import { authenticate } from "../lib/auth.js";
 import { validateInbound } from "../validators.js";
 import { handleInbound } from "../salesBrain.js";
+import { createLogger } from "../lib/logger.js";
 
 const router = express.Router();
 
@@ -14,35 +17,52 @@ POST /v1/messages/inbound
 */
 
 router.post("/inbound", authenticate, async (req, res) => {
+  const request_id = crypto.randomUUID();
+
+  /*
+  ========================================
+  LOGGER INIT (ANTES DE TODO)
+  ========================================
+  */
+
+  const organization_id = req.organization?.id || null;
+
+  const log = createLogger({
+    request_id,
+    organization_id,
+  });
+
   try {
-    console.log("📩 RAW REQUEST:", req.body);
+    log.info("INBOUND_REQUEST_RECEIVED", {
+      raw: req.body,
+    });
 
     /*
     ========================================
-    🔒 AUTH (SOURCE OF TRUTH)
+    AUTH (SOURCE OF TRUTH)
     ========================================
     */
 
-    if (!req.organization || !req.organization.id) {
-      console.error("❌ AUTH ERROR: organization missing");
+    if (!organization_id) {
+      log.error("AUTH_FAILED");
 
       return res.status(401).json({
         error: "Unauthorized - organization not resolved",
       });
     }
 
-    const organization_id = req.organization.id;
-
     /*
     ========================================
-    ✅ VALIDATION (CONTRACT)
+    VALIDATION (CONTRACT)
     ========================================
     */
 
     const validated = validateInbound(req.body);
 
     if (validated.error) {
-      console.warn("⚠️ INVALID INPUT:", validated.message);
+      log.warn("INVALID_INPUT", {
+        reason: validated.message,
+      });
 
       return res.status(400).json({
         error: validated.message,
@@ -51,7 +71,7 @@ router.post("/inbound", authenticate, async (req, res) => {
 
     /*
     ========================================
-    🧠 FINAL PAYLOAD (CLEAN)
+    PAYLOAD CLEAN
     ========================================
     */
 
@@ -60,19 +80,23 @@ router.post("/inbound", authenticate, async (req, res) => {
       ...validated,
     };
 
-    console.log("🧼 CLEAN PAYLOAD:", payload);
+    log.info("PAYLOAD_READY", payload);
 
     /*
     ========================================
-    🧠 EVA CORE
+    EVA CORE
     ========================================
     */
 
     const result = await handleInbound(payload);
 
+    log.info("BRAIN_RESPONSE", {
+      preview: result?.reply?.text?.slice(0, 100) || null,
+    });
+
     /*
     ========================================
-    ✅ RESPONSE
+    RESPONSE
     ========================================
     */
 
@@ -82,7 +106,10 @@ router.post("/inbound", authenticate, async (req, res) => {
     });
 
   } catch (err) {
-    console.error("❌ INBOUND ERROR:", err);
+    log.error("INBOUND_ERROR", {
+      message: err.message,
+      stack: err.stack,
+    });
 
     return res.status(500).json({
       error: "Internal server error",
