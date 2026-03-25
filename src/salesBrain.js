@@ -134,6 +134,49 @@ export async function handleInbound(payload) {
     }
 
     /*
+========================================
+2.1 MEMORY SNAPSHOT (BLOQUE 2.4)
+========================================
+*/
+
+let memory = {
+  hasHistory: history.length > 2,
+  lastUserIntent: null,
+  isReturningUser: false,
+};
+
+try {
+  if (history.length > 0) {
+    memory.isReturningUser = true;
+
+    const lastUserMessage = [...history]
+      .reverse()
+      .find((m) => m.role === "user");
+
+    if (lastUserMessage?.text) {
+      const lowerPrev = lastUserMessage.text.toLowerCase();
+
+      if (
+        lowerPrev.includes("precio") ||
+        lowerPrev.includes("cuánto") ||
+        lowerPrev.includes("cuanto")
+      ) {
+        memory.lastUserIntent = "price_check";
+      }
+
+      if (
+        lowerPrev.includes("busco") ||
+        lowerPrev.includes("quiero")
+      ) {
+        memory.lastUserIntent = "exploring";
+      }
+    }
+  }
+} catch (err) {
+  console.warn("⚠️ Memory snapshot error:", err);
+}
+    
+    /*
     ========================================
     3. CONTEXT
     ========================================
