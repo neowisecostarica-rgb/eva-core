@@ -10,11 +10,11 @@ if (!process.env.DATABASE_URL) {
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: {
-    rejectUnauthorized: false
+    rejectUnauthorized: false,
   },
   max: 10,
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 5000
+  connectionTimeoutMillis: 5000,
 });
 
 pool.on("connect", () => {
@@ -53,8 +53,9 @@ export async function findOrCreateLead({ organization_id, phone }) {
         SET last_contact_at = NOW(),
             updated_at = NOW()
         WHERE id = $1
+        AND organization_id = $2
         `,
-        [lead.id]
+        [lead.id, organization_id]
       );
 
       return lead;
@@ -88,7 +89,6 @@ export async function findOrCreateLead({ organization_id, phone }) {
     );
 
     return created.rows[0];
-
   } catch (err) {
     console.error("❌ findOrCreateLead error:", err);
     return null;
@@ -104,7 +104,7 @@ CONVERSATIONS + MESSAGES
 export async function findOrCreateConversation({
   organization_id,
   phone,
-  channel
+  channel,
 }) {
   try {
     const existing = await pool.query(
@@ -140,7 +140,6 @@ export async function findOrCreateConversation({
     );
 
     return created.rows[0];
-
   } catch (err) {
     console.error("❌ findOrCreateConversation error:", err);
     return null;
@@ -158,7 +157,7 @@ export async function saveMessage({
   conversation_id,
   role,
   text,
-  message_id = null
+  message_id = null,
 }) {
   try {
     await pool.query(
@@ -182,12 +181,12 @@ export async function saveMessage({
       SET last_message_at = NOW(),
           updated_at = NOW()
       WHERE id = $1
+      AND organization_id = $2
       `,
-      [conversation_id]
+      [conversation_id, organization_id]
     );
 
     console.log("💬 Message saved");
-
   } catch (err) {
     console.error("❌ saveMessage error:", err);
   }
