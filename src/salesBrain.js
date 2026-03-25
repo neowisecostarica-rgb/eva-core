@@ -168,7 +168,7 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    🔥 4.1 CONTROL DE INTENCIÓN (FIX REAL)
+    🧠 INTENT + SALES MODE (BLOQUE 2.1)
     ========================================
     */
 
@@ -182,10 +182,43 @@ export async function handleInbound(payload) {
     const isGratitude =
       lower.includes("gracias");
 
-    const allowSelling = !isGreeting && !isGratitude;
+    const isBuyingIntent =
+      lower.includes("precio") ||
+      lower.includes("cuánto") ||
+      lower.includes("cuanto") ||
+      lower.includes("vale") ||
+      lower.includes("disponible") ||
+      lower.includes("tienen") ||
+      lower.includes("tenés") ||
+      lower.includes("tenes");
 
-    // 🔒 FILTRAR CATÁLOGO
-    const safeCatalog = allowSelling ? catalogResults : [];
+    const isExploring =
+      lower.includes("busco") ||
+      lower.includes("necesito") ||
+      lower.includes("quiero") ||
+      lower.includes("ocupo");
+
+    let salesMode = "conversation";
+
+    if (isBuyingIntent) {
+      salesMode = "closing";
+    } else if (isExploring) {
+      salesMode = "discovery";
+    }
+
+    let safeCatalog = [];
+
+    if (salesMode === "closing") {
+      safeCatalog = catalogResults;
+    }
+
+    if (salesMode === "discovery") {
+      safeCatalog = catalogResults.slice(0, 2);
+    }
+
+    if (salesMode === "conversation") {
+      safeCatalog = [];
+    }
 
     /*
     ========================================
