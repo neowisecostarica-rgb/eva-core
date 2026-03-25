@@ -7,6 +7,7 @@ import { authenticate } from "../lib/auth.js";
 import { validateInbound } from "../validators.js";
 import { handleInbound } from "../salesBrain.js";
 import { createLogger } from "../lib/logger.js";
+import { checkRateLimit } from "../lib/rateLimiter.js";
 
 const router = express.Router();
 
@@ -18,12 +19,6 @@ POST /v1/messages/inbound
 
 router.post("/inbound", authenticate, async (req, res) => {
   const request_id = crypto.randomUUID();
-
-  /*
-  ========================================
-  LOGGER INIT (ANTES DE TODO)
-  ========================================
-  */
 
   const organization_id = req.organization?.id || null;
 
@@ -39,7 +34,7 @@ router.post("/inbound", authenticate, async (req, res) => {
 
     /*
     ========================================
-    AUTH (SOURCE OF TRUTH)
+    AUTH
     ========================================
     */
 
@@ -47,13 +42,13 @@ router.post("/inbound", authenticate, async (req, res) => {
       log.error("AUTH_FAILED");
 
       return res.status(401).json({
-        error: "Unauthorized - organization not resolved",
+        error: "Unauthorized",
       });
     }
 
     /*
     ========================================
-    VALIDATION (CONTRACT)
+    VALIDATION
     ========================================
     */
 
@@ -71,7 +66,27 @@ router.post("/inbound", authenticate, async (req, res) => {
 
     /*
     ========================================
-    PAYLOAD CLEAN
+    🔒 RATE LIMIT (CLAVE)
+    ========================================
+    */
+
+    const rateKey = `${organization_id}:${validated.phone}`;
+
+    const rate = checkRateLimit(rateKey);
+
+    if (rate.blocked) {
+      log.warn("RATE_LIMIT_BLOCKED", {
+        phone: validated.phone,
+      });
+
+      return res.status(429).json({
+        error: "Too many requests, try again later",
+      });
+    }
+
+    /*
+    ========================================
+    PAYLOAD
     ========================================
     */
 
@@ -84,7 +99,7 @@ router.post("/inbound", authenticate, async (req, res) => {
 
     /*
     ========================================
-    EVA CORE
+    BRAIN
     ========================================
     */
 
