@@ -1,12 +1,18 @@
 /*
 ====================================================
-WHATSAPP WEBHOOK — EVA CORE (FINAL STABLE VERSION)
+WHATSAPP WEBHOOK — EVA CORE (STABILIZATION PACK v1)
 ====================================================
 */
 
 import express from "express";
 import fetch from "node-fetch";
 import { splitReply } from "../brain/utils/splitReply.js";
+
+// 🔥 NUEVO: contrato runtime
+import {
+  extractReplyFromMessagesRouteResponse,
+  validateMessagesRouteResponse
+} from "../system/contracts/runtimeContract.js";
 
 const router = express.Router();
 
@@ -78,8 +84,6 @@ router.post("/", async (req, res) => {
 
     const phone = message.from;
     const text = extractText(message);
-
-    // ✅ ID REAL DE WHATSAPP (CLAVE PARA IDEMPOTENCIA)
     const message_id = message.id || null;
 
     console.log("📩 Incoming:", {
@@ -124,39 +128,53 @@ router.post("/", async (req, res) => {
 
     /*
     ======================================
-    🔥 FIX CRÍTICO (SOT ALINEADO)
+    🔥 CONTRACT VALIDATION
     ======================================
     */
 
-    const replyText =
-      data?.data?.reply?.text && typeof data.data.reply.text === "string"
-        ? data.data.reply.text
-        : null;
+    try {
+      validateMessagesRouteResponse(data);
+    } catch (contractError) {
+      console.error("❌ CONTRACT VIOLATION (WEBHOOK)", {
+        message: contractError.message,
+        data
+      });
 
-    const isDuplicate = data?.meta?.duplicate === true;
+      return res.sendStatus(500);
+    }
 
-    /* ======================================
+    /*
+    ======================================
+    🔥 EXTRACT REPLY (OFICIAL)
+    ======================================
+    */
+
+    const { text: replyText, meta } =
+      extractReplyFromMessagesRouteResponse(data);
+
+    const isDuplicate = meta?.duplicate === true;
+
+    /*
+    ======================================
        IDEMPOTENCY HANDLING
-    ====================================== */
+    ======================================
+    */
+
+    if (isDuplicate) {
+      console.log("♻️ Duplicate detected — no reply sent");
+      return res.sendStatus(200);
+    }
 
     if (!replyText) {
-      if (isDuplicate) {
-        console.log("♻️ Duplicate detected — no reply sent");
-      } else {
-        console.warn("⚠️ EVA sin respuesta válida", data);
-      }
-
+      console.warn("⚠️ EMPTY_REPLY_AFTER_CONTRACT");
       return res.sendStatus(200);
     }
 
-    // 🔒 Protección extra
-    if (isDuplicate) {
-      return res.sendStatus(200);
-    }
-
-    /* ======================================
+    /*
+    ======================================
        SEND TO WHATSAPP
-    ====================================== */
+    ======================================
+    */
 
     const messages = splitReply(replyText);
 
