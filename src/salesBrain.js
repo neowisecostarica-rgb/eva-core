@@ -1,5 +1,3 @@
-// src/salesBrain.js
-
 import { findOrCreateLead, findOrCreateConversation, saveMessage } from "./db.js";
 import db from "./db.js";
 import { searchCatalogSmart } from "./brain/utils/catalogEngine.js";
@@ -145,7 +143,7 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    4. CATÁLOGO (SOLO CONTEXTO)
+    4. CATÁLOGO
     ========================================
     */
 
@@ -162,6 +160,27 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
+    🔥 4.1 CONTROL DE INTENCIÓN (FIX REAL)
+    ========================================
+    */
+
+    const lower = (text || "").toLowerCase();
+
+    const isGreeting =
+      lower.includes("hola") ||
+      lower.includes("buenas") ||
+      lower.length <= 5;
+
+    const isGratitude =
+      lower.includes("gracias");
+
+    const allowSelling = !isGreeting && !isGratitude;
+
+    // 🔒 FILTRAR CATÁLOGO
+    let safeCatalog = allowSelling ? catalogResults : [];
+
+    /*
+    ========================================
     5. CONFIG
     ========================================
     */
@@ -170,7 +189,7 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    6. AI — SIEMPRE (FLOW CORRECTO)
+    6. AI
     ========================================
     */
 
@@ -179,14 +198,14 @@ export async function handleInbound(payload) {
     try {
       const prompt = buildPrompt({
         context,
-        catalogResults,
+        catalogResults: safeCatalog, // 🔥 FIX
         history,
         config,
       });
 
       const aiResponse = await runAI({
         context,
-        catalogResults,
+        catalogResults: safeCatalog, // 🔥 FIX
         prompt,
       });
 
@@ -195,7 +214,6 @@ export async function handleInbound(payload) {
         context,
       });
 
-      // 🔒 SYSTEM CONTRACT ENFORCEMENT
       enforceAIRuntime({
         aiResponse: guarded,
         source: "salesBrain",
@@ -211,7 +229,7 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    7. FALLBACK (ÚNICO HARD-CODE PERMITIDO)
+    7. FALLBACK
     ========================================
     */
 
@@ -245,7 +263,7 @@ export async function handleInbound(payload) {
     return {
       reply: {
         text: replyText,
-        products: catalogResults,
+        products: safeCatalog, // 🔥 FIX FINAL
       },
       meta: {
         organization_id,
