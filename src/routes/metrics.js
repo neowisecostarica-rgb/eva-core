@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA METRICS ROUTES (HARDENED + RADAR)
+EVA METRICS ROUTES (ALINEADO A AUTH + SOT)
 ====================================================
 */
 
@@ -17,11 +17,11 @@ SUMMARY METRICS
 
 router.get("/summary", async (req, res) => {
   try {
-    const { organization_id } = req.query;
+    const organization_id = req.organization?.id;
 
     if (!organization_id) {
-      return res.status(400).json({
-        error: "organization_id required"
+      return res.status(401).json({
+        error: "Unauthorized",
       });
     }
 
@@ -54,38 +54,32 @@ router.get("/summary", async (req, res) => {
       data: {
         leads: Number(leadsResult.rows[0].count || 0),
         conversations: Number(conversationsResult.rows[0].count || 0),
-        messages: Number(messagesResult.rows[0].count || 0)
-      }
+        messages: Number(messagesResult.rows[0].count || 0),
+      },
     });
   } catch (err) {
     console.error("METRICS SUMMARY ERROR", err);
     return res.status(500).json({
-      error: "internal_error"
+      error: "internal_error",
     });
   }
 });
 
 /*
 ====================================================
-RADAR (🔥 MARKET + PRODUCT INTELLIGENCE)
+RADAR
 ====================================================
 */
 
 router.get("/radar", async (req, res) => {
   try {
-    const { organization_id } = req.query;
+    const organization_id = req.organization?.id;
 
     if (!organization_id) {
-      return res.status(400).json({
-        error: "organization_id required"
+      return res.status(401).json({
+        error: "Unauthorized",
       });
     }
-
-    /*
-    ====================================================
-    SIGNALS
-    ====================================================
-    */
 
     const signalsResult = await pool.query(
       `
@@ -102,12 +96,6 @@ router.get("/radar", async (req, res) => {
       signalsMap[row.event_type] = Number(row.count);
     }
 
-    /*
-    ====================================================
-    PRODUCT DEMAND (🔥 CLAVE)
-    ====================================================
-    */
-
     const productDemandResult = await pool.query(
       `
       SELECT event_value, COUNT(*) as count
@@ -119,12 +107,6 @@ router.get("/radar", async (req, res) => {
     `,
       [organization_id]
     );
-
-    /*
-    ====================================================
-    TOP PRODUCTS INTEREST
-    ====================================================
-    */
 
     const productInterestResult = await pool.query(
       `
@@ -138,12 +120,6 @@ router.get("/radar", async (req, res) => {
       [organization_id]
     );
 
-    /*
-    ====================================================
-    RESPONSE
-    ====================================================
-    */
-
     return res.json({
       success: true,
       data: {
@@ -154,22 +130,16 @@ router.get("/radar", async (req, res) => {
           price_objections: signalsMap["PRICE_OBJECTION"] || 0,
           low_price_search: signalsMap["LOW_PRICE_SEARCH"] || 0,
           product_search: signalsMap["PRODUCT_SEARCH"] || 0,
-          budget_detected: signalsMap["BUDGET_DETECTED"] || 0
+          budget_detected: signalsMap["BUDGET_DETECTED"] || 0,
         },
-
-        /*
-        🔥 ESTO ES LO NUEVO IMPORTANTE
-        */
         product_demand: productDemandResult.rows || [],
-
-        product_interest: productInterestResult.rows || []
-      }
+        product_interest: productInterestResult.rows || [],
+      },
     });
-
   } catch (err) {
     console.error("RADAR ERROR", err);
     return res.status(500).json({
-      error: "internal_error"
+      error: "internal_error",
     });
   }
 });
