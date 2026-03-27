@@ -223,6 +223,65 @@ export async function handleInbound(payload) {
     }
 
     /*
+========================================
+7.1 LEAD ENRICHMENT (P1.3)
+========================================
+*/
+
+try {
+  if (lead?.id) {
+
+    let scoreIncrement = 0;
+    let nextStage = lead.stage;
+
+    // 🔥 INTENT BASED SCORING
+    if (salesMode === "closing") {
+      scoreIncrement += 20;
+      nextStage = "qualified";
+    }
+
+    if (salesMode === "discovery") {
+      scoreIncrement += 10;
+      if (nextStage === "new") {
+        nextStage = "engaged";
+      }
+    }
+
+    // 🔥 EXTRA SIGNALS
+    if (lower.includes("comprar") || lower.includes("lo quiero")) {
+      scoreIncrement += 30;
+      nextStage = "ready_to_buy";
+    }
+
+    if (lower.includes("urgente") || lower.includes("para hoy")) {
+      scoreIncrement += 15;
+    }
+
+    if (scoreIncrement > 0) {
+      await db.query(`
+        UPDATE leads
+        SET 
+          score = COALESCE(score, 0) + $1,
+          stage = $2,
+          updated_at = NOW()
+        WHERE id = $3
+        AND organization_id = $4
+      `, [scoreIncrement, nextStage, lead.id, organization_id]);
+
+      console.log("🧠 Lead enriched:", {
+        lead_id: lead.id,
+        scoreIncrement,
+        nextStage
+      });
+    }
+
+  }
+} catch (err) {
+  console.warn("⚠️ Lead enrichment error:", err);
+}
+    
+
+    /*
     ========================================
     8. CONFIG
     ========================================
