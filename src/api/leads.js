@@ -6,34 +6,31 @@ export function registerLeadRoutes(app, pool) {
 
     try {
 
+      const organization_id = req.organization?.id;
+
+      if (!organization_id) {
+        return res.status(401).json({
+          error: "Unauthorized",
+        });
+      }
+
       const r = await pool.query(`
         SELECT
-          cp.id,
-          cp.external_user_id,
-          cp.profile_json,
-          cp.updated_at
-        FROM customer_profiles cp
-        ORDER BY cp.updated_at DESC
+          id,
+          phone,
+          score,
+          stage,
+          status,
+          last_contact_at,
+          created_at,
+          updated_at
+        FROM leads
+        WHERE organization_id = $1
+        ORDER BY updated_at DESC
         LIMIT 100
-      `);
+      `, [organization_id]);
 
-      const leads = r.rows.map(row => {
-
-        const p = row.profile_json || {};
-
-        return {
-          id: row.id,
-          phone: row.external_user_id,
-          stage: p.stage || "DISCOVERY",
-          budget_crc: p.budget_crc || null,
-          product_interest: p.product_interest || null,
-          use_case: p.use_case || null,
-          last_update: row.updated_at
-        };
-
-      });
-
-      res.json(leads);
+      res.json(r.rows);
 
     } catch (err) {
 
