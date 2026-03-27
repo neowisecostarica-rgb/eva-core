@@ -49,6 +49,7 @@ app.use("/v1/metrics", authenticate, metricsRouter);
 
 // 🔥 NUEVO: API DASHBOARD (REUTILIZANDO LO QUE YA EXISTE)
 registerConversationRoutes(app, pool);
+app.use("/v1/leads", authenticate);
 registerLeadRoutes(app, pool);
 
 // START
