@@ -2,7 +2,9 @@
 
 export async function authenticate(req, res, next) {
   try {
-    const apiKey = req.headers["x-api-key"];
+    const apiKey =
+      req.headers["x-api-key"] ||
+      req.headers["authorization"]?.replace("Bearer ", "");
 
     if (!apiKey) {
       return res.status(401).json({
@@ -34,7 +36,6 @@ export async function authenticate(req, res, next) {
       });
     }
 
-    // 🔒 SOURCE OF TRUTH
     req.organization = {
       id: orgId,
     };
