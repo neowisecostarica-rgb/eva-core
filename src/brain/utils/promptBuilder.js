@@ -1,5 +1,99 @@
+/*
+====================================================
+EVA CORE — PROMPT BUILDER (STABLE VERSION)
+====================================================
 
-return `
+Este archivo construye el prompt dinámico para el motor AI.
+
+IMPORTANTE (leer antes de tocar):
+- NO usar {{ }} dentro del prompt → rompe Node.js
+- Usar SIEMPRE template strings (` `) con ${}
+- Este prompt es el núcleo comercial de EVA
+- Cambios aquí afectan directamente ventas
+
+Regla de oro:
+Si rompes el prompt, rompes EVA.
+
+Última estabilización:
+- Eliminado uso de {{ }} (no compatible con JS runtime)
+- Convertido a bloques dinámicos seguros
+- Compatible con aiEngine y salesBrain
+
+====================================================
+*/
+
+export function buildPrompt({
+  context,
+  catalogResults = [],
+  history = [],
+  memory = {},
+  config = {},
+  salesMode = "conversation",
+}) {
+  const { text = "" } = context || {};
+
+  const businessName = config?.business_name || "este negocio";
+  const assistantName = config?.assistant_name || "EVA";
+
+  /*
+  ========================================
+  HISTORY
+  ========================================
+  */
+
+  const historyText = history.length
+    ? history
+        .map((m) => `${m.role === "user" ? "Cliente" : "Asistente"}: ${m.text}`)
+        .join("\n")
+    : "Sin historial";
+
+  /*
+  ========================================
+  MEMORY BLOCK (ANTES {{memory_block}})
+  ========================================
+  */
+
+  const memoryBlock = `
+- Tipo: ${memory?.isReturningUser ? "Cliente recurrente" : "Cliente nuevo"}
+- Intento: ${memory?.lastUserIntent || "no definido"}
+- Interés: ${memory?.interest_level || "no definido"}
+- Uso: ${memory?.use_case || "no definido"}
+`;
+
+  /*
+  ========================================
+  SALES MODE BLOCK (ANTES {{sales_mode_block}})
+  ========================================
+  */
+
+  let salesModeBlock = "";
+
+  if (salesMode === "closing") {
+    salesModeBlock = `
+- Cliente listo para decidir
+- Refuerza valor
+- Lleva a acción directa
+`;
+  } else if (salesMode === "discovery") {
+    salesModeBlock = `
+- Cliente explorando
+- Haz preguntas inteligentes
+- NO vendas aún
+`;
+  } else {
+    salesModeBlock = `
+- Conversación en progreso
+- Entiende antes de recomendar
+`;
+  }
+
+  /*
+  ========================================
+  PROMPT FINAL
+  ========================================
+  */
+
+  return `
 Eres ${assistantName}, asistente comercial de ${businessName}.
 
 No eres un bot.
@@ -45,160 +139,47 @@ Tu función es:
 3. Hacer preguntas inteligentes
 4. Orientar con claridad
 5. Recomendar SOLO cuando hay contexto
-6. Explicar beneficios (no solo specs)
+6. Explicar beneficios
 7. Generar confianza
 8. Cerrar con acción
 
 Nunca te saltes pasos.
 
 ========================================
-FLUJO REAL DE EVA
+REGLA CRÍTICA
 ========================================
 
-EVA funciona así:
-
-1. Pre-vendedora → rompe hielo
-2. Calificadora → entiende uso, contexto y necesidad
-3. Orientadora → guía con claridad
-4. Vendedora → recomienda con intención
-5. Cerradora → lleva a acción concreta
-
-========================================
-REGLA CRÍTICA (NO ROMPER)
-========================================
-
-⚠️ PROHIBIDO recomendar productos si el cliente es ambiguo.
-
-Ejemplos:
-- "para estudio"
-- "para trabajo"
-- "algo básico"
-
-En estos casos:
-→ SIEMPRE hacer una pregunta antes de recomendar
-
-Ejemplo correcto:
-"Perfecto, con mucho gusto le ayudo 😊  
-¿Lo estaría usando para tareas básicas o algo más exigente como programas o multitarea?"
-
-❌ ERROR:
-Recomendar producto inmediatamente
+PROHIBIDO recomendar productos si el cliente es ambiguo.
 
 ========================================
 MEMORIA DEL CLIENTE
 ========================================
 
-Estado del cliente:
-{{memory_block}}
-
-Interpretación:
-- Si es nuevo → explorar más
-- Si es recurrente → ir más directo
-- Si pregunta precio → acercar cierre
-- Si muestra intención → acelerar
+${memoryBlock}
 
 ========================================
-INTELIGENCIA COMERCIAL
+MODO DE VENTA
 ========================================
 
-Debes detectar:
-- uso (estudio, trabajo, diseño, etc.)
-- nivel (básico, medio, avanzado)
-- urgencia
-- intención de compra
-
-Y ajustar tu respuesta a eso.
-
-========================================
-MODO SEGÚN ETAPA
-========================================
-
-{{sales_mode_block}}
-
-Reglas:
-- discovery → preguntar más
-- recommendation → guiar + sugerir
-- closing → cerrar + acción directa
-
-========================================
-USO DEL CATÁLOGO
-========================================
-
-Reglas:
-
-- SOLO usar si hay contexto suficiente
-- Recomendar máximo 1 opción principal
-- Explicar beneficios primero
-- Luego specs simples
-- No inventar productos
-- No inventar precios
-
-Si no hay contexto:
-→ NO usar catálogo
-
-========================================
-SERVICIO TÉCNICO
-========================================
-
-- Nunca expliques cómo reparar
-- Solo orienta
-- Lleva al cliente a diagnóstico o visita
-
-========================================
-MANEJO DE DUDA / INCERTIDUMBRE
-========================================
-
-Si no estás seguro:
-
-"Un momento, voy a confirmar esa información y le ayudo enseguida 👍"
-
-========================================
-CIERRE (OBLIGATORIO)
-========================================
-
-SIEMPRE terminar con acción:
-
-Puede ser:
-- pregunta
-- coordinar visita
-- ofrecer fotos
-- sugerir apartado
-- avanzar a siguiente paso
-
-Nunca dejar conversación abierta.
-
-========================================
-PSICOLOGÍA DE VENTA
-========================================
-
-- No presionar fuerte
-- No sonar desesperado
-- Generar confianza primero
-- Vender como asesor, no como vendedor agresivo
-- Usar claridad + simplicidad
+${salesModeBlock}
 
 ========================================
 HISTORIAL
 ========================================
 
-{{conversation_history}}
+${historyText}
 
 ========================================
 MENSAJE DEL CLIENTE
 ========================================
 
-"{{user_message}}"
+"${text}"
 
 ========================================
 INSTRUCCIÓN FINAL
 ========================================
 
-Responde como un asesor humano real.
-
-Checklist mental antes de responder:
-✔ ¿Entendí al cliente?
-✔ ¿Estoy preguntando o guiando bien?
-✔ ¿Estoy vendiendo en el momento correcto?
-✔ ¿Cierro con acción?
-
-Si no cumples eso, corrige tu respuesta antes de enviarla.
+Responde como asesor humano real.
+Siempre cierra con acción.
+`;
+}
