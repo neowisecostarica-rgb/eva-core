@@ -1,7 +1,27 @@
 /*
 ====================================================
-EVA CORE — SALES BRAIN (FINAL CONTROLLED VERSION)
-SOURCE OF TRUTH — NO PATCH ZONE
+EVA CORE — SALES BRAIN (STABLE RUNTIME VERSION)
+====================================================
+
+Propósito:
+- Procesar mensajes entrantes
+- Construir contexto comercial
+- Ejecutar AI de forma segura
+- Aplicar fallback controlado
+- Evitar recomendar productos sin contexto suficiente
+
+Notas para el programador que lea esto en el futuro:
+- NO duplicar runAI() dentro del mismo bloque
+- enforceAIRuntime() valida la RESPUESTA de AI, no el prompt
+- Si AI falla, el fallback NO debe forzar catálogo
+- "qualified" controla si EVA puede pasar de discovery a recommendation
+- Este archivo es sensible: pequeños cambios aquí alteran ventas reales
+
+Última estabilización:
+- Fix de isUserQualified()
+- Eliminación de runAI duplicado
+- enforceAIRuntime(aiResult) en posición correcta
+- No mostrar productos cuando AI no respondió
 ====================================================
 */
 
@@ -100,10 +120,24 @@ function buildConversationContext({
 function isUserQualified(text, history = []) {
   const t = (text || "").toLowerCase().trim();
 
-  const genericInputs = ["trabajo", "estudio", "uso básico", "uso basico"];
+  const genericInputs = [
+    "trabajo",
+    "estudio",
+    "uso básico",
+    "uso basico",
+    "hola",
+    "jajaja",
+    "ok",
+    "gracias",
+  ];
 
+  if (!t) return false;
   if (genericInputs.includes(t)) return false;
+
+  // Si ya hubo intercambio real, se puede avanzar más fácil
   if (history.length >= 2) return true;
+
+  // Mensajes con algo más de contexto textual
   if (t.length > 20) return true;
 
   return false;
@@ -135,7 +169,11 @@ export async function handleInbound(payload) {
 
     if (message_id) {
       const existing = await db.query(
-        `SELECT id FROM messages WHERE organization_id = $1 AND external_message_id = $2 LIMIT 1`,
+        `SELECT id
+         FROM messages
+         WHERE organization_id = $1
+           AND external_message_id = $2
+         LIMIT 1`,
         [organization_id, message_id]
       );
 
@@ -172,7 +210,7 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    2. SAVE MESSAGE
+    2. SAVE USER MESSAGE
     ========================================
     */
 
@@ -192,10 +230,10 @@ export async function handleInbound(payload) {
     */
 
     const historyRes = await db.query(
-      `SELECT role, content as text
+      `SELECT role, content AS text
        FROM messages
        WHERE conversation_id = $1
-       AND organization_id = $2
+         AND organization_id = $2
        ORDER BY created_at ASC
        LIMIT 10`,
       [conversation.id, organization_id]
@@ -232,7 +270,6 @@ export async function handleInbound(payload) {
     */
 
     const lower = (text || "").toLowerCase();
-
     let salesMode = "conversation";
 
     if (!qualified) {
@@ -266,7 +303,7 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    8. CATÁLOGO
+    8. CATALOG
     ========================================
     */
 
@@ -313,11 +350,10 @@ export async function handleInbound(payload) {
         salesMode,
       });
 
-      enforceAIRuntime(prompt);
+      const aiResult = await runAI({ prompt });
 
-      const aiResult = await runAI({
-        prompt,
-      });
+      // Valida la RESPUESTA de AI, no el prompt
+      enforceAIRuntime(aiResult);
 
       const guarded = applyAIGuards({
         aiResponse: aiResult,
@@ -333,7 +369,7 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    11. FALLBACK MÍNIMO
+    11. FALLBACK
     ========================================
     */
 
@@ -348,19 +384,20 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    12. RESPONSE LAYER (COMERCIAL)
+    12. RESPONSE LAYER
     ========================================
     */
 
     const reply = generateReply({
-  text: replyText,
-  intent: "AI",
-  products: aiText ? safeCatalog : [],
-});
+      text: replyText,
+      intent: "AI",
+      // Solo mostrar productos si AI realmente respondió
+      products: aiText ? safeCatalog : [],
+    });
 
     /*
     ========================================
-    13. SAVE RESPONSE
+    13. SAVE ASSISTANT MESSAGE
     ========================================
     */
 
