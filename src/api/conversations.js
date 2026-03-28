@@ -150,6 +150,20 @@ export function registerConversationRoutes(app, pool) {
 
       const message = msg.rows[0];
 
+      // 🔥 ACTUALIZAR ESTADO DE CONVERSACIÓN (CONTRATO EVA v1)
+await pool.query(
+  `
+  UPDATE conversations
+  SET
+    last_message = $1,
+    last_message_at = NOW(),
+    updated_at = NOW()
+  WHERE id = $2
+  `,
+  [content, id]
+);
+      
+
       // enviar WhatsApp si aplica
       if (conversation.channel === "whatsapp") {
         try {
