@@ -12,7 +12,8 @@ Propósito:
 
 Notas para el programador que lea esto en el futuro:
 - NO duplicar runAI() dentro del mismo bloque
-- enforceAIRuntime() valida la RESPUESTA de AI, no el prompt
+- enforceAIRuntime() NO recibe aiResult directo; recibe un objeto contrato:
+  { aiResponse, source }
 - Si AI falla, el fallback NO debe forzar catálogo
 - "qualified" controla si EVA puede pasar de discovery a recommendation
 - Este archivo es sensible: pequeños cambios aquí alteran ventas reales
@@ -20,7 +21,7 @@ Notas para el programador que lea esto en el futuro:
 Última estabilización:
 - Fix de isUserQualified()
 - Eliminación de runAI duplicado
-- enforceAIRuntime(aiResult) en posición correcta
+- enforceAIRuntime({ aiResponse, source }) en posición correcta
 - No mostrar productos cuando AI no respondió
 ====================================================
 */
@@ -352,8 +353,12 @@ export async function handleInbound(payload) {
 
       const aiResult = await runAI({ prompt });
 
-      // Valida la RESPUESTA de AI, no el prompt
-      enforceAIRuntime(aiResult);
+      // IMPORTANTE:
+      // El contrato runtime espera { aiResponse, source }
+      enforceAIRuntime({
+        aiResponse: aiResult,
+        source: "openai",
+      });
 
       const guarded = applyAIGuards({
         aiResponse: aiResult,
