@@ -23,27 +23,80 @@ import { getPromptConfig } from "./brain/utils/getPromptConfig.js";
 
 /*
 ====================================================
-HELPERS — CORE LOGIC
+HELPERS — SIGNALS + MEMORY + CONTEXT
 ====================================================
 */
+
+function extractSignalsFromText(text = "") {
+  const lower = text.toLowerCase();
+
+  let use_case = null;
+  let budget = null;
+  let interest_level = "low";
+  let lastUserIntent = "general";
+
+  if (lower.includes("estudio")) use_case = "study";
+  if (lower.includes("trabajo")) use_case = "work";
+
+  if (lower.includes("precio") || lower.includes("cuánto") || lower.includes("cuanto")) {
+    lastUserIntent = "price_check";
+    interest_level = "medium";
+  }
+
+  if (lower.includes("comprar") || lower.includes("lo quiero")) {
+    lastUserIntent = "buy_intent";
+    interest_level = "high";
+  }
+
+  return {
+    use_case,
+    budget,
+    interest_level,
+    lastUserIntent,
+  };
+}
+
+function buildCustomerMemory({ lead, signals, history = [] }) {
+  return {
+    isReturningUser: history.length > 2,
+    use_case: signals.use_case,
+    budget: signals.budget,
+    interest_level: signals.interest_level,
+    lastUserIntent: signals.lastUserIntent,
+  };
+}
+
+function buildConversationContext({
+  organization_id,
+  phone,
+  text,
+  channel,
+  message_id,
+  lead,
+  signals,
+  salesMode,
+}) {
+  return {
+    organization_id,
+    phone,
+    text,
+    channel,
+    message_id,
+    lead_id: lead?.id || null,
+    stage: lead?.stage || "new",
+    salesMode,
+    signals,
+    timestamp: new Date().toISOString(),
+  };
+}
 
 function isUserQualified(text, history = []) {
   const t = (text || "").toLowerCase().trim();
 
-  const genericInputs = [
-    "trabajo",
-    "estudio",
-    "uso básico",
-    "uso basico",
-  ];
+  const genericInputs = ["trabajo", "estudio", "uso básico", "uso basico"];
 
-  // Caso 1: respuesta demasiado general
   if (genericInputs.includes(t)) return false;
-
-  // Caso 2: si ya hay algo de conversación previa → asumimos avance
   if (history.length >= 2) return true;
-
-  // Caso 3: texto con más contexto (heurística simple)
   if (t.length > 20) return true;
 
   return false;
@@ -74,169 +127,84 @@ export async function handleInbound(payload) {
     */
 
     if (message_id) {
-      try {
-        const existing = await db.query(
-          `
-          SELECT id
-          FROM messages
-          WHERE organization_id = $1
-          AND external_message_id = $2
-          LIMIT 1
-          `,
-          [organization_id, message_id]
-        );
+      const existing = await db.query(
+        `SELECT id FROM messages WHERE organization_id = $1 AND external_message_id = $2 LIMIT 1`,
+        [organization_id, message_id]
+      );
 
-        if (existing.rows.length > 0) {
-          console.log("⚠️ Duplicate message skipped:", message_id);
-
-          return {
-            reply: { text: null },
-            meta: { duplicate: true },
-          };
-        }
-      } catch (err) {
-        console.warn("⚠️ Idempotency error:", err);
+      if (existing.rows.length > 0) {
+        return {
+          reply: { text: null },
+          meta: { duplicate: true },
+        };
       }
     }
 
     /*
     ========================================
-    1. LEAD
+    1. LEAD + CONVERSATION
     ========================================
     */
 
-    let lead = null;
+    const lead = await findOrCreateLead({ organization_id, phone });
 
-    try {
-      lead = await findOrCreateLead({
-        organization_id,
-        phone,
-      });
-    } catch (err) {
-      console.error("❌ Lead error:", err);
-    }
+    const conversation = await findOrCreateConversation({
+      organization_id,
+      phone,
+      channel,
+      lead_id: lead?.id,
+    });
 
     /*
     ========================================
-    2. CONVERSATION
+    2. SAVE MESSAGE
     ========================================
     */
 
-    let conversation = null;
-
-    try {
-      conversation = await findOrCreateConversation({
-        organization_id,
-        phone,
-        channel,
-        lead_id: lead?.id,
-      });
-    } catch (err) {
-      console.error("❌ Conversation error:", err);
-    }
+    await saveMessage({
+      organization_id,
+      conversation_id: conversation.id,
+      lead_id: lead?.id,
+      role: "user",
+      text,
+      message_id,
+    });
 
     /*
     ========================================
-    3. SAVE USER MESSAGE
+    3. HISTORY
     ========================================
     */
 
-    if (conversation?.id) {
-      await saveMessage({
-        organization_id,
-        conversation_id: conversation.id,
-        lead_id: lead?.id,
-        role: "user",
-        text,
-        message_id,
-      });
-    }
+    const historyRes = await db.query(
+      `SELECT role, content as text
+       FROM messages
+       WHERE conversation_id = $1
+       AND organization_id = $2
+       ORDER BY created_at ASC
+       LIMIT 10`,
+      [conversation.id, organization_id]
+    );
+
+    const history = historyRes.rows;
 
     /*
     ========================================
-    4. HISTORY
+    4. SIGNALS + MEMORY
     ========================================
     */
 
-    let history = [];
+    const signals = extractSignalsFromText(text);
 
-    try {
-      if (conversation?.id) {
-        const result = await db.query(
-          `
-          SELECT role, content as text
-          FROM messages
-          WHERE conversation_id = $1
-          AND organization_id = $2
-          ORDER BY created_at ASC
-          LIMIT 10
-          `,
-          [conversation.id, organization_id]
-        );
-
-        history = result.rows;
-      }
-    } catch (err) {
-      console.warn("⚠️ History error:", err);
-    }
-
-    /*
-========================================
-5. SIGNALS (NEW)
-========================================
-*/
-
-const signals = extractSignalsFromText(text);
-
-/*
-========================================
-6. MEMORY (NEW)
-========================================
-*/
-
-const memory = buildCustomerMemory({
-  lead,
-  signals,
-  history,
-});
-    
-    /*
-    ========================================
-    5. CONTEXT
-    ========================================
-    */
-
-    const context = buildConversationContext({
-  organization_id,
-  phone,
-  text,
-  channel,
-  message_id,
-  lead,
-  signals,
-  salesMode, // importante: después lo movemos si es necesario
-});
+    const memory = buildCustomerMemory({
+      lead,
+      signals,
+      history,
+    });
 
     /*
     ========================================
-    6. CATÁLOGO
-    ========================================
-    */
-
-    let catalogResults = [];
-
-    try {
-      catalogResults = await searchCatalogSmart({
-        organization_id,
-        query: text,
-      });
-    } catch (err) {
-      console.warn("⚠️ Catalog error:", err);
-    }
-
-    /*
-    ========================================
-    7. QUALIFICATION (NEW CORE)
+    5. QUALIFICATION
     ========================================
     */
 
@@ -244,7 +212,7 @@ const memory = buildCustomerMemory({
 
     /*
     ========================================
-    8. SALES MODE (REAL CONTROL)
+    6. SALES MODE (ANTES DEL CONTEXT)
     ========================================
     */
 
@@ -257,10 +225,7 @@ const memory = buildCustomerMemory({
     } else if (
       lower.includes("precio") ||
       lower.includes("cuánto") ||
-      lower.includes("cuanto") ||
-      lower.includes("vale") ||
-      lower.includes("disponible") ||
-      lower.includes("tienen")
+      lower.includes("cuanto")
     ) {
       salesMode = "closing";
     } else {
@@ -269,194 +234,95 @@ const memory = buildCustomerMemory({
 
     /*
     ========================================
-    9. SAFE CATALOG (CRITICAL FIX)
+    7. CONTEXT
     ========================================
     */
 
-    let safeCatalog = [];
-
-    if (qualified) {
-      safeCatalog = catalogResults.slice(0, 1);
-    }
-
-    /*
-========================================
-10. LEAD ENRICHMENT (UNCHANGED)
-========================================
-*/
-
-    try {
-      if (lead?.id) {
-        let scoreIncrement = 0;
-        let nextStage = lead.stage;
-
-        if (salesMode === "closing") {
-          scoreIncrement += 20;
-          nextStage = "qualified";
-        }
-
-        if (salesMode === "discovery") {
-          scoreIncrement += 10;
-          if (nextStage === "new") {
-            nextStage = "engaged";
-          }
-        }
-
-        if (lower.includes("comprar") || lower.includes("lo quiero")) {
-          scoreIncrement += 30;
-          nextStage = "ready_to_buy";
-        }
-
-        if (lower.includes("urgente") || lower.includes("para hoy")) {
-          scoreIncrement += 15;
-        }
-
-        if (scoreIncrement > 0) {
-          await db.query(
-            `
-        UPDATE leads
-        SET 
-          score = COALESCE(score, 0) + $1,
-          stage = $2,
-          updated_at = NOW()
-        WHERE id = $3
-        AND organization_id = $4
-      `,
-            [scoreIncrement, nextStage, lead.id, organization_id]
-          );
-
-          console.log("🧠 Lead enriched:", {
-            lead_id: lead.id,
-            scoreIncrement,
-            nextStage,
-          });
-        }
-      }
-    } catch (err) {
-      console.warn("⚠️ Lead enrichment error:", err);
-    }
+    const context = buildConversationContext({
+      organization_id,
+      phone,
+      text,
+      channel,
+      message_id,
+      lead,
+      signals,
+      salesMode,
+    });
 
     /*
     ========================================
-    11. CONFIG
+    8. CATÁLOGO
     ========================================
     */
 
-    let config = {};
+    const catalogResults = await searchCatalogSmart({
+      organization_id,
+      query: text,
+    });
 
-    try {
-      config = await getPromptConfig(organization_id);
-    } catch (err) {
-      console.warn("⚠️ Config error:", err);
-    }
+    const safeCatalog = qualified ? catalogResults.slice(0, 1) : [];
 
     /*
     ========================================
-    12. AI
+    9. CONFIG
+    ========================================
+    */
+
+    const config = await getPromptConfig(organization_id);
+
+    /*
+    ========================================
+    10. AI
     ========================================
     */
 
     let replyText = null;
-    let usedAI = false;
 
-    try {
-      const prompt = buildPrompt({
-  context,
-  catalogResults: safeCatalog,
-  history,
-  memory, // 🔥 NUEVO
-  config,
-  salesMode,
-});
+    const prompt = buildPrompt({
+      context,
+      catalogResults: safeCatalog,
+      history,
+      memory,
+      config,
+    });
 
-      const aiResponse = await runAI({
-        prompt,
-      });
+    enforceAIRuntime(prompt);
 
-      const guarded = applyAIGuards({
-        aiResponse,
-        context,
-      });
+    const aiResult = await runAI({
+      context: prompt,
+      catalogResults: safeCatalog,
+    });
 
-      enforceAIRuntime({
-        aiResponse: guarded,
-        source: "salesBrain",
-      });
-
-      if (
-        guarded &&
-        typeof guarded.text === "string" &&
-        guarded.text.trim().length > 0
-      ) {
-        replyText = guarded.text.trim();
-        usedAI = true;
-      }
-    } catch (err) {
-      console.warn("⚠️ AI error:", err);
-    }
+    replyText = applyAIGuards(aiResult?.text || "");
 
     /*
     ========================================
-    13. FALLBACK
+    11. SAVE RESPONSE
     ========================================
     */
 
-    if (!replyText) {
-      replyText =
-        "Hola 😊 con mucho gusto le ayudo. ¿Qué tipo de uso le estaría dando al equipo?";
-    }
-
-    /*
-    ========================================
-    14. SAVE ASSISTANT MESSAGE
-    ========================================
-    */
-
-    if (conversation?.id && replyText) {
-      try {
-        await saveMessage({
-          organization_id,
-          conversation_id: conversation.id,
-          lead_id: lead?.id,
-          role: "assistant",
-          text: replyText,
-        });
-      } catch (err) {
-        console.warn("⚠️ Save assistant error:", err);
-      }
-    }
-
-    /*
-    ========================================
-    15. FINAL RESPONSE
-    ========================================
-    */
+    await saveMessage({
+      organization_id,
+      conversation_id: conversation.id,
+      lead_id: lead?.id,
+      role: "assistant",
+      text: replyText,
+    });
 
     return {
-      reply: {
-        text: replyText,
-        products: safeCatalog,
-      },
+      reply: { text: replyText },
       meta: {
-        organization_id,
-        channel,
-        phone,
-        lead_id: lead?.id || null,
-        usedAI,
-        qualified,
         salesMode,
+        qualified,
       },
     };
+
   } catch (err) {
-    console.error("❌ FATAL salesBrain:", err);
+    console.error("❌ SALES BRAIN ERROR:", err);
 
     return {
       reply: {
-        text:
-          "Disculpá 🙏 tuvimos un problema. Intentá de nuevo en un momento.",
-      },
-      meta: {
-        error: true,
+        text: "Hubo un problema procesando el mensaje, intentemos nuevamente 🙏",
       },
     };
   }
