@@ -181,20 +181,41 @@ export async function handleInbound(payload) {
     }
 
     /*
+========================================
+5. SIGNALS (NEW)
+========================================
+*/
+
+const signals = extractSignalsFromText(text);
+
+/*
+========================================
+6. MEMORY (NEW)
+========================================
+*/
+
+const memory = buildCustomerMemory({
+  lead,
+  signals,
+  history,
+});
+    
+    /*
     ========================================
     5. CONTEXT
     ========================================
     */
 
-    const context = {
-      organization_id,
-      phone,
-      text,
-      channel,
-      message_id,
-      lead_id: lead?.id || null,
-      timestamp: new Date().toISOString(),
-    };
+    const context = buildConversationContext({
+  organization_id,
+  phone,
+  text,
+  channel,
+  message_id,
+  lead,
+  signals,
+  salesMode, // importante: después lo movemos si es necesario
+});
 
     /*
     ========================================
@@ -340,12 +361,13 @@ export async function handleInbound(payload) {
 
     try {
       const prompt = buildPrompt({
-        context,
-        catalogResults: safeCatalog,
-        history,
-        config,
-        salesMode,
-      });
+  context,
+  catalogResults: safeCatalog,
+  history,
+  memory, // 🔥 NUEVO
+  config,
+  salesMode,
+});
 
       const aiResponse = await runAI({
         prompt,
