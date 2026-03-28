@@ -23,30 +23,12 @@ export function registerConversationRoutes(app, pool) {
           c.control_mode,
           c.created_at,
 
-          -- 🔥 NUEVO MODELO + FALLBACK
-          COALESCE(c.last_message, m.text) AS last_message,
-          COALESCE(c.last_message_at, m.created_at) AS last_message_at,
-
-          c.updated_at,
-          c.score
-
-        FROM conversations c
-
-        LEFT JOIN LATERAL (
-          SELECT text, created_at
-          FROM messages
-          WHERE conversation_id = c.id
-          ORDER BY created_at DESC
-          LIMIT 1
-        ) m ON true
-
-        WHERE c.organization_id = $1
-
-        ORDER BY
-          COALESCE(c.updated_at, m.created_at) DESC NULLS LAST
-
-        LIMIT 100
-      `, [organization_id]);
+          const r = await pool.query(`
+  SELECT *
+  FROM conversations
+  WHERE organization_id = $1
+  LIMIT 10
+`, [organization_id]);
 
       res.json({ success: true, data: r.rows });
 
