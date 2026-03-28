@@ -353,10 +353,10 @@ export async function handleInbound(payload) {
     */
 
     const reply = generateReply({
-      text: replyText,
-      intent: "AI",
-      products: safeCatalog,
-    });
+  text: replyText,
+  intent: "AI",
+  products: aiText ? safeCatalog : [],
+});
 
     /*
     ========================================
