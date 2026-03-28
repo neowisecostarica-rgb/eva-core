@@ -13,7 +13,7 @@ export function registerConversationRoutes(app, pool) {
   app.get("/v1/conversations", authenticate, async (req, res) => {
     try {
 
-      const organization_id = req.organization_id || "db83e3f9-d971-4ed1-9b6d-82408fbd7c03";
+      const organization_id = req.organization_id;
 
       const r = await pool.query(`
         SELECT
