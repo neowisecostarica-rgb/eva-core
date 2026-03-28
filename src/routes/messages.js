@@ -9,7 +9,6 @@ import { handleInbound } from "../salesBrain.js";
 import { createLogger } from "../lib/logger.js";
 import { checkRateLimit } from "../lib/rateLimiter.js";
 
-// 🔥 NUEVO: contrato runtime
 import {
   validateHandleInboundResult,
   buildMessagesRouteResponse,
@@ -26,7 +25,8 @@ POST /v1/messages/inbound
 router.post("/inbound", authenticate, async (req, res) => {
   const request_id = crypto.randomUUID();
 
-  const organization_id = req.organization?.id || null;
+  // 🔥 FIX: usar SIEMPRE organization_id directo
+  const organization_id = req.organization_id || req.organization?.id || null;
 
   const log = createLogger({
     request_id,
@@ -91,13 +91,16 @@ router.post("/inbound", authenticate, async (req, res) => {
 
     /*
     ========================================
-    PAYLOAD
+    PAYLOAD (ALINEADO AL SOT)
     ========================================
     */
 
     const payload = {
       organization_id,
-      ...validated,
+      phone: validated.phone,
+      text: validated.text,
+      channel: validated.channel || "whatsapp",
+      message_id: validated.message_id || null,
     };
 
     log.info("PAYLOAD_READY", payload);
@@ -116,7 +119,7 @@ router.post("/inbound", authenticate, async (req, res) => {
 
     /*
     ========================================
-    🔥 CONTRACT VALIDATION (CLAVE)
+    CONTRACT VALIDATION
     ========================================
     */
 
@@ -135,7 +138,7 @@ router.post("/inbound", authenticate, async (req, res) => {
 
     /*
     ========================================
-    🔥 BUILD OFFICIAL RESPONSE
+    RESPONSE
     ========================================
     */
 
