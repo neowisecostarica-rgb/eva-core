@@ -39,7 +39,8 @@ export async function authenticate(req, res, next) {
     req.organization = {
       id: orgId,
     };
-
+req.organization_id = orgId;
+    
     console.log("🔐 AUTH OK:", orgId);
 
     next();
