@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — SALES BRAIN (FINAL STABLE MVP)
+EVA CORE — SALES BRAIN (FINAL CONTROLLED VERSION)
 SOURCE OF TRUTH — NO PATCH ZONE
 ====================================================
 */
@@ -23,6 +23,34 @@ import { getPromptConfig } from "./brain/utils/getPromptConfig.js";
 
 /*
 ====================================================
+HELPERS — CORE LOGIC
+====================================================
+*/
+
+function isUserQualified(text, history = []) {
+  const t = (text || "").toLowerCase().trim();
+
+  const genericInputs = [
+    "trabajo",
+    "estudio",
+    "uso básico",
+    "uso basico",
+  ];
+
+  // Caso 1: respuesta demasiado general
+  if (genericInputs.includes(t)) return false;
+
+  // Caso 2: si ya hay algo de conversación previa → asumimos avance
+  if (history.length >= 2) return true;
+
+  // Caso 3: texto con más contexto (heurística simple)
+  if (t.length > 20) return true;
+
+  return false;
+}
+
+/*
+====================================================
 MAIN HANDLER
 ====================================================
 */
@@ -41,7 +69,7 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    0. IDEMPOTENCY (HARD GUARD)
+    0. IDEMPOTENCY
     ========================================
     */
 
@@ -154,7 +182,7 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    5. CONTEXT (SOURCE OF TRUTH)
+    5. CONTEXT
     ========================================
     */
 
@@ -187,7 +215,15 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    7. SALES MODE (MVP CONTROLLED)
+    7. QUALIFICATION (NEW CORE)
+    ========================================
+    */
+
+    const qualified = isUserQualified(text, history);
+
+    /*
+    ========================================
+    8. SALES MODE (REAL CONTROL)
     ========================================
     */
 
@@ -195,7 +231,9 @@ export async function handleInbound(payload) {
 
     let salesMode = "conversation";
 
-    if (
+    if (!qualified) {
+      salesMode = "discovery";
+    } else if (
       lower.includes("precio") ||
       lower.includes("cuánto") ||
       lower.includes("cuanto") ||
@@ -204,61 +242,57 @@ export async function handleInbound(payload) {
       lower.includes("tienen")
     ) {
       salesMode = "closing";
-    } else if (
-      lower.includes("busco") ||
-      lower.includes("necesito") ||
-      lower.includes("quiero")
-    ) {
-      salesMode = "discovery";
+    } else {
+      salesMode = "recommendation";
     }
+
+    /*
+    ========================================
+    9. SAFE CATALOG (CRITICAL FIX)
+    ========================================
+    */
 
     let safeCatalog = [];
 
-    if (salesMode === "closing") {
-      safeCatalog = catalogResults;
-    }
-
-    if (salesMode === "discovery") {
-      safeCatalog = catalogResults.slice(0, 2);
+    if (qualified) {
+      safeCatalog = catalogResults.slice(0, 1);
     }
 
     /*
 ========================================
-7.1 LEAD ENRICHMENT (P1.3)
+10. LEAD ENRICHMENT (UNCHANGED)
 ========================================
 */
 
-try {
-  if (lead?.id) {
+    try {
+      if (lead?.id) {
+        let scoreIncrement = 0;
+        let nextStage = lead.stage;
 
-    let scoreIncrement = 0;
-    let nextStage = lead.stage;
+        if (salesMode === "closing") {
+          scoreIncrement += 20;
+          nextStage = "qualified";
+        }
 
-    // 🔥 INTENT BASED SCORING
-    if (salesMode === "closing") {
-      scoreIncrement += 20;
-      nextStage = "qualified";
-    }
+        if (salesMode === "discovery") {
+          scoreIncrement += 10;
+          if (nextStage === "new") {
+            nextStage = "engaged";
+          }
+        }
 
-    if (salesMode === "discovery") {
-      scoreIncrement += 10;
-      if (nextStage === "new") {
-        nextStage = "engaged";
-      }
-    }
+        if (lower.includes("comprar") || lower.includes("lo quiero")) {
+          scoreIncrement += 30;
+          nextStage = "ready_to_buy";
+        }
 
-    // 🔥 EXTRA SIGNALS
-    if (lower.includes("comprar") || lower.includes("lo quiero")) {
-      scoreIncrement += 30;
-      nextStage = "ready_to_buy";
-    }
+        if (lower.includes("urgente") || lower.includes("para hoy")) {
+          scoreIncrement += 15;
+        }
 
-    if (lower.includes("urgente") || lower.includes("para hoy")) {
-      scoreIncrement += 15;
-    }
-
-    if (scoreIncrement > 0) {
-      await db.query(`
+        if (scoreIncrement > 0) {
+          await db.query(
+            `
         UPDATE leads
         SET 
           score = COALESCE(score, 0) + $1,
@@ -266,24 +300,24 @@ try {
           updated_at = NOW()
         WHERE id = $3
         AND organization_id = $4
-      `, [scoreIncrement, nextStage, lead.id, organization_id]);
+      `,
+            [scoreIncrement, nextStage, lead.id, organization_id]
+          );
 
-      console.log("🧠 Lead enriched:", {
-        lead_id: lead.id,
-        scoreIncrement,
-        nextStage
-      });
+          console.log("🧠 Lead enriched:", {
+            lead_id: lead.id,
+            scoreIncrement,
+            nextStage,
+          });
+        }
+      }
+    } catch (err) {
+      console.warn("⚠️ Lead enrichment error:", err);
     }
-
-  }
-} catch (err) {
-  console.warn("⚠️ Lead enrichment error:", err);
-}
-    
 
     /*
     ========================================
-    8. CONFIG
+    11. CONFIG
     ========================================
     */
 
@@ -297,7 +331,7 @@ try {
 
     /*
     ========================================
-    9. AI (SINGLE ENTRY POINT)
+    12. AI
     ========================================
     */
 
@@ -314,7 +348,7 @@ try {
       });
 
       const aiResponse = await runAI({
-        prompt, // 🔒 ÚNICO CONTRATO
+        prompt,
       });
 
       const guarded = applyAIGuards({
@@ -327,29 +361,32 @@ try {
         source: "salesBrain",
       });
 
-      if (guarded && typeof guarded.text === "string" && guarded.text.trim().length > 0) {
+      if (
+        guarded &&
+        typeof guarded.text === "string" &&
+        guarded.text.trim().length > 0
+      ) {
         replyText = guarded.text.trim();
         usedAI = true;
       }
-
     } catch (err) {
       console.warn("⚠️ AI error:", err);
     }
 
     /*
     ========================================
-    10. FALLBACK (HARD SAFE)
+    13. FALLBACK
     ========================================
     */
 
     if (!replyText) {
       replyText =
-        "Hola 😊 con gusto te ayudo. Contame un poco más qué estás buscando y te guío.";
+        "Hola 😊 con mucho gusto le ayudo. ¿Qué tipo de uso le estaría dando al equipo?";
     }
 
     /*
     ========================================
-    11. SAVE ASSISTANT MESSAGE
+    14. SAVE ASSISTANT MESSAGE
     ========================================
     */
 
@@ -369,7 +406,7 @@ try {
 
     /*
     ========================================
-    12. FINAL RESPONSE (CONTRACT GUARANTEED)
+    15. FINAL RESPONSE
     ========================================
     */
 
@@ -384,15 +421,17 @@ try {
         phone,
         lead_id: lead?.id || null,
         usedAI,
+        qualified,
+        salesMode,
       },
     };
-
   } catch (err) {
     console.error("❌ FATAL salesBrain:", err);
 
     return {
       reply: {
-        text: "Disculpá 🙏 tuvimos un problema. Intentá de nuevo en un momento.",
+        text:
+          "Disculpá 🙏 tuvimos un problema. Intentá de nuevo en un momento.",
       },
       meta: {
         error: true,
