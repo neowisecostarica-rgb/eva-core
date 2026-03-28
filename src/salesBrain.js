@@ -14,6 +14,7 @@ import {
 import db from "./db.js";
 
 import { searchCatalogSmart } from "./brain/utils/catalogEngine.js";
+import { generateReply } from "./brain/replies/replyEngine.js";
 
 import { enforceAIRuntime } from "./system/contracts/aiRuntime.js";
 import { runAI } from "./brain/engines/aiEngine.js";
@@ -38,7 +39,11 @@ function extractSignalsFromText(text = "") {
   if (lower.includes("estudio")) use_case = "study";
   if (lower.includes("trabajo")) use_case = "work";
 
-  if (lower.includes("precio") || lower.includes("cuánto") || lower.includes("cuanto")) {
+  if (
+    lower.includes("precio") ||
+    lower.includes("cuánto") ||
+    lower.includes("cuanto")
+  ) {
     lastUserIntent = "price_check";
     interest_level = "medium";
   }
@@ -63,6 +68,8 @@ function buildCustomerMemory({ lead, signals, history = [] }) {
     budget: signals.budget,
     interest_level: signals.interest_level,
     lastUserIntent: signals.lastUserIntent,
+    lead_stage: lead?.stage || "new",
+    lead_status: lead?.status || "active",
   };
 }
 
@@ -134,7 +141,7 @@ export async function handleInbound(payload) {
 
       if (existing.rows.length > 0) {
         return {
-          reply: { text: null },
+          reply: { text: null, media: [] },
           meta: { duplicate: true },
         };
       }
@@ -148,12 +155,20 @@ export async function handleInbound(payload) {
 
     const lead = await findOrCreateLead({ organization_id, phone });
 
+    if (!lead) {
+      throw new Error("Lead could not be created or loaded");
+    }
+
     const conversation = await findOrCreateConversation({
       organization_id,
       phone,
       channel,
       lead_id: lead?.id,
     });
+
+    if (!conversation) {
+      throw new Error("Conversation could not be created or loaded");
+    }
 
     /*
     ========================================
@@ -186,7 +201,7 @@ export async function handleInbound(payload) {
       [conversation.id, organization_id]
     );
 
-    const history = historyRes.rows;
+    const history = historyRes.rows || [];
 
     /*
     ========================================
@@ -212,7 +227,7 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    6. SALES MODE (ANTES DEL CONTEXT)
+    6. SALES MODE
     ========================================
     */
 
@@ -255,12 +270,22 @@ export async function handleInbound(payload) {
     ========================================
     */
 
-    const catalogResults = await searchCatalogSmart({
-      organization_id,
-      query: text,
-    });
+    let catalogResults = [];
 
-    const safeCatalog = qualified ? catalogResults.slice(0, 1) : [];
+    try {
+      catalogResults = await searchCatalogSmart({
+        organization_id,
+        query: text,
+      });
+    } catch (err) {
+      console.warn("⚠️ Catalog error:", err);
+    }
+
+    const safeCatalog = qualified
+      ? Array.isArray(catalogResults)
+        ? catalogResults.slice(0, 1)
+        : []
+      : [];
 
     /*
     ========================================
@@ -276,28 +301,66 @@ export async function handleInbound(payload) {
     ========================================
     */
 
-    let replyText = null;
+    let aiText = null;
 
-    const prompt = buildPrompt({
-      context,
-      catalogResults: safeCatalog,
-      history,
-      memory,
-      config,
-    });
+    try {
+      const prompt = buildPrompt({
+        context,
+        catalogResults: safeCatalog,
+        history,
+        memory,
+        config,
+        salesMode,
+      });
 
-    enforceAIRuntime(prompt);
+      enforceAIRuntime(prompt);
 
-    const aiResult = await runAI({
-      context: prompt,
-      catalogResults: safeCatalog,
-    });
+      const aiResult = await runAI({
+        prompt,
+      });
 
-    replyText = applyAIGuards(aiResult?.text || "");
+      const guarded = applyAIGuards({
+        aiResponse: aiResult,
+        context,
+      });
+
+      if (guarded?.text) {
+        aiText = guarded.text;
+      }
+    } catch (err) {
+      console.warn("⚠️ AI error:", err);
+    }
 
     /*
     ========================================
-    11. SAVE RESPONSE
+    11. FALLBACK MÍNIMO
+    ========================================
+    */
+
+    let replyText = aiText;
+
+    if (!replyText) {
+      console.log("⚠️ AI FALLBACK ACTIVATED");
+
+      replyText =
+        "Hola 😊 con mucho gusto le ayudo. Contame un poco más qué está buscando y le guío.";
+    }
+
+    /*
+    ========================================
+    12. RESPONSE LAYER (COMERCIAL)
+    ========================================
+    */
+
+    const reply = generateReply({
+      text: replyText,
+      intent: "AI",
+      products: safeCatalog,
+    });
+
+    /*
+    ========================================
+    13. SAVE RESPONSE
     ========================================
     */
 
@@ -306,23 +369,34 @@ export async function handleInbound(payload) {
       conversation_id: conversation.id,
       lead_id: lead?.id,
       role: "assistant",
-      text: replyText,
+      text: reply.text,
     });
 
+    /*
+    ========================================
+    14. RETURN
+    ========================================
+    */
+
     return {
-      reply: { text: replyText },
+      reply,
       meta: {
         salesMode,
         qualified,
+        usedAI: !!aiText,
+        fallback: !aiText,
       },
     };
-
   } catch (err) {
     console.error("❌ SALES BRAIN ERROR:", err);
 
     return {
       reply: {
         text: "Hubo un problema procesando el mensaje, intentemos nuevamente 🙏",
+        media: [],
+      },
+      meta: {
+        error: true,
       },
     };
   }
