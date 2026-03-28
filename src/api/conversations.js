@@ -3,6 +3,7 @@
 import { authenticate } from "../lib/auth.js";
 
 export function registerConversationRoutes(app, pool) {
+
   /*
   ====================================================
   GET /v1/conversations
@@ -13,41 +14,36 @@ export function registerConversationRoutes(app, pool) {
     try {
       const organization_id = req.organization_id;
 
-      const r = await pool.query(
-        `
+      const r = await pool.query(`
         SELECT
           id,
-          organization_id,
           external_user_id,
           channel,
           control_mode,
+          summary,
           stage,
           lead_score,
-          summary,
           last_message,
           last_message_at,
           created_at,
           updated_at
         FROM conversations
         WHERE organization_id = $1
-        ORDER BY COALESCE(last_message_at, created_at) DESC
+        ORDER BY updated_at DESC
         LIMIT 50
-        `,
-        [organization_id]
-      );
+      `, [organization_id]);
 
-      return res.json({
+      res.json({
         success: true,
-        data: r.rows,
+        data: r.rows
       });
+
     } catch (err) {
       console.error("❌ conversations list error:", err);
-      return res.status(500).json({
-        success: false,
-        error: "Error listing conversations",
-      });
+      res.status(500).json({ success: false });
     }
   });
+
 
   /*
   ====================================================
@@ -57,44 +53,46 @@ export function registerConversationRoutes(app, pool) {
 
   app.get("/v1/conversations/:id", authenticate, async (req, res) => {
     try {
-      const { id } = req.params;
       const organization_id = req.organization_id;
+      const { id } = req.params;
 
-      const r = await pool.query(
-        `
+      const r = await pool.query(`
         SELECT
           id,
-          organization_id,
           external_user_id,
           channel,
           control_mode,
+          summary,
           stage,
           lead_score,
-          summary,
           last_message,
           last_message_at,
           created_at,
           updated_at
         FROM conversations
         WHERE id = $1
-          AND organization_id = $2
+        AND organization_id = $2
         LIMIT 1
-        `,
-        [id, organization_id]
-      );
+      `, [id, organization_id]);
 
-      return res.json({
+      if (r.rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          error: "Conversation not found"
+        });
+      }
+
+      res.json({
         success: true,
-        data: r.rows[0] || null,
+        data: r.rows[0]
       });
+
     } catch (err) {
       console.error("❌ conversation detail error:", err);
-      return res.status(500).json({
-        success: false,
-        error: "Error fetching conversation",
-      });
+      res.status(500).json({ success: false });
     }
   });
+
 
   /*
   ====================================================
@@ -104,156 +102,74 @@ export function registerConversationRoutes(app, pool) {
 
   app.get("/v1/conversations/:id/messages", authenticate, async (req, res) => {
     try {
-      const { id } = req.params;
       const organization_id = req.organization_id;
+      const { id } = req.params;
 
-      const r = await pool.query(
-        `
+      const r = await pool.query(`
         SELECT
-          m.id,
-          m.conversation_id,
-          m.role,
-          m.text,
-          m.created_at
-        FROM messages m
-        JOIN conversations c
-          ON c.id = m.conversation_id
-        WHERE m.conversation_id = $1
-          AND c.organization_id = $2
-        ORDER BY m.created_at ASC
-        `,
-        [id, organization_id]
-      );
+          id,
+          role,
+          content,
+          created_at
+        FROM messages
+        WHERE conversation_id = $1
+        AND organization_id = $2
+        ORDER BY created_at ASC
+      `, [id, organization_id]);
 
-      return res.json({
+      res.json({
         success: true,
-        data: r.rows,
+        data: r.rows
       });
+
     } catch (err) {
-      console.error("❌ messages error:", err);
-      return res.status(500).json({
-        success: false,
-        error: "Error fetching conversation messages",
-      });
+      console.error("❌ messages list error:", err);
+      res.status(500).json({ success: false });
     }
   });
+
 
   /*
   ====================================================
   POST /v1/conversations/:id/messages
+  (enviar mensaje manual desde dashboard)
   ====================================================
   */
 
   app.post("/v1/conversations/:id/messages", authenticate, async (req, res) => {
     try {
-      const { id } = req.params;
-      const { content } = req.body;
       const organization_id = req.organization_id;
+      const { id } = req.params;
+      const { content, sender = "user" } = req.body;
 
-      const cleanContent = String(content || "").trim();
-
-      if (!cleanContent) {
+      if (!content) {
         return res.status(400).json({
           success: false,
-          error: "Content required",
+          error: "Content required"
         });
       }
 
-      const conv = await pool.query(
-        `
-        SELECT
-          id,
-          organization_id,
-          external_user_id,
-          channel
-        FROM conversations
-        WHERE id = $1
-          AND organization_id = $2
-        LIMIT 1
-        `,
-        [id, organization_id]
-      );
-
-      const conversation = conv.rows[0];
-
-      if (!conversation) {
-        return res.status(404).json({
-          success: false,
-          error: "Conversation not found",
-        });
-      }
-
-      const msg = await pool.query(
-        `
+      const r = await pool.query(`
         INSERT INTO messages (
           conversation_id,
+          organization_id,
           role,
-          text,
+          content,
           created_at
         )
-        VALUES ($1, 'assistant', $2, NOW())
-        RETURNING
-          id,
-          conversation_id,
-          role,
-          text,
-          created_at
-        `,
-        [id, cleanContent]
-      );
+        VALUES ($1, $2, $3, $4, NOW())
+        RETURNING *
+      `, [id, organization_id, sender, content]);
 
-      const message = msg.rows[0];
-
-      await pool.query(
-        `
-        UPDATE conversations
-        SET
-          last_message = $1,
-          last_message_at = NOW(),
-          updated_at = NOW()
-        WHERE id = $2
-          AND organization_id = $3
-        `,
-        [cleanContent, id, organization_id]
-      );
-
-      let delivery = {
-        attempted: false,
-        channel: conversation.channel,
-        sent: false,
-      };
-
-      if (conversation.channel === "whatsapp") {
-        delivery.attempted = true;
-
-        try {
-          const { sendWhatsAppMessage } = await import("../connectors/whatsapp.js");
-
-          await sendWhatsAppMessage({
-            to: conversation.external_user_id,
-            text: cleanContent,
-          });
-
-          delivery.sent = true;
-        } catch (err) {
-          delivery.sent = false;
-          console.error("⚠️ WhatsApp send error:", err);
-        }
-      }
-
-      return res.json({
+      res.json({
         success: true,
-        data: {
-          message,
-          delivery,
-        },
+        data: r.rows[0]
       });
+
     } catch (err) {
       console.error("❌ send message error:", err);
-      return res.status(500).json({
-        success: false,
-        error: "Error sending message",
-      });
+      res.status(500).json({ success: false });
     }
   });
+
 }
