@@ -2,12 +2,18 @@
 
 export async function authenticate(req, res, next) {
   try {
-    const apiKey =
+    const rawApiKey =
       req.headers["x-api-key"] ||
-      req.headers["authorization"]?.replace("Bearer ", "");
+      req.headers["authorization"] ||
+      "";
+
+    const apiKey = String(rawApiKey).startsWith("Bearer ")
+      ? String(rawApiKey).slice(7).trim()
+      : String(rawApiKey).trim();
 
     if (!apiKey) {
       return res.status(401).json({
+        success: false,
         error: "API key requerida",
       });
     }
@@ -17,12 +23,14 @@ export async function authenticate(req, res, next) {
     if (!VALID_API_KEY) {
       console.error("❌ EVA_API_KEY no configurada en ENV");
       return res.status(500).json({
+        success: false,
         error: "Server misconfigured",
       });
     }
 
     if (apiKey !== VALID_API_KEY) {
       return res.status(403).json({
+        success: false,
         error: "API key inválida",
       });
     }
@@ -32,21 +40,21 @@ export async function authenticate(req, res, next) {
     if (!orgId) {
       console.error("❌ ORG_PRIMARY no definido");
       return res.status(500).json({
+        success: false,
         error: "Organization no configurada",
       });
     }
 
-    req.organization = {
-      id: orgId,
-    };
-req.organization_id = orgId;
-    
+    req.organization = { id: orgId };
+    req.organization_id = orgId;
+
     console.log("🔐 AUTH OK:", orgId);
 
     next();
   } catch (err) {
     console.error("❌ AUTH ERROR:", err);
     return res.status(500).json({
+      success: false,
       error: "Error en autenticación",
     });
   }
