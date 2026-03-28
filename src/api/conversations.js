@@ -15,27 +15,27 @@ export function registerConversationRoutes(app, pool) {
 
       const organization_id = req.organization_id;
 
-      const r = await pool.query(`
-        SELECT
-          c.id,
-          c.external_user_id,
-          c.channel,
-          c.control_mode,
-          c.created_at,
-          m.text AS last_message,
-          m.created_at AS last_message_at
-        FROM conversations c
-        LEFT JOIN LATERAL (
-          SELECT text, created_at
-          FROM messages
-          WHERE conversation_id = c.id
-          ORDER BY created_at DESC
-          LIMIT 1
-        ) m ON true
-        WHERE c.organization_id = $1
-        ORDER BY m.created_at DESC NULLS LAST
-        LIMIT 100
-      `, [organization_id]);
+     const r = await pool.query(`
+  SELECT
+    c.id,
+    c.external_user_id,
+    c.channel,
+    c.control_mode,
+    c.created_at,
+    m.text AS last_message,
+    m.created_at AS last_message_at
+  FROM conversations c
+  LEFT JOIN LATERAL (
+    SELECT text, created_at
+    FROM messages
+    WHERE conversation_id = c.id
+    ORDER BY created_at DESC
+    LIMIT 1
+  ) m ON true
+  WHERE c.organization_id = $1
+  ORDER BY m.created_at DESC NULLS LAST
+  LIMIT 100
+`, [organization_id]);
 
       res.json({ success: true, data: r.rows });
 
