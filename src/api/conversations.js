@@ -16,19 +16,12 @@ export function registerConversationRoutes(app, pool) {
       const organization_id = req.organization_id;
 
       const r = await pool.query(`
-        SELECT
-          c.id,
-          c.external_user_id,
-          c.channel,
-          c.control_mode,
-          c.created_at,
-
-          const r = await pool.query(`
-  SELECT *
-  FROM conversations
-  WHERE organization_id = $1
-  LIMIT 10
-`, [organization_id]);
+        SELECT *
+        FROM conversations
+        WHERE organization_id = $1
+        ORDER BY created_at DESC
+        LIMIT 50
+      `, [organization_id]);
 
       res.json({ success: true, data: r.rows });
 
@@ -120,7 +113,6 @@ export function registerConversationRoutes(app, pool) {
         return res.status(400).json({ success: false, error: "Content required" });
       }
 
-      // validar conversación
       const conv = await pool.query(`
         SELECT *
         FROM conversations
@@ -134,7 +126,6 @@ export function registerConversationRoutes(app, pool) {
         return res.status(404).json({ success: false, error: "Conversation not found" });
       }
 
-      // guardar mensaje
       const msg = await pool.query(`
         INSERT INTO messages (conversation_id, role, text, created_at)
         VALUES ($1, 'assistant', $2, NOW())
@@ -143,20 +134,15 @@ export function registerConversationRoutes(app, pool) {
 
       const message = msg.rows[0];
 
-      // 🔥 ACTUALIZAR ESTADO DE CONVERSACIÓN (CONTRATO EVA v1)
-      await pool.query(
-        `
+      await pool.query(`
         UPDATE conversations
         SET
           last_message = $1,
           last_message_at = NOW(),
           updated_at = NOW()
         WHERE id = $2
-        `,
-        [content, id]
-      );
+      `, [content, id]);
 
-      // enviar WhatsApp si aplica
       if (conversation.channel === "whatsapp") {
         try {
           const { sendWhatsAppMessage } = await import("../connectors/whatsapp.js");
