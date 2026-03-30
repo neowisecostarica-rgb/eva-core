@@ -2,15 +2,6 @@
 ====================================================
 EVA CORE — PROMPT BUILDER (MASTER FIX VERSION)
 ====================================================
-
-Este archivo construye el prompt dinámico para el motor AI.
-
-REGLAS CRÍTICAS:
-- NO usar {{ }}
-- Usar template strings (` `) con ${}
-- Este archivo define el comportamiento comercial de EVA
-
-====================================================
 */
 
 export function buildPrompt({
@@ -59,13 +50,13 @@ export function buildPrompt({
 
   let salesModeBlock = "";
 
-  if (salesMode === "closing") {
+  if (salesMode === "closing" || salesMode === "CLOSE") {
     salesModeBlock = `
 - Cliente listo para decidir
 - Refuerza valor con seguridad
 - Lleva a una acción clara y simple
 `;
-  } else if (salesMode === "discovery") {
+  } else if (salesMode === "discovery" || salesMode === "ASK" || salesMode === "QUALIFY") {
     salesModeBlock = `
 - Cliente explorando
 - Haz preguntas inteligentes
@@ -77,6 +68,40 @@ export function buildPrompt({
 - Construye contexto antes de recomendar
 `;
   }
+
+  /*
+  ========================================
+  CATALOG BLOCK (FIX CRÍTICO)
+  ========================================
+  */
+
+  const catalogBlock = catalogResults.length
+    ? `
+========================================
+PRODUCTOS DISPONIBLES (USA ESTO PARA VENDER)
+========================================
+
+${catalogResults
+  .map(
+    (p, i) => `
+Producto ${i + 1}:
+- Nombre: ${p.name || "N/A"}
+- Precio: ${p.price || "No especificado"}
+- Descripción: ${p.description || "N/A"}
+- Categoría: ${p.category || "N/A"}
+`
+  )
+  .join("\n")}
+
+REGLAS:
+- SOLO puedes recomendar productos de esta lista
+- NO inventes productos
+- Si hay productos relevantes → recomiéndalos con naturalidad
+- Explica beneficios, no solo specs
+`
+    : `
+(No hay productos relevantes detectados)
+`;
 
   /*
   ========================================
@@ -182,39 +207,7 @@ MENSAJE DEL CLIENTE
 
 "${text}"
 
-/*
-========================================
-CATALOG BLOCK
-========================================
-*/
-
-const catalogBlock = catalogResults.length
-  ? `
-========================================
-PRODUCTOS DISPONIBLES (USA ESTO PARA VENDER)
-========================================
-
-${catalogResults
-  .map(
-    (p, i) => `
-Producto ${i + 1}:
-- Nombre: ${p.name || "N/A"}
-- Precio: ${p.price || "No especificado"}
-- Descripción: ${p.description || "N/A"}
-- Categoría: ${p.category || "N/A"}
-`
-  )
-  .join("\n")}
-
-REGLAS:
-- SOLO puedes recomendar productos de esta lista
-- NO inventes productos
-- Si hay productos relevantes → recomiéndalos con naturalidad
-- Explica beneficios, no solo specs
-`
-  : `
-(No hay productos relevantes detectados)
-`;
+${catalogBlock}
 
 ========================================
 INSTRUCCIÓN FINAL
