@@ -18,6 +18,120 @@ const router = express.Router();
 
 /*
 ========================================
+POST /v1/messages/outbound
+========================================
+*/
+
+router.post("/outbound", authenticate, async (req, res) => {
+  const request_id = crypto.randomUUID();
+
+  const organization_id = req.organization_id || req.organization?.id || null;
+
+  const log = createLogger({
+    request_id,
+    organization_id,
+  });
+
+  try {
+    log.info("OUTBOUND_REQUEST_RECEIVED", {
+      raw: req.body,
+    });
+
+    /*
+    ========================================
+    AUTH
+    ========================================
+    */
+
+    if (!organization_id) {
+      log.error("AUTH_FAILED");
+
+      return res.status(401).json({
+        error: "Unauthorized",
+      });
+    }
+
+    /*
+    ========================================
+    VALIDATION
+    ========================================
+    */
+
+    const { phone, text } = req.body;
+
+    if (!phone || !text) {
+      log.warn("INVALID_INPUT", {
+        reason: "phone or text missing",
+      });
+
+      return res.status(400).json({
+        error: "phone and text are required",
+      });
+    }
+
+    /*
+    ========================================
+    SEND WHATSAPP
+    ========================================
+    */
+
+    const response = await fetch(
+      `https://graph.facebook.com/v18.0/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          messaging_product: "whatsapp",
+          to: phone,
+          type: "text",
+          text: {
+            body: text,
+          },
+        }),
+      }
+    );
+
+    const data = await response.json();
+
+    log.info("WHATSAPP_RESPONSE", data);
+
+    if (!response.ok) {
+      log.error("WHATSAPP_SEND_FAILED", data);
+
+      return res.status(500).json({
+        error: "WhatsApp send failed",
+      });
+    }
+
+    /*
+    ========================================
+    RESPONSE
+    ========================================
+    */
+
+    return res.json({
+      success: true,
+      data,
+    });
+
+  } catch (err) {
+    log.error("OUTBOUND_ERROR", {
+      message: err.message,
+      stack: err.stack,
+    });
+
+    return res.status(500).json({
+      error: "Internal server error",
+    });
+  }
+});
+
+
+/*
+========================================
 POST /v1/messages/inbound
 ========================================
 */
