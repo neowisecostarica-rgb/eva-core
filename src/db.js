@@ -193,3 +193,33 @@ export async function saveMessage({
 }
 
 export default pool;
+/*
+========================================
+PIPELINE EVENTS
+========================================
+*/
+
+export async function savePipelineEvent({
+  organization_id,
+  lead_id,
+  event_type,
+  metadata = {},
+}) {
+  try {
+    await pool.query(
+      `
+      INSERT INTO pipeline_events (
+        organization_id,
+        lead_id,
+        event_type,
+        metadata,
+        created_at
+      )
+      VALUES ($1, $2, $3, $4, NOW())
+      `,
+      [organization_id, lead_id, event_type, JSON.stringify(metadata)]
+    );
+  } catch (err) {
+    console.error("❌ savePipelineEvent error:", err);
+  }
+}
