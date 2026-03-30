@@ -1,28 +1,6 @@
 /*
 ====================================================
-EVA CORE — SALES BRAIN (STABLE RUNTIME VERSION)
-====================================================
-
-Propósito:
-- Procesar mensajes entrantes
-- Construir contexto comercial
-- Ejecutar AI de forma segura
-- Aplicar fallback controlado
-- Evitar recomendar productos sin contexto suficiente
-
-Notas para el programador que lea esto en el futuro:
-- NO duplicar runAI() dentro del mismo bloque
-- enforceAIRuntime() NO recibe aiResult directo; recibe un objeto contrato:
-  { aiResponse, source }
-- Si AI falla, el fallback NO debe forzar catálogo
-- "qualified" controla si EVA puede pasar de discovery a recommendation
-- Este archivo es sensible: pequeños cambios aquí alteran ventas reales
-
-Última estabilización:
-- Fix de isUserQualified()
-- Eliminación de runAI duplicado
-- enforceAIRuntime({ aiResponse, source }) en posición correcta
-- No mostrar productos cuando AI no respondió
+EVA CORE — SALES BRAIN (STRATEGY ENABLED)
 ====================================================
 */
 
@@ -45,7 +23,52 @@ import { getPromptConfig } from "./brain/utils/getPromptConfig.js";
 
 /*
 ====================================================
-HELPERS — SIGNALS + MEMORY + CONTEXT
+NEW — INTENT + STAGE + STRATEGY
+====================================================
+*/
+
+function detectIntent(text = "") {
+  const t = text.toLowerCase();
+
+  if (t.includes("precio") || t.includes("cuánto") || t.includes("cuanto"))
+    return "BUY";
+
+  if (t.includes("comprar") || t.includes("lo quiero"))
+    return "BUY";
+
+  if (t.includes("mantenimiento") || t.includes("reparar"))
+    return "SERVICE";
+
+  if (t.includes("hola") || t.includes("buenas"))
+    return "GREETING";
+
+  return "INFO";
+}
+
+function detectStage({ history = [], signals }) {
+  if (signals?.interest_level === "high") return "HOT";
+  if (signals?.interest_level === "medium") return "MID";
+  if (history.length > 2) return "QUALIFYING";
+  return "EARLY";
+}
+
+function decideStrategy({ intent, stage, known_data }) {
+  if (intent === "SERVICE" && !known_data?.problem) return "ASK";
+  if (intent === "SERVICE" && known_data?.problem)
+    return "EXPLAIN_CLOSE";
+
+  if (intent === "BUY" && stage === "EARLY") return "QUALIFY";
+  if (intent === "BUY" && stage === "MID") return "RECOMMEND";
+  if (intent === "BUY" && stage === "HOT") return "CLOSE";
+
+  if (intent === "GREETING") return "ASK";
+
+  return "DEFAULT";
+}
+
+/*
+====================================================
+HELPERS
 ====================================================
 */
 
@@ -94,56 +117,6 @@ function buildCustomerMemory({ lead, signals, history = [] }) {
   };
 }
 
-function buildConversationContext({
-  organization_id,
-  phone,
-  text,
-  channel,
-  message_id,
-  lead,
-  signals,
-  salesMode,
-}) {
-  return {
-    organization_id,
-    phone,
-    text,
-    channel,
-    message_id,
-    lead_id: lead?.id || null,
-    stage: lead?.stage || "new",
-    salesMode,
-    signals,
-    timestamp: new Date().toISOString(),
-  };
-}
-
-function isUserQualified(text, history = []) {
-  const t = (text || "").toLowerCase().trim();
-
-  const genericInputs = [
-    "trabajo",
-    "estudio",
-    "uso básico",
-    "uso basico",
-    "hola",
-    "jajaja",
-    "ok",
-    "gracias",
-  ];
-
-  if (!t) return false;
-  if (genericInputs.includes(t)) return false;
-
-  // Si ya hubo intercambio real, se puede avanzar más fácil
-  if (history.length >= 2) return true;
-
-  // Mensajes con algo más de contexto textual
-  if (t.length > 20) return true;
-
-  return false;
-}
-
 /*
 ====================================================
 MAIN HANDLER
@@ -170,11 +143,9 @@ export async function handleInbound(payload) {
 
     if (message_id) {
       const existing = await db.query(
-        `SELECT id
-         FROM messages
+        `SELECT id FROM messages
          WHERE organization_id = $1
-           AND external_message_id = $2
-         LIMIT 1`,
+         AND external_message_id = $2 LIMIT 1`,
         [organization_id, message_id]
       );
 
@@ -194,20 +165,12 @@ export async function handleInbound(payload) {
 
     const lead = await findOrCreateLead({ organization_id, phone });
 
-    if (!lead) {
-      throw new Error("Lead could not be created or loaded");
-    }
-
     const conversation = await findOrCreateConversation({
       organization_id,
       phone,
       channel,
       lead_id: lead?.id,
     });
-
-    if (!conversation) {
-      throw new Error("Conversation could not be created or loaded");
-    }
 
     /*
     ========================================
@@ -234,10 +197,8 @@ export async function handleInbound(payload) {
       `SELECT role, content AS text
        FROM messages
        WHERE conversation_id = $1
-         AND organization_id = $2
-       ORDER BY created_at ASC
-       LIMIT 10`,
-      [conversation.id, organization_id]
+       ORDER BY created_at ASC LIMIT 10`,
+      [conversation.id]
     );
 
     const history = historyRes.rows || [];
@@ -258,53 +219,47 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    5. QUALIFICATION
+    5. INTENT + STAGE + STRATEGY
     ========================================
     */
 
-    const qualified = isUserQualified(text, history);
+    const intent = detectIntent(text);
 
-    /*
-    ========================================
-    6. SALES MODE
-    ========================================
-    */
-
-    const lower = (text || "").toLowerCase();
-    let salesMode = "conversation";
-
-    if (!qualified) {
-      salesMode = "discovery";
-    } else if (
-      lower.includes("precio") ||
-      lower.includes("cuánto") ||
-      lower.includes("cuanto")
-    ) {
-      salesMode = "closing";
-    } else {
-      salesMode = "recommendation";
-    }
-
-    /*
-    ========================================
-    7. CONTEXT
-    ========================================
-    */
-
-    const context = buildConversationContext({
-      organization_id,
-      phone,
-      text,
-      channel,
-      message_id,
-      lead,
+    const stage = detectStage({
+      history,
       signals,
-      salesMode,
+    });
+
+    const known_data = {
+      use_case: signals.use_case,
+      budget: signals.budget,
+    };
+
+    const strategy = decideStrategy({
+      intent,
+      stage,
+      known_data,
     });
 
     /*
     ========================================
-    8. CATALOG
+    6. CONTEXT
+    ========================================
+    */
+
+    const context = {
+      organization_id,
+      phone,
+      text,
+      intent,
+      stage,
+      strategy,
+      known_data,
+    };
+
+    /*
+    ========================================
+    7. CATALOG
     ========================================
     */
 
@@ -319,15 +274,14 @@ export async function handleInbound(payload) {
       console.warn("⚠️ Catalog error:", err);
     }
 
-    const safeCatalog = qualified
-      ? Array.isArray(catalogResults)
+    const safeCatalog =
+      strategy === "RECOMMEND" || strategy === "CLOSE"
         ? catalogResults.slice(0, 1)
-        : []
-      : [];
+        : [];
 
     /*
     ========================================
-    9. CONFIG
+    8. CONFIG
     ========================================
     */
 
@@ -335,7 +289,7 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    10. AI
+    9. AI
     ========================================
     */
 
@@ -348,13 +302,11 @@ export async function handleInbound(payload) {
         history,
         memory,
         config,
-        salesMode,
+        salesMode: strategy, // compatibilidad
       });
 
       const aiResult = await runAI({ prompt });
 
-      // IMPORTANTE:
-      // El contrato runtime espera { aiResponse, source }
       enforceAIRuntime({
         aiResponse: aiResult,
         source: "openai",
@@ -374,35 +326,32 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    11. FALLBACK
+    10. FALLBACK
     ========================================
     */
 
     let replyText = aiText;
 
     if (!replyText) {
-      console.log("⚠️ AI FALLBACK ACTIVATED");
-
       replyText =
         "Hola 😊 con mucho gusto le ayudo. Contame un poco más qué está buscando y le guío.";
     }
 
     /*
     ========================================
-    12. RESPONSE LAYER
+    11. RESPONSE
     ========================================
     */
 
     const reply = generateReply({
       text: replyText,
       intent: "AI",
-      // Solo mostrar productos si AI realmente respondió
       products: aiText ? safeCatalog : [],
     });
 
     /*
     ========================================
-    13. SAVE ASSISTANT MESSAGE
+    12. SAVE
     ========================================
     */
 
@@ -414,19 +363,13 @@ export async function handleInbound(payload) {
       text: reply.text,
     });
 
-    /*
-    ========================================
-    14. RETURN
-    ========================================
-    */
-
     return {
       reply,
       meta: {
-        salesMode,
-        qualified,
+        intent,
+        stage,
+        strategy,
         usedAI: !!aiText,
-        fallback: !aiText,
       },
     };
   } catch (err) {
