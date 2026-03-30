@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — SALES BRAIN (STRATEGY ENABLED)
+EVA CORE — SALES BRAIN (STRATEGY ENGINE FIXED)
 ====================================================
 */
 
@@ -8,6 +8,7 @@ import {
   findOrCreateLead,
   findOrCreateConversation,
   saveMessage,
+  savePipelineEvent,
 } from "./db.js";
 
 import db from "./db.js";
@@ -20,82 +21,26 @@ import { runAI } from "./brain/engines/aiEngine.js";
 import { applyAIGuards } from "./brain/utils/aiGuards.js";
 import { buildPrompt } from "./brain/utils/promptBuilder.js";
 import { getPromptConfig } from "./brain/utils/getPromptConfig.js";
+
 import { detectPipelineEvent } from "./brain/engines/pipelineEngine.js";
-import { savePipelineEvent } from "./db.js";
 
 /*
 ====================================================
-NEW — INTENT + STAGE + STRATEGY
+INTENT SIMPLE (TEMPORAL)
 ====================================================
 */
 
-/*
-========================================
-5. STRATEGY ENGINE (REAL)
-========================================
-*/
+function detectIntent(text = "") {
+  const t = text.toLowerCase();
 
-// 1. INTENT (temporal, luego unificamos con intentEngine)
-const intent = detectIntent(text);
+  if (t.includes("precio") || t.includes("cuanto")) return "BUY";
+  if (t.includes("comprar") || t.includes("la quiero")) return "BUY";
+  if (t.includes("mantenimiento") || t.includes("reparar")) return "SERVICE";
+  if (t.includes("hola") || t.includes("buenas")) return "GREETING";
 
-// 2. PIPELINE EVENT
-const pipelineEvent = detectPipelineEvent(text);
-
-// 3. SAVE EVENT
-if (pipelineEvent && lead?.id) {
-  await savePipelineEvent({
-    organization_id,
-    lead_id: lead.id,
-    event_type: pipelineEvent,
-    metadata: {
-      text,
-      intent,
-    },
-  });
+  return "INFO";
 }
 
-// 4. STAGE EVOLUTION (REAL)
-let newStage = lead.stage;
-
-if (pipelineEvent === "PRICE_REQUEST") newStage = "qualifying";
-if (pipelineEvent === "CATALOG_REQUEST") newStage = "consideration";
-if (pipelineEvent === "READY_TO_BUY") newStage = "hot";
-if (pipelineEvent === "PAYMENT_INTENT") newStage = "closing";
-
-// 5. UPDATE LEAD STAGE
-if (newStage !== lead.stage) {
-  await db.query(
-    `
-    UPDATE leads
-    SET stage = $1,
-        updated_at = NOW()
-    WHERE id = $2
-    AND organization_id = $3
-    `,
-    [newStage, lead.id, organization_id]
-  );
-
-  lead.stage = newStage;
-}
-
-// 6. STRATEGY BASED ON REAL STAGE
-let strategy = "DEFAULT";
-
-if (intent === "SERVICE") {
-  strategy = "ASK";
-}
-
-if (intent === "BUY") {
-  if (lead.stage === "new") strategy = "QUALIFY";
-  if (lead.stage === "qualifying") strategy = "QUALIFY";
-  if (lead.stage === "consideration") strategy = "RECOMMEND";
-  if (lead.stage === "hot") strategy = "CLOSE";
-  if (lead.stage === "closing") strategy = "CLOSE";
-}
-
-if (intent === "GREETING") {
-  strategy = "ASK";
-}
 /*
 ====================================================
 HELPERS
@@ -113,16 +58,12 @@ function extractSignalsFromText(text = "") {
   if (lower.includes("estudio")) use_case = "study";
   if (lower.includes("trabajo")) use_case = "work";
 
-  if (
-    lower.includes("precio") ||
-    lower.includes("cuánto") ||
-    lower.includes("cuanto")
-  ) {
+  if (lower.includes("precio")) {
     lastUserIntent = "price_check";
     interest_level = "medium";
   }
 
-  if (lower.includes("comprar") || lower.includes("lo quiero")) {
+  if (lower.includes("comprar") || lower.includes("la quiero")) {
     lastUserIntent = "buy_intent";
     interest_level = "high";
   }
@@ -199,7 +140,6 @@ export async function handleInbound(payload) {
       organization_id,
       phone,
       channel,
-      lead_id: lead?.id,
     });
 
     /*
@@ -249,27 +189,54 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    5. INTENT + STAGE + STRATEGY
+    5. STRATEGY ENGINE (REAL)
     ========================================
     */
 
     const intent = detectIntent(text);
 
-    const stage = detectStage({
-      history,
-      signals,
-    });
+    const pipelineEvent = detectPipelineEvent(text);
 
-    const known_data = {
-      use_case: signals.use_case,
-      budget: signals.budget,
-    };
+    if (pipelineEvent && lead?.id) {
+      await savePipelineEvent({
+        organization_id,
+        lead_id: lead.id,
+        event_type: pipelineEvent,
+        metadata: { text, intent },
+      });
+    }
 
-    const strategy = decideStrategy({
-      intent,
-      stage,
-      known_data,
-    });
+    let newStage = lead.stage;
+
+    if (pipelineEvent === "PRICE_REQUEST") newStage = "qualifying";
+    if (pipelineEvent === "CATALOG_REQUEST") newStage = "consideration";
+    if (pipelineEvent === "READY_TO_BUY") newStage = "hot";
+    if (pipelineEvent === "PAYMENT_INTENT") newStage = "closing";
+
+    if (newStage !== lead.stage) {
+      await db.query(
+        `UPDATE leads
+         SET stage = $1, updated_at = NOW()
+         WHERE id = $2 AND organization_id = $3`,
+        [newStage, lead.id, organization_id]
+      );
+
+      lead.stage = newStage;
+    }
+
+    let strategy = "DEFAULT";
+
+    if (intent === "SERVICE") strategy = "ASK";
+
+    if (intent === "BUY") {
+      if (lead.stage === "new") strategy = "QUALIFY";
+      if (lead.stage === "qualifying") strategy = "QUALIFY";
+      if (lead.stage === "consideration") strategy = "RECOMMEND";
+      if (lead.stage === "hot") strategy = "CLOSE";
+      if (lead.stage === "closing") strategy = "CLOSE";
+    }
+
+    if (intent === "GREETING") strategy = "ASK";
 
     /*
     ========================================
@@ -282,9 +249,8 @@ export async function handleInbound(payload) {
       phone,
       text,
       intent,
-      stage,
+      stage: lead.stage,
       strategy,
-      known_data,
     };
 
     /*
@@ -332,7 +298,7 @@ export async function handleInbound(payload) {
         history,
         memory,
         config,
-        salesMode: strategy, // compatibilidad
+        salesMode: strategy,
       });
 
       const aiResult = await runAI({ prompt });
@@ -347,9 +313,7 @@ export async function handleInbound(payload) {
         context,
       });
 
-      if (guarded?.text) {
-        aiText = guarded.text;
-      }
+      if (guarded?.text) aiText = guarded.text;
     } catch (err) {
       console.warn("⚠️ AI error:", err);
     }
@@ -397,8 +361,9 @@ export async function handleInbound(payload) {
       reply,
       meta: {
         intent,
-        stage,
+        stage: lead.stage,
         strategy,
+        pipelineEvent,
         usedAI: !!aiText,
       },
     };
@@ -410,9 +375,7 @@ export async function handleInbound(payload) {
         text: "Hubo un problema procesando el mensaje, intentemos nuevamente 🙏",
         media: [],
       },
-      meta: {
-        error: true,
-      },
+      meta: { error: true },
     };
   }
 }
