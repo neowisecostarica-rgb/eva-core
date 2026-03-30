@@ -20,6 +20,8 @@ import { runAI } from "./brain/engines/aiEngine.js";
 import { applyAIGuards } from "./brain/utils/aiGuards.js";
 import { buildPrompt } from "./brain/utils/promptBuilder.js";
 import { getPromptConfig } from "./brain/utils/getPromptConfig.js";
+import { detectPipelineEvent } from "./brain/intent/pipelineEngine.js";
+import { savePipelineEvent } from "./db.js";
 
 /*
 ====================================================
@@ -27,45 +29,73 @@ NEW — INTENT + STAGE + STRATEGY
 ====================================================
 */
 
-function detectIntent(text = "") {
-  const t = text.toLowerCase();
+/*
+========================================
+5. STRATEGY ENGINE (REAL)
+========================================
+*/
 
-  if (t.includes("precio") || t.includes("cuánto") || t.includes("cuanto"))
-    return "BUY";
+// 1. INTENT (temporal, luego unificamos con intentEngine)
+const intent = detectIntent(text);
 
-  if (t.includes("comprar") || t.includes("lo quiero"))
-    return "BUY";
+// 2. PIPELINE EVENT
+const pipelineEvent = detectPipelineEvent(text);
 
-  if (t.includes("mantenimiento") || t.includes("reparar"))
-    return "SERVICE";
-
-  if (t.includes("hola") || t.includes("buenas"))
-    return "GREETING";
-
-  return "INFO";
+// 3. SAVE EVENT
+if (pipelineEvent && lead?.id) {
+  await savePipelineEvent({
+    organization_id,
+    lead_id: lead.id,
+    event_type: pipelineEvent,
+    metadata: {
+      text,
+      intent,
+    },
+  });
 }
 
-function detectStage({ history = [], signals }) {
-  if (signals?.interest_level === "high") return "HOT";
-  if (signals?.interest_level === "medium") return "MID";
-  if (history.length > 2) return "QUALIFYING";
-  return "EARLY";
+// 4. STAGE EVOLUTION (REAL)
+let newStage = lead.stage;
+
+if (pipelineEvent === "PRICE_REQUEST") newStage = "qualifying";
+if (pipelineEvent === "CATALOG_REQUEST") newStage = "consideration";
+if (pipelineEvent === "READY_TO_BUY") newStage = "hot";
+if (pipelineEvent === "PAYMENT_INTENT") newStage = "closing";
+
+// 5. UPDATE LEAD STAGE
+if (newStage !== lead.stage) {
+  await db.query(
+    `
+    UPDATE leads
+    SET stage = $1,
+        updated_at = NOW()
+    WHERE id = $2
+    AND organization_id = $3
+    `,
+    [newStage, lead.id, organization_id]
+  );
+
+  lead.stage = newStage;
 }
 
-function decideStrategy({ intent, stage, known_data }) {
-  if (intent === "SERVICE" && !known_data?.problem) return "ASK";
-  if (intent === "SERVICE" && known_data?.problem)
-    return "EXPLAIN_CLOSE";
+// 6. STRATEGY BASED ON REAL STAGE
+let strategy = "DEFAULT";
 
-  if (intent === "BUY" && stage === "EARLY") return "QUALIFY";
-  if (intent === "BUY" && stage === "MID") return "RECOMMEND";
-  if (intent === "BUY" && stage === "HOT") return "CLOSE";
-
-  if (intent === "GREETING") return "ASK";
-
-  return "DEFAULT";
+if (intent === "SERVICE") {
+  strategy = "ASK";
 }
 
+if (intent === "BUY") {
+  if (lead.stage === "new") strategy = "QUALIFY";
+  if (lead.stage === "qualifying") strategy = "QUALIFY";
+  if (lead.stage === "consideration") strategy = "RECOMMEND";
+  if (lead.stage === "hot") strategy = "CLOSE";
+  if (lead.stage === "closing") strategy = "CLOSE";
+}
+
+if (intent === "GREETING") {
+  strategy = "ASK";
+}
 /*
 ====================================================
 HELPERS
