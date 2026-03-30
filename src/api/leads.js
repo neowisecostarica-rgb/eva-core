@@ -23,7 +23,7 @@ export function registerLeadRoutes(app, pool) {
         SELECT
           id,
           phone,
-          lead_score,
+          score,
           stage,
           status,
           last_contact_at,
@@ -60,7 +60,7 @@ export function registerLeadRoutes(app, pool) {
       const {
         stage,
         status,
-        lead_score,
+        score,
         phone
       } = req.body;
 
@@ -80,7 +80,7 @@ export function registerLeadRoutes(app, pool) {
         });
       }
 
-      // 🔧 Construcción dinámica (solo campos enviados)
+      // 🔧 Construcción dinámica
       const fields = [];
       const values = [];
       let index = 1;
@@ -95,9 +95,9 @@ export function registerLeadRoutes(app, pool) {
         values.push(status);
       }
 
-      if (lead_score !== undefined) {
-        fields.push(`lead_score = $${index++}`);
-        values.push(lead_score);
+      if (score !== undefined) {
+        fields.push(`score = $${index++}`);
+        values.push(score);
       }
 
       if (phone !== undefined) {
