@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — SALES BRAIN (STRATEGY ENGINE FIXED)
+EVA CORE — SALES BRAIN (FIXED + CLEAN)
 ====================================================
 */
 
@@ -22,71 +22,9 @@ import { applyAIGuards } from "./brain/utils/aiGuards.js";
 import { buildPrompt } from "./brain/utils/promptBuilder.js";
 import { getPromptConfig } from "./brain/utils/getPromptConfig.js";
 
+/* ✅ FIX: usar engines, no intent */
 import { detectPipelineEvent } from "./brain/engines/pipelineEngine.js";
-
-/*
-====================================================
-INTENT SIMPLE (TEMPORAL)
-====================================================
-*/
-
-function detectIntent(text = "") {
-  const t = text.toLowerCase();
-
-  if (t.includes("precio") || t.includes("cuanto")) return "BUY";
-  if (t.includes("comprar") || t.includes("la quiero")) return "BUY";
-  if (t.includes("mantenimiento") || t.includes("reparar")) return "SERVICE";
-  if (t.includes("hola") || t.includes("buenas")) return "GREETING";
-
-  return "INFO";
-}
-
-/*
-====================================================
-HELPERS
-====================================================
-*/
-
-function extractSignalsFromText(text = "") {
-  const lower = text.toLowerCase();
-
-  let use_case = null;
-  let budget = null;
-  let interest_level = "low";
-  let lastUserIntent = "general";
-
-  if (lower.includes("estudio")) use_case = "study";
-  if (lower.includes("trabajo")) use_case = "work";
-
-  if (lower.includes("precio")) {
-    lastUserIntent = "price_check";
-    interest_level = "medium";
-  }
-
-  if (lower.includes("comprar") || lower.includes("la quiero")) {
-    lastUserIntent = "buy_intent";
-    interest_level = "high";
-  }
-
-  return {
-    use_case,
-    budget,
-    interest_level,
-    lastUserIntent,
-  };
-}
-
-function buildCustomerMemory({ lead, signals, history = [] }) {
-  return {
-    isReturningUser: history.length > 2,
-    use_case: signals.use_case,
-    budget: signals.budget,
-    interest_level: signals.interest_level,
-    lastUserIntent: signals.lastUserIntent,
-    lead_stage: lead?.stage || "new",
-    lead_status: lead?.status || "active",
-  };
-}
+import { detectIntent } from "./brain/engines/intentEngine.js";
 
 /*
 ====================================================
@@ -144,14 +82,13 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    2. SAVE USER MESSAGE
+    2. SAVE USER MESSAGE (FIX)
     ========================================
     */
 
     await saveMessage({
       organization_id,
       conversation_id: conversation.id,
-      lead_id: lead?.id,
       role: "user",
       text,
       message_id,
@@ -175,26 +112,11 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    4. SIGNALS + MEMORY
-    ========================================
-    */
-
-    const signals = extractSignalsFromText(text);
-
-    const memory = buildCustomerMemory({
-      lead,
-      signals,
-      history,
-    });
-
-    /*
-    ========================================
-    5. STRATEGY ENGINE (REAL)
+    4. INTENT + PIPELINE
     ========================================
     */
 
     const intent = detectIntent(text);
-
     const pipelineEvent = detectPipelineEvent(text);
 
     if (pipelineEvent && lead?.id) {
@@ -206,7 +128,13 @@ export async function handleInbound(payload) {
       });
     }
 
-    let newStage = lead.stage;
+    /*
+    ========================================
+    5. STAGE ENGINE (FIX REAL)
+    ========================================
+    */
+
+    let newStage = lead.stage || "new";
 
     if (pipelineEvent === "PRICE_REQUEST") newStage = "qualifying";
     if (pipelineEvent === "CATALOG_REQUEST") newStage = "consideration";
@@ -224,23 +152,27 @@ export async function handleInbound(payload) {
       lead.stage = newStage;
     }
 
-    let strategy = "DEFAULT";
+    /*
+    ========================================
+    6. STRATEGY ENGINE (FIX)
+    ========================================
+    */
 
-    if (intent === "SERVICE") strategy = "ASK";
+    let strategy = "ASK";
 
     if (intent === "BUY") {
       if (lead.stage === "new") strategy = "QUALIFY";
-      if (lead.stage === "qualifying") strategy = "QUALIFY";
-      if (lead.stage === "consideration") strategy = "RECOMMEND";
-      if (lead.stage === "hot") strategy = "CLOSE";
-      if (lead.stage === "closing") strategy = "CLOSE";
+      else if (lead.stage === "qualifying") strategy = "QUALIFY";
+      else if (lead.stage === "consideration") strategy = "RECOMMEND";
+      else if (lead.stage === "hot") strategy = "CLOSE";
+      else if (lead.stage === "closing") strategy = "CLOSE";
     }
 
-    if (intent === "GREETING") strategy = "ASK";
+    if (intent === "CLOSE_INTENT") strategy = "CLOSE";
 
     /*
     ========================================
-    6. CONTEXT
+    7. CONTEXT
     ========================================
     */
 
@@ -255,7 +187,7 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    7. CATALOG
+    8. CATALOG
     ========================================
     */
 
@@ -277,7 +209,7 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    8. CONFIG
+    9. CONFIG
     ========================================
     */
 
@@ -285,7 +217,7 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    9. AI
+    10. AI
     ========================================
     */
 
@@ -296,7 +228,6 @@ export async function handleInbound(payload) {
         context,
         catalogResults: safeCatalog,
         history,
-        memory,
         config,
         salesMode: strategy,
       });
@@ -320,20 +251,17 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    10. FALLBACK
+    11. FALLBACK
     ========================================
     */
 
-    let replyText = aiText;
-
-    if (!replyText) {
-      replyText =
-        "Hola 😊 con mucho gusto le ayudo. Contame un poco más qué está buscando y le guío.";
-    }
+    let replyText =
+      aiText ||
+      "Hola 😊 con mucho gusto le ayudo. ¿Qué tipo de uso le quiere dar al equipo?";
 
     /*
     ========================================
-    11. RESPONSE
+    12. RESPONSE
     ========================================
     */
 
@@ -345,14 +273,13 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    12. SAVE
+    13. SAVE
     ========================================
     */
 
     await saveMessage({
       organization_id,
       conversation_id: conversation.id,
-      lead_id: lead?.id,
       role: "assistant",
       text: reply.text,
     });
