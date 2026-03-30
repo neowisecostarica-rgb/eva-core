@@ -182,6 +182,40 @@ MENSAJE DEL CLIENTE
 
 "${text}"
 
+/*
+========================================
+CATALOG BLOCK
+========================================
+*/
+
+const catalogBlock = catalogResults.length
+  ? `
+========================================
+PRODUCTOS DISPONIBLES (USA ESTO PARA VENDER)
+========================================
+
+${catalogResults
+  .map(
+    (p, i) => `
+Producto ${i + 1}:
+- Nombre: ${p.name || "N/A"}
+- Precio: ${p.price || "No especificado"}
+- Descripción: ${p.description || "N/A"}
+- Categoría: ${p.category || "N/A"}
+`
+  )
+  .join("\n")}
+
+REGLAS:
+- SOLO puedes recomendar productos de esta lista
+- NO inventes productos
+- Si hay productos relevantes → recomiéndalos con naturalidad
+- Explica beneficios, no solo specs
+`
+  : `
+(No hay productos relevantes detectados)
+`;
+
 ========================================
 INSTRUCCIÓN FINAL
 ========================================
