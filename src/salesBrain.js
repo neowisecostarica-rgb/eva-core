@@ -254,16 +254,22 @@ CATALOG
 ====================================================
 */
 
+/*
+========================================
+CATALOG USAGE DECISION (FIXED)
+========================================
+*/
+
 function decideCatalogUsage({ strategy, intent, stage, text }) {
   const safeIntent = normalizeIntent(intent);
   const safeStage = normalizeStage(stage);
   const safeStrategy = String(strategy || "").toUpperCase();
   const t = String(text || "").toLowerCase();
 
-  // 1. BUY → siempre catálogo
+  // 1. intención de compra → siempre catálogo
   if (safeIntent === "BUY") return true;
 
-  // 2. detección directa
+  // 2. detección directa de productos
   if (
     t.includes("que tienes") ||
     t.includes("qué tienes") ||
@@ -276,6 +282,18 @@ function decideCatalogUsage({ strategy, intent, stage, text }) {
   ) {
     return true;
   }
+
+  // 3. servicios → también catálogo
+  if (safeIntent === "SERVICE") return true;
+
+  // 4. estrategias avanzadas
+  if (safeStrategy === "RECOMMEND") return true;
+  if (safeStrategy === "CLOSE") return true;
+
+  if (safeStage === "consideration" && safeIntent === "BUY") return true;
+
+  return false;
+}
 
   // 3. servicios
   if (safeIntent === "SERVICE") return true;
