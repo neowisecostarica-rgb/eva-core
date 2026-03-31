@@ -1,6 +1,7 @@
 /*
 ====================================================
-EVA CORE — SALES BRAIN (BRAIN + CATALOG + LEAD INTELLIGENCE)
+EVA CORE — SALES BRAIN
+(BRAIN + CATALOG + LEAD INTELLIGENCE + BUSINESS GUARDS)
 ====================================================
 */
 
@@ -186,11 +187,180 @@ function decideCatalogUsage({ strategy, intent, stage }) {
 function filterCatalogResults(results = []) {
   if (!Array.isArray(results)) return [];
 
-  const active = results.filter(p => p?.is_active !== false);
+  const active = results.filter((p) => p?.is_active !== false);
 
   active.sort((a, b) => (b.score || 0) - (a.score || 0));
 
   return active;
+}
+
+/*
+====================================================
+BUSINESS GUARDS
+====================================================
+*/
+
+function hasPriceSignal(text = "") {
+  const t = text.toLowerCase();
+  return (
+    t.includes("precio") ||
+    t.includes("cuánto cuesta") ||
+    t.includes("cuanto cuesta") ||
+    t.includes("vale") ||
+    t.includes("cuánto") ||
+    t.includes("cuanto")
+  );
+}
+
+function hasServiceSignal(text = "") {
+  const t = text.toLowerCase();
+  return (
+    t.includes("mantenimiento") ||
+    t.includes("reparación") ||
+    t.includes("reparacion") ||
+    t.includes("no imprime") ||
+    t.includes("falla") ||
+    t.includes("problema") ||
+    t.includes("daño") ||
+    t.includes("daño")
+  );
+}
+
+function hasActionClose(text = "") {
+  const t = text.toLowerCase();
+  return (
+    t.includes("¿") ||
+    t.includes("si gusta") ||
+    t.includes("si desea") ||
+    t.includes("coordinar") ||
+    t.includes("traer el equipo") ||
+    t.includes("traerlo") ||
+    t.includes("se lo aparto") ||
+    t.includes("le ayudo") ||
+    t.includes("puede traer") ||
+    t.includes("puedo enviarle")
+  );
+}
+
+function sanitizeTechnicalLanguage(text = "") {
+  let output = String(text || "");
+
+  const replacements = [
+    [/obstrucci[oó]n/gi, "bloqueo"],
+    [/cabezal/gi, "sistema de impresión"],
+    [/placa l[oó]gica/gi, "parte interna"],
+    [/fuente de poder/gi, "parte de energía"],
+    [/diagn[oó]stico t[eé]cnico/gi, "revisión"],
+    [/mantenimiento preventivo/gi, "mantenimiento completo"],
+    [/sulfataci[oó]n/gi, "daño interno"],
+  ];
+
+  for (const [pattern, replacement] of replacements) {
+    output = output.replace(pattern, replacement);
+  }
+
+  return output;
+}
+
+function shortenIfNeeded(text = "", stage = "new") {
+  const safeText = String(text || "").trim();
+  const safeStage = normalizeStage(stage);
+
+  if (!safeText) return safeText;
+  if (safeStage !== "new" && safeStage !== "qualifying") return safeText;
+  if (safeText.length <= 260) return safeText;
+
+  const parts = safeText
+    .split(/(?<=[.!?])\s+/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  if (parts.length <= 2) {
+    return safeText.slice(0, 260).trim();
+  }
+
+  return `${parts[0]} ${parts[1]}`.trim();
+}
+
+function enforceBusinessGuards({
+  text,
+  intent,
+  stage,
+  strategy,
+  userText,
+  known_data,
+  safeCatalog,
+}) {
+  let output = String(text || "").trim();
+  const incoming = String(userText || "");
+  const safeStage = normalizeStage(stage);
+  const safeIntent = String(intent || "OTHER").toUpperCase();
+  const safeStrategy = String(strategy || "ASK").toUpperCase();
+  const data = known_data || {};
+  const hasCatalog = Array.isArray(safeCatalog) && safeCatalog.length > 0;
+  const askingPrice = hasPriceSignal(incoming);
+  const askingService = hasServiceSignal(incoming);
+
+  if (!output) return output;
+
+  output = sanitizeTechnicalLanguage(output);
+
+  // ------------------------------------------------
+  // Guard 1: No dar precio demasiado temprano sin contexto
+  // ------------------------------------------------
+  if (
+    askingPrice &&
+    !hasCatalog &&
+    (safeStage === "new" || safeStage === "qualifying") &&
+    safeIntent === "BUY"
+  ) {
+    return "Con mucho gusto le ayudo. Para orientarle mejor, ¿la necesita para estudio o trabajo y qué rango de presupuesto maneja más o menos?";
+  }
+
+  // ------------------------------------------------
+  // Guard 2: Servicio técnico no explica reparación completa
+  // ------------------------------------------------
+  if (askingService && safeIntent === "SERVICE") {
+    if (!data.problem) {
+      return "Con mucho gusto le ayudo. ¿Me podría indicar la marca, el modelo y qué problema presenta el equipo?";
+    }
+
+    if (!hasActionClose(output)) {
+      output = `${output} Si gusta, puede traer el equipo o le ayudo a coordinar la revisión.`;
+    }
+
+    output = shortenIfNeeded(output, safeStage);
+    return output;
+  }
+
+  // ------------------------------------------------
+  // Guard 3: Si está en recommend/close y no cierra en acción, forzarlo
+  // ------------------------------------------------
+  if ((safeStrategy === "RECOMMEND" || safeStrategy === "CLOSE") && !hasActionClose(output)) {
+    if (hasCatalog) {
+      output = `${output} Si gusta, le puedo enviar fotos reales o ayudarle a coordinar apartarlo.`;
+    } else {
+      output = `${output} Si gusta, le ayudo a avanzar con la mejor opción para usted.`;
+    }
+  }
+
+  // ------------------------------------------------
+  // Guard 4: Evitar respuestas largas al inicio
+  // ------------------------------------------------
+  output = shortenIfNeeded(output, safeStage);
+
+  // ------------------------------------------------
+  // Guard 5: Greeting/info temprano debe terminar en pregunta
+  // ------------------------------------------------
+  if (
+    (safeIntent === "GREETING" || safeStrategy === "ASK" || safeStrategy === "QUALIFY") &&
+    !output.includes("?") &&
+    !output.includes("¿")
+  ) {
+    output = `${output} ¿La necesita para estudio, trabajo o servicio técnico?`;
+  }
+
+  return output.trim();
 }
 
 /*
@@ -288,7 +458,6 @@ export async function handleInbound(payload) {
     const intent = detectIntent(text);
     const pipelineEvent = detectPipelineEvent(text);
 
-    // 🔥 LEAD INTELLIGENCE
     const extracted = extractLeadData(text);
 
     await updateLeadIntelligence({
@@ -459,7 +628,25 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    12. RESPONSE
+    12. BUSINESS GUARDS
+    ========================================
+    */
+
+    replyText = enforceBusinessGuards({
+      text: replyText,
+      intent,
+      stage: lead.stage,
+      strategy,
+      userText: text,
+      known_data,
+      safeCatalog,
+    });
+
+    console.log("🛡️ Guards applied");
+
+    /*
+    ========================================
+    13. RESPONSE
     ========================================
     */
 
@@ -471,7 +658,7 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    13. SAVE ASSISTANT MESSAGE
+    14. SAVE ASSISTANT MESSAGE
     ========================================
     */
 
