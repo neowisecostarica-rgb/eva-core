@@ -260,18 +260,10 @@ function decideCatalogUsage({ strategy, intent, stage, text }) {
   const safeStrategy = String(strategy || "").toUpperCase();
   const t = String(text || "").toLowerCase();
 
-  /*
-  ========================================
-  1. INTENCIÓN DE COMPRA → SIEMPRE CATÁLOGO
-  ========================================
-  */
+  // 1. BUY → siempre catálogo
   if (safeIntent === "BUY") return true;
 
-  /*
-  ========================================
-  2. DETECCIÓN DIRECTA DE PRODUCTO (CRÍTICO)
-  ========================================
-  */
+  // 2. detección directa
   if (
     t.includes("que tienes") ||
     t.includes("qué tienes") ||
@@ -284,6 +276,18 @@ function decideCatalogUsage({ strategy, intent, stage, text }) {
   ) {
     return true;
   }
+
+  // 3. servicios
+  if (safeIntent === "SERVICE") return true;
+
+  // 4. estrategias
+  if (safeStrategy === "RECOMMEND") return true;
+  if (safeStrategy === "CLOSE") return true;
+
+  if (safeStage === "consideration" && safeIntent === "BUY") return true;
+
+  return false;
+}
 
   /*
   ========================================
