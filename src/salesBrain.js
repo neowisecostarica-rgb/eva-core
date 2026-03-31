@@ -853,13 +853,11 @@ export async function handleInbound(payload) {
     ========================================
     */
 
-    let safeCatalog = [];
-
-    const shouldUseCatalog = decideCatalogUsage({
+ const shouldUseCatalog = decideCatalogUsage({
   strategy,
   intent,
   stage: lead.stage,
-  text, // 🔥 IMPORTANTE
+  text, // 🔥 CRÍTICO
 });
 
     if (shouldUseCatalog) {
