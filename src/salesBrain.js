@@ -61,32 +61,14 @@ function normalizeStage(stage) {
 
 function decideStrategy({ intent, stage, known_data = {} }) {
   try {
-    // SERVICE FLOW
-    if (intent === "SERVICE" && !known_data.problem) {
-      return "ASK";
-    }
+    if (intent === "SERVICE" && !known_data.problem) return "ASK";
+    if (intent === "SERVICE" && known_data.problem) return "EXPLAIN_CLOSE";
 
-    if (intent === "SERVICE" && known_data.problem) {
-      return "EXPLAIN_CLOSE";
-    }
+    if (intent === "BUY" && stage === "EARLY") return "QUALIFY";
+    if (intent === "BUY" && stage === "MID") return "RECOMMEND";
+    if (intent === "BUY" && stage === "HOT") return "CLOSE";
 
-    // BUY FLOW
-    if (intent === "BUY" && stage === "EARLY") {
-      return "QUALIFY";
-    }
-
-    if (intent === "BUY" && stage === "MID") {
-      return "RECOMMEND";
-    }
-
-    if (intent === "BUY" && stage === "HOT") {
-      return "CLOSE";
-    }
-
-    // FOLLOWUP
-    if (intent === "FOLLOWUP") {
-      return "FOLLOWUP";
-    }
+    if (intent === "FOLLOWUP") return "FOLLOWUP";
 
     return "DEFAULT";
 
@@ -149,7 +131,7 @@ export async function handleInbound(payload) {
   try {
     const { organization_id, phone, text, channel, message_id } = payload;
 
-    let safeCatalog = []; // 🔥 FIX CRÍTICO
+    let safeCatalog = [];
 
     const lead = await findOrCreateLead({ organization_id, phone });
     const conversation = await findOrCreateConversation({
@@ -175,10 +157,13 @@ export async function handleInbound(payload) {
 
     const rawIntent = detectIntent(text);
     const intent = normalizeIntent(rawIntent);
-    
-const strategy = decideStrategy({ intent });
-console.log("🧠 STRATEGY:", strategy);
-    let strategy = "ASK";
+
+    const strategy = decideStrategy({
+      intent,
+      stage: lead.stage,
+    });
+
+    console.log("🧠 STRATEGY:", strategy);
 
     const shouldUseCatalog = decideCatalogUsage({
       strategy,
