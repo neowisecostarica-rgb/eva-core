@@ -879,7 +879,7 @@ export async function handleInbound(payload) {
   strategy,
   intent,
   stage: lead.stage,
-  text, // 🔥 CRÍTICO
+  text,
 });
 
     if (shouldUseCatalog) {
