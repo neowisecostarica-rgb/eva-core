@@ -18,8 +18,7 @@ const pool = new Pool({
 });
 
 pool.on("connect", () => {
-  console.log("PostgreSQL connected");
-  console.log("🧪 DATABASE_URL:", process.env.DATABASE_URL);
+  console.log("✅ PostgreSQL connected");
 });
 
 pool.on("error", (err) => {
@@ -36,9 +35,10 @@ export async function findOrCreateLead({ organization_id, phone }) {
   try {
     const existing = await pool.query(
       `
-      SELECT * 
-      FROM leads 
-      WHERE organization_id = $1 AND phone = $2
+      SELECT *
+      FROM leads
+      WHERE organization_id = $1
+        AND phone = $2
       LIMIT 1
       `,
       [organization_id, phone]
@@ -47,18 +47,19 @@ export async function findOrCreateLead({ organization_id, phone }) {
     if (existing.rows.length > 0) {
       const lead = existing.rows[0];
 
-      await pool.query(
+      const updated = await pool.query(
         `
         UPDATE leads
         SET last_contact_at = NOW(),
             updated_at = NOW()
         WHERE id = $1
-        AND organization_id = $2
+          AND organization_id = $2
+        RETURNING *
         `,
         [lead.id, organization_id]
       );
 
-      return lead;
+      return updated.rows[0] || lead;
     }
 
     const created = await pool.query(
@@ -97,7 +98,7 @@ export async function findOrCreateLead({ organization_id, phone }) {
 
 /*
 ========================================
-CONVERSATIONS + MESSAGES
+CONVERSATIONS
 ========================================
 */
 
@@ -120,7 +121,21 @@ export async function findOrCreateConversation({
     );
 
     if (existing.rows.length > 0) {
-      return existing.rows[0];
+      const conversation = existing.rows[0];
+
+      const updated = await pool.query(
+        `
+        UPDATE conversations
+        SET updated_at = NOW(),
+            last_message_at = NOW()
+        WHERE id = $1
+          AND organization_id = $2
+        RETURNING *
+        `,
+        [conversation.id, organization_id]
+      );
+
+      return updated.rows[0] || conversation;
     }
 
     const created = await pool.query(
@@ -181,7 +196,7 @@ export async function saveMessage({
       SET last_message_at = NOW(),
           updated_at = NOW()
       WHERE id = $1
-      AND organization_id = $2
+        AND organization_id = $2
       `,
       [conversation_id, organization_id]
     );
@@ -192,7 +207,6 @@ export async function saveMessage({
   }
 }
 
-export default pool;
 /*
 ========================================
 PIPELINE EVENTS
@@ -217,9 +231,11 @@ export async function savePipelineEvent({
       )
       VALUES ($1, $2, $3, $4, NOW())
       `,
-      [organization_id, lead_id, event_type, JSON.stringify(metadata)]
+      [organization_id, lead_id, event_type, metadata]
     );
   } catch (err) {
     console.error("❌ savePipelineEvent error:", err);
   }
 }
+
+export default pool;
