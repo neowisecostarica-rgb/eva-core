@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — SALES BRAIN (BRAIN + CATALOG INTELLIGENCE)
+EVA CORE — SALES BRAIN (BRAIN + CATALOG + LEAD INTELLIGENCE)
 ====================================================
 */
 
@@ -52,6 +52,72 @@ function buildKnownData({ text, lead, history }) {
     has_history: Array.isArray(history) && history.length > 0,
   };
 }
+
+/*
+====================================================
+LEAD INTELLIGENCE
+====================================================
+*/
+
+function extractLeadData(text = "") {
+  const t = text.toLowerCase();
+
+  let use_case = null;
+
+  if (t.includes("estudio") || t.includes("colegio") || t.includes("universidad")) {
+    use_case = "study";
+  }
+
+  if (t.includes("trabajo") || t.includes("oficina") || t.includes("empresa")) {
+    use_case = "work";
+  }
+
+  if (t.includes("gaming") || t.includes("juegos") || t.includes("fortnite")) {
+    use_case = "gaming";
+  }
+
+  return { use_case };
+}
+
+async function updateLeadIntelligence({ organization_id, lead_id, extracted }) {
+  try {
+    if (!lead_id || !extracted) return;
+
+    const fields = [];
+    const values = [];
+    let idx = 1;
+
+    if (extracted.use_case) {
+      fields.push(`use_case = $${idx++}`);
+      values.push(extracted.use_case);
+    }
+
+    if (fields.length === 0) return;
+
+    values.push(lead_id);
+    values.push(organization_id);
+
+    const query = `
+      UPDATE leads
+      SET ${fields.join(", ")},
+          updated_at = NOW()
+      WHERE id = $${idx++}
+      AND organization_id = $${idx}
+    `;
+
+    await db.query(query, values);
+
+    console.log("🧠 Lead updated:", extracted);
+  } catch (err) {
+    console.warn("⚠️ Lead update error:", err);
+  }
+}
+
+/*
+====================================================
+STRATEGY + CONTEXT
+====================================================
+*/
 
 function decideStrategy({ intent, stage, known_data }) {
   const safeIntent = String(intent || "OTHER").toUpperCase();
@@ -110,14 +176,9 @@ CATALOG INTELLIGENCE
 */
 
 function decideCatalogUsage({ strategy, intent, stage }) {
-  const safeStrategy = strategy || "ASK";
-
-  if (safeStrategy === "RECOMMEND") return true;
-  if (safeStrategy === "CLOSE") return true;
-
-  if (stage === "consideration" && intent === "BUY") {
-    return true;
-  }
+  if (strategy === "RECOMMEND") return true;
+  if (strategy === "CLOSE") return true;
+  if (stage === "consideration" && intent === "BUY") return true;
 
   return false;
 }
@@ -127,11 +188,7 @@ function filterCatalogResults(results = []) {
 
   const active = results.filter(p => p?.is_active !== false);
 
-  active.sort((a, b) => {
-    const scoreA = a.score || 0;
-    const scoreB = b.score || 0;
-    return scoreB - scoreA;
-  });
+  active.sort((a, b) => (b.score || 0) - (a.score || 0));
 
   return active;
 }
@@ -231,6 +288,15 @@ export async function handleInbound(payload) {
     const intent = detectIntent(text);
     const pipelineEvent = detectPipelineEvent(text);
 
+    // 🔥 LEAD INTELLIGENCE
+    const extracted = extractLeadData(text);
+
+    await updateLeadIntelligence({
+      organization_id,
+      lead_id: lead.id,
+      extracted,
+    });
+
     if (pipelineEvent && lead?.id) {
       await savePipelineEvent({
         organization_id,
@@ -281,11 +347,10 @@ export async function handleInbound(payload) {
     ========================================
     */
 
-    const known_data = buildKnownData({
-      text,
-      lead,
-      history,
-    });
+    const known_data = {
+      ...buildKnownData({ text, lead, history }),
+      use_case: extracted?.use_case || lead?.use_case || null,
+    };
 
     const strategy = decideStrategy({
       intent,
@@ -315,7 +380,7 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    9. CATALOG INTELLIGENCE
+    9. CATALOG
     ========================================
     */
 
