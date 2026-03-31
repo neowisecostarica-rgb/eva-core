@@ -206,9 +206,22 @@ export async function handleInbound(payload) {
       console.warn("AI error:", err);
     }
 
-    const replyText =
-      aiText ||
-      "Hola 😊 con mucho gusto le ayudo. ¿Qué tipo de equipo necesita?";
+    let replyText = aiText;
+
+// 🔒 FALLBACK CONTROLADO POR STRATEGY
+if (!replyText) {
+  if (strategy === "ASK") {
+    replyText = "Hola 😊 con mucho gusto le ayudo. ¿Me podría indicar qué problema presenta el equipo?";
+  }
+
+  else if (strategy === "QUALIFY") {
+    replyText = "Hola 😊 con mucho gusto le ayudo. ¿Para qué tipo de uso está buscando el equipo?";
+  }
+
+  else {
+    replyText = "Hola 😊 con mucho gusto le ayudo. ¿En qué le puedo colaborar?";
+  }
+}
 
     const reply = generateReply({
       text: replyText,
