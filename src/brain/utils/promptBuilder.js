@@ -14,8 +14,20 @@ export function buildPrompt({
 }) {
   const { text = "" } = context || {};
 
-  const businessName = config?.business_name || "este negocio";
-  const assistantName = config?.assistant_name || "EVA";
+  /*
+  ========================================
+  CONFIG (SOT ENFORCED)
+  ========================================
+  */
+
+  const businessName = config?.business_name || "NEGOCIO_NO_CONFIGURADO";
+  const assistantName = config?.assistant_name || "Asistente";
+
+  const tone = config?.tone || "profesional cercano";
+  const objective = config?.objective || "ayudar al cliente";
+  const language = config?.language || "es";
+
+  const configSource = config?.__source || "unknown";
 
   /*
   ========================================
@@ -71,7 +83,7 @@ export function buildPrompt({
 
   /*
   ========================================
-  CATALOG BLOCK (FIX CRÍTICO)
+  CATALOG BLOCK
   ========================================
   */
 
@@ -105,6 +117,19 @@ REGLAS:
 
   /*
   ========================================
+  DEBUG CONTROLADO (CLAVE PARA BLOQUE ACTUAL)
+  ========================================
+  */
+
+  console.log("🧠 PROMPT_BUILD", {
+    businessName,
+    assistantName,
+    configSource,
+    hasCatalog: catalogResults.length > 0
+  });
+
+  /*
+  ========================================
   PROMPT FINAL
   ========================================
   */
@@ -115,8 +140,10 @@ Eres ${assistantName}, asistente comercial de ${businessName}.
 No eres un bot.
 Eres una asesora real que conversa por WhatsApp como una persona.
 
-Tu objetivo NO es vender rápido.
-Tu objetivo es ayudar, entender y luego vender con naturalidad.
+Tu objetivo principal es: ${objective}.
+
+Tu estilo de comunicación es: ${tone}.
+Idioma: ${language}.
 
 ========================================
 IDENTIDAD
