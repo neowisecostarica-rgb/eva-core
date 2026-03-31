@@ -1,7 +1,7 @@
 /*
 ====================================================
 EVA CORE — SALES BRAIN
-(BRAIN + CATALOG + LEAD INTELLIGENCE + BUSINESS GUARDS)
+(BRAIN + CATALOG + LEAD INTELLIGENCE + BUSINESS GUARDS + PIPELINE SOLID)
 ====================================================
 */
 
@@ -9,7 +9,6 @@ import {
   findOrCreateLead,
   findOrCreateConversation,
   saveMessage,
-  savePipelineEvent,
 } from "./db.js";
 
 import db from "./db.js";
@@ -305,9 +304,6 @@ function enforceBusinessGuards({
 
   output = sanitizeTechnicalLanguage(output);
 
-  // ------------------------------------------------
-  // Guard 1: No dar precio demasiado temprano sin contexto
-  // ------------------------------------------------
   if (
     askingPrice &&
     !hasCatalog &&
@@ -317,9 +313,6 @@ function enforceBusinessGuards({
     return "Con mucho gusto le ayudo. Para orientarle mejor, ¿la necesita para estudio o trabajo y qué rango de presupuesto maneja más o menos?";
   }
 
-  // ------------------------------------------------
-  // Guard 2: Servicio técnico no explica reparación completa
-  // ------------------------------------------------
   if (askingService && safeIntent === "SERVICE") {
     if (!data.problem) {
       return "Con mucho gusto le ayudo. ¿Me podría indicar la marca, el modelo y qué problema presenta el equipo?";
@@ -333,9 +326,6 @@ function enforceBusinessGuards({
     return output;
   }
 
-  // ------------------------------------------------
-  // Guard 3: Si está en recommend/close y no cierra en acción, forzarlo
-  // ------------------------------------------------
   if ((safeStrategy === "RECOMMEND" || safeStrategy === "CLOSE") && !hasActionClose(output)) {
     if (hasCatalog) {
       output = `${output} Si gusta, le puedo enviar fotos reales o ayudarle a coordinar apartarlo.`;
@@ -344,14 +334,8 @@ function enforceBusinessGuards({
     }
   }
 
-  // ------------------------------------------------
-  // Guard 4: Evitar respuestas largas al inicio
-  // ------------------------------------------------
   output = shortenIfNeeded(output, safeStage);
 
-  // ------------------------------------------------
-  // Guard 5: Greeting/info temprano debe terminar en pregunta
-  // ------------------------------------------------
   if (
     (safeIntent === "GREETING" || safeStrategy === "ASK" || safeStrategy === "QUALIFY") &&
     !output.includes("?") &&
@@ -361,6 +345,143 @@ function enforceBusinessGuards({
   }
 
   return output.trim();
+}
+
+/*
+====================================================
+PIPELINE SOLID
+====================================================
+*/
+
+function getStageRank(stage) {
+  const safeStage = normalizeStage(stage);
+
+  if (safeStage === "new") return 1;
+  if (safeStage === "qualifying") return 2;
+  if (safeStage === "consideration") return 3;
+  if (safeStage === "hot") return 4;
+  if (safeStage === "closing") return 5;
+  if (safeStage === "post") return 6;
+
+  return 1;
+}
+
+function shouldAdvanceStage(currentStage, nextStage) {
+  const current = normalizeStage(currentStage);
+  const next = normalizeStage(nextStage);
+
+  if (current === next) return false;
+
+  return getStageRank(next) >= getStageRank(current);
+}
+
+function resolveNextStage({ currentStage, intent, pipelineEvent, strategy }) {
+  const current = normalizeStage(currentStage);
+  const safeIntent = String(intent || "OTHER").toUpperCase();
+  const safeStrategy = String(strategy || "ASK").toUpperCase();
+  const safeEvent = String(pipelineEvent || "").toUpperCase();
+
+  if (safeEvent === "PAYMENT_INTENT") {
+    return { nextStage: "closing", reason: "payment_intent", eventType: "PAYMENT_INTENT" };
+  }
+
+  if (safeEvent === "READY_TO_BUY") {
+    return { nextStage: "hot", reason: "ready_to_buy", eventType: "READY_TO_BUY" };
+  }
+
+  if (safeEvent === "CATALOG_REQUEST") {
+    return { nextStage: "consideration", reason: "catalog_request", eventType: "CATALOG_REQUEST" };
+  }
+
+  if (safeEvent === "PRICE_REQUEST") {
+    return { nextStage: "qualifying", reason: "price_request", eventType: "PRICE_REQUEST" };
+  }
+
+  if (safeIntent === "GREETING" && current === "new") {
+    return { nextStage: "new", reason: "greeting", eventType: "GREETING" };
+  }
+
+  if (safeIntent === "INFO" && current === "new") {
+    return { nextStage: "qualifying", reason: "info_request", eventType: "INFO_REQUEST" };
+  }
+
+  if (safeIntent === "BUY" && current === "new") {
+    return { nextStage: "qualifying", reason: "buy_intent", eventType: "BUY_INTENT" };
+  }
+
+  if (safeStrategy === "RECOMMEND" && current === "qualifying") {
+    return { nextStage: "consideration", reason: "recommendation_phase", eventType: "STAGE_PROGRESS" };
+  }
+
+  if (safeStrategy === "CLOSE" && current === "consideration") {
+    return { nextStage: "hot", reason: "closing_attempt", eventType: "STAGE_PROGRESS" };
+  }
+
+  if (safeStrategy === "CLOSE" && current === "hot") {
+    return { nextStage: "closing", reason: "final_closing_attempt", eventType: "STAGE_PROGRESS" };
+  }
+
+  return {
+    nextStage: current,
+    reason: "no_stage_change",
+    eventType: safeEvent || "NO_OP",
+  };
+}
+
+async function registerPipelineTransition({
+  organization_id,
+  lead,
+  conversation,
+  phone,
+  fromStage,
+  toStage,
+  reason,
+  eventType,
+  metadata,
+}) {
+  try {
+    const safeFrom = normalizeStage(fromStage);
+    const safeTo = normalizeStage(toStage);
+
+    await db.query(
+      `
+      INSERT INTO pipeline_events (
+        organization_id,
+        lead_id,
+        lead_phone,
+        conversation_id,
+        from_stage,
+        to_stage,
+        reason,
+        event_type,
+        event_data,
+        metadata
+      )
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+      `,
+      [
+        organization_id,
+        lead?.id || null,
+        phone || null,
+        conversation?.id || null,
+        safeFrom,
+        safeTo,
+        reason || null,
+        eventType || "STAGE_PROGRESS",
+        metadata || {},
+        metadata || {},
+      ]
+    );
+
+    console.log("📈 Pipeline event saved:", {
+      from: safeFrom,
+      to: safeTo,
+      eventType,
+      reason,
+    });
+  } catch (err) {
+    console.warn("⚠️ Pipeline log error:", err);
+  }
 }
 
 /*
@@ -451,12 +572,11 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    4. INTENT + PIPELINE
+    4. INTENT + LEAD EXTRACTION
     ========================================
     */
 
     const intent = detectIntent(text);
-    const pipelineEvent = detectPipelineEvent(text);
 
     const extracted = extractLeadData(text);
 
@@ -466,53 +586,9 @@ export async function handleInbound(payload) {
       extracted,
     });
 
-    if (pipelineEvent && lead?.id) {
-      await savePipelineEvent({
-        organization_id,
-        lead_id: lead.id,
-        event_type: pipelineEvent,
-        metadata: { text, intent },
-      });
-    }
-
     /*
     ========================================
-    5. STAGE ENGINE
-    ========================================
-    */
-
-    let newStage = normalizeStage(lead.stage);
-
-    if (pipelineEvent === "PRICE_REQUEST") newStage = "qualifying";
-    if (pipelineEvent === "CATALOG_REQUEST") newStage = "consideration";
-    if (pipelineEvent === "READY_TO_BUY") newStage = "hot";
-    if (pipelineEvent === "PAYMENT_INTENT") newStage = "closing";
-
-    if (newStage !== normalizeStage(lead.stage)) {
-      await db.query(
-        `UPDATE leads
-         SET stage = $1, updated_at = NOW()
-         WHERE id = $2
-         AND organization_id = $3`,
-        [newStage, lead.id, organization_id]
-      );
-
-      lead.stage = newStage;
-    } else {
-      lead.stage = normalizeStage(lead.stage);
-    }
-
-    /*
-    ========================================
-    6. CONFIG
-    ========================================
-    */
-
-    const config = await getPromptConfig(organization_id);
-
-    /*
-    ========================================
-    7. KNOWN DATA + STRATEGY
+    5. PRE-STRATEGY CONTEXT
     ========================================
     */
 
@@ -531,6 +607,91 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
+    6. PIPELINE DETECTION + STAGE RESOLUTION
+    ========================================
+    */
+
+    const pipelineEvent = detectPipelineEvent(text);
+
+    const currentStage = normalizeStage(lead.stage);
+
+    const transition = resolveNextStage({
+      currentStage,
+      intent,
+      pipelineEvent,
+      strategy,
+    });
+
+    let finalStage = currentStage;
+
+    if (shouldAdvanceStage(currentStage, transition.nextStage)) {
+      finalStage = normalizeStage(transition.nextStage);
+
+      await db.query(
+        `UPDATE leads
+         SET stage = $1, updated_at = NOW()
+         WHERE id = $2
+         AND organization_id = $3`,
+        [finalStage, lead.id, organization_id]
+      );
+
+      lead.stage = finalStage;
+
+      await registerPipelineTransition({
+        organization_id,
+        lead,
+        conversation,
+        phone,
+        fromStage: currentStage,
+        toStage: finalStage,
+        reason: transition.reason,
+        eventType: transition.eventType,
+        metadata: {
+          text,
+          intent,
+          strategy,
+          pipelineEvent,
+        },
+      });
+    } else {
+      lead.stage = currentStage;
+
+      if (pipelineEvent) {
+        await registerPipelineTransition({
+          organization_id,
+          lead,
+          conversation,
+          phone,
+          fromStage: currentStage,
+          toStage: currentStage,
+          reason: transition.reason,
+          eventType: transition.eventType,
+          metadata: {
+            text,
+            intent,
+            strategy,
+            pipelineEvent,
+          },
+        });
+      }
+    }
+
+    console.log("📍 Stage:", {
+      from: currentStage,
+      to: lead.stage,
+      reason: transition.reason,
+    });
+
+    /*
+    ========================================
+    7. CONFIG
+    ========================================
+    */
+
+    const config = await getPromptConfig(organization_id);
+
+    /*
+    ========================================
     8. CONTEXT
     ========================================
     */
@@ -543,7 +704,10 @@ export async function handleInbound(payload) {
       stage: lead.stage,
       strategy,
       history,
-      known_data,
+      known_data: {
+        ...known_data,
+        current_stage: lead.stage,
+      },
       config,
     });
 
