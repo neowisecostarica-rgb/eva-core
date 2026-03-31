@@ -260,10 +260,18 @@ function decideCatalogUsage({ strategy, intent, stage, text }) {
   const safeStrategy = String(strategy || "").toUpperCase();
   const t = String(text || "").toLowerCase();
 
-  // 🔥 1. SIEMPRE usar catálogo en intención de compra
+  /*
+  ========================================
+  1. INTENCIÓN DE COMPRA → SIEMPRE CATÁLOGO
+  ========================================
+  */
   if (safeIntent === "BUY") return true;
 
-  // 🔥 2. Si pregunta por productos explícitamente
+  /*
+  ========================================
+  2. DETECCIÓN DIRECTA DE PRODUCTO (CRÍTICO)
+  ========================================
+  */
   if (
     t.includes("que tienes") ||
     t.includes("qué tienes") ||
@@ -276,6 +284,26 @@ function decideCatalogUsage({ strategy, intent, stage, text }) {
   ) {
     return true;
   }
+
+  /*
+  ========================================
+  3. SERVICIOS TAMBIÉN USAN CATÁLOGO
+  ========================================
+  */
+  if (safeIntent === "SERVICE") return true;
+
+  /*
+  ========================================
+  4. ESTRATEGIAS AVANZADAS
+  ========================================
+  */
+  if (safeStrategy === "RECOMMEND") return true;
+  if (safeStrategy === "CLOSE") return true;
+
+  if (safeStage === "consideration" && safeIntent === "BUY") return true;
+
+  return false;
+}
 
   // 🔥 3. Si es servicio → también usar catálogo (para servicios)
   if (safeIntent === "SERVICE") return true;
