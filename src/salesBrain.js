@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — SALES BRAIN (BRAIN BLOCK FIXED)
+EVA CORE — SALES BRAIN (BRAIN + CATALOG INTELLIGENCE)
 ====================================================
 */
 
@@ -22,7 +22,6 @@ import { applyAIGuards } from "./brain/utils/aiGuards.js";
 import { buildPrompt } from "./brain/utils/promptBuilder.js";
 import { getPromptConfig } from "./brain/utils/getPromptConfig.js";
 
-/* ✅ FIX: usar engines, no intent */
 import { detectPipelineEvent } from "./brain/engines/pipelineEngine.js";
 import { detectIntent } from "./brain/engines/intentEngine.js";
 
@@ -35,32 +34,12 @@ BRAIN HELPERS
 function normalizeStage(stage) {
   const safeStage = String(stage || "new").toLowerCase();
 
-  if (
-    safeStage === "new" ||
-    safeStage === "early"
-  ) return "new";
-
-  if (
-    safeStage === "qualifying"
-  ) return "qualifying";
-
-  if (
-    safeStage === "consideration" ||
-    safeStage === "mid"
-  ) return "consideration";
-
-  if (
-    safeStage === "hot" ||
-    safeStage === "ready_to_buy"
-  ) return "hot";
-
-  if (
-    safeStage === "closing"
-  ) return "closing";
-
-  if (
-    safeStage === "post"
-  ) return "post";
+  if (safeStage === "new" || safeStage === "early") return "new";
+  if (safeStage === "qualifying") return "qualifying";
+  if (safeStage === "consideration" || safeStage === "mid") return "consideration";
+  if (safeStage === "hot" || safeStage === "ready_to_buy") return "hot";
+  if (safeStage === "closing") return "closing";
+  if (safeStage === "post") return "post";
 
   return "new";
 }
@@ -79,17 +58,11 @@ function decideStrategy({ intent, stage, known_data }) {
   const safeStage = normalizeStage(stage);
   const data = known_data || {};
 
-  // ====================================================
-  // SERVICE
-  // ====================================================
   if (safeIntent === "SERVICE") {
     if (!data.problem) return "ASK";
     return "EXPLAIN_CLOSE";
   }
 
-  // ====================================================
-  // BUY / CLOSE
-  // ====================================================
   if (safeIntent === "BUY" || safeIntent === "CLOSE_INTENT") {
     if (safeStage === "new") return "QUALIFY";
     if (safeStage === "qualifying") return "QUALIFY";
@@ -99,30 +72,10 @@ function decideStrategy({ intent, stage, known_data }) {
     return "QUALIFY";
   }
 
-  // ====================================================
-  // FOLLOWUP
-  // ====================================================
-  if (safeIntent === "FOLLOWUP") {
-    return "FOLLOWUP";
-  }
+  if (safeIntent === "FOLLOWUP") return "FOLLOWUP";
+  if (safeIntent === "INFO") return "EXPLAIN";
+  if (safeIntent === "GREETING") return "ASK";
 
-  // ====================================================
-  // INFO
-  // ====================================================
-  if (safeIntent === "INFO") {
-    return "EXPLAIN";
-  }
-
-  // ====================================================
-  // GREETING
-  // ====================================================
-  if (safeIntent === "GREETING") {
-    return "ASK";
-  }
-
-  // ====================================================
-  // DEFAULT
-  // ====================================================
   return "ASK";
 }
 
@@ -148,6 +101,39 @@ function buildContext({
     known_data,
     config: config || null,
   };
+}
+
+/*
+====================================================
+CATALOG INTELLIGENCE
+====================================================
+*/
+
+function decideCatalogUsage({ strategy, intent, stage }) {
+  const safeStrategy = strategy || "ASK";
+
+  if (safeStrategy === "RECOMMEND") return true;
+  if (safeStrategy === "CLOSE") return true;
+
+  if (stage === "consideration" && intent === "BUY") {
+    return true;
+  }
+
+  return false;
+}
+
+function filterCatalogResults(results = []) {
+  if (!Array.isArray(results)) return [];
+
+  const active = results.filter(p => p?.is_active !== false);
+
+  active.sort((a, b) => {
+    const scoreA = a.score || 0;
+    const scoreB = b.score || 0;
+    return scoreB - scoreA;
+  });
+
+  return active;
 }
 
 /*
@@ -329,25 +315,36 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    9. CATALOG
+    9. CATALOG INTELLIGENCE
     ========================================
     */
 
-    let catalogResults = [];
+    let safeCatalog = [];
 
-    try {
-      catalogResults = await searchCatalogSmart({
-        organization_id,
-        query: text,
-      });
-    } catch (err) {
-      console.warn("⚠️ Catalog error:", err);
+    const shouldUseCatalog = decideCatalogUsage({
+      strategy,
+      intent,
+      stage: lead.stage,
+    });
+
+    if (shouldUseCatalog) {
+      try {
+        const rawResults = await searchCatalogSmart({
+          organization_id,
+          query: text,
+        });
+
+        const filtered = filterCatalogResults(rawResults);
+
+        safeCatalog = filtered.slice(0, 1);
+
+        console.log("🛒 Catalog USED:", safeCatalog.length);
+      } catch (err) {
+        console.warn("⚠️ Catalog error:", err);
+      }
+    } else {
+      console.log("🚫 Catalog SKIPPED");
     }
-
-    const safeCatalog =
-      strategy === "RECOMMEND" || strategy === "CLOSE"
-        ? catalogResults.slice(0, 1)
-        : [];
 
     /*
     ========================================
