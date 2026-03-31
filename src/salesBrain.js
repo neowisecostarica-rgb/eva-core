@@ -734,7 +734,7 @@ export async function handleInbound(payload) {
 
         const filtered = filterCatalogResults(rawResults);
 
-        safeCatalog = filtered.slice(0, 1);
+       safeCatalog = filtered.slice(0, 3);
 
         console.log("🛒 Catalog USED:", safeCatalog.length);
       } catch (err) {
