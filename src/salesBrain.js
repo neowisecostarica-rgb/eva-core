@@ -23,12 +23,9 @@ import { buildPrompt } from "./brain/utils/promptBuilder.js";
 import { getPromptConfig } from "./brain/utils/getPromptConfig.js";
 
 import { detectPipelineEvent } from "./brain/engines/pipelineEngine.js";
-import { detectIntent } from "./brain/engines/intentEngine.js";
-import {
-  decideStrategy,
-  normalizeIntent,
-  normalizeStage,
-} from "./brain/engines/strategyEngine.js";
+
+// ⚠️ Strategy Engine desactivado temporalmente para evitar conflictos de runtime
+// Se usan implementaciones internas estables del Sales Brain
 
 /*
 ====================================================
