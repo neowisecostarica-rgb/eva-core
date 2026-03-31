@@ -175,7 +175,9 @@ export async function handleInbound(payload) {
 
     const rawIntent = detectIntent(text);
     const intent = normalizeIntent(rawIntent);
-
+    
+const strategy = decideStrategy({ intent });
+console.log("🧠 STRATEGY:", strategy);
     const strategy = "ASK"; // 🔒 estable por ahora
 
     const shouldUseCatalog = decideCatalogUsage({
