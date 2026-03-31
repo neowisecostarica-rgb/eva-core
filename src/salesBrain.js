@@ -59,6 +59,43 @@ function normalizeStage(stage) {
   return "new";
 }
 
+function decideStrategy({ intent, stage, known_data = {} }) {
+  try {
+    // SERVICE FLOW
+    if (intent === "SERVICE" && !known_data.problem) {
+      return "ASK";
+    }
+
+    if (intent === "SERVICE" && known_data.problem) {
+      return "EXPLAIN_CLOSE";
+    }
+
+    // BUY FLOW
+    if (intent === "BUY" && stage === "EARLY") {
+      return "QUALIFY";
+    }
+
+    if (intent === "BUY" && stage === "MID") {
+      return "RECOMMEND";
+    }
+
+    if (intent === "BUY" && stage === "HOT") {
+      return "CLOSE";
+    }
+
+    // FOLLOWUP
+    if (intent === "FOLLOWUP") {
+      return "FOLLOWUP";
+    }
+
+    return "DEFAULT";
+
+  } catch (error) {
+    console.error("❌ Strategy Engine Error:", error);
+    return "DEFAULT";
+  }
+}
+
 /*
 ====================================================
 CATALOG HELPERS
