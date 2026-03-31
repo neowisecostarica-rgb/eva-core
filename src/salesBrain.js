@@ -178,7 +178,7 @@ export async function handleInbound(payload) {
     
 const strategy = decideStrategy({ intent });
 console.log("🧠 STRATEGY:", strategy);
-    const strategy = "ASK"; // 🔒 estable por ahora
+    let strategy = "ASK";
 
     const shouldUseCatalog = decideCatalogUsage({
       strategy,
