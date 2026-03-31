@@ -1,5 +1,3 @@
-// src/routes/messages.js
-
 import express from "express";
 import crypto from "crypto";
 
@@ -24,7 +22,6 @@ POST /v1/messages/outbound
 
 router.post("/outbound", authenticate, async (req, res) => {
   const request_id = crypto.randomUUID();
-
   const organization_id = req.organization_id || req.organization?.id || null;
 
   const log = createLogger({
@@ -37,12 +34,6 @@ router.post("/outbound", authenticate, async (req, res) => {
       raw: req.body,
     });
 
-    /*
-    ========================================
-    AUTH
-    ========================================
-    */
-
     if (!organization_id) {
       log.error("AUTH_FAILED");
 
@@ -51,13 +42,7 @@ router.post("/outbound", authenticate, async (req, res) => {
       });
     }
 
-    /*
-    ========================================
-    VALIDATION
-    ========================================
-    */
-
-    const { phone, text } = req.body;
+    const { phone, text } = req.body || {};
 
     if (!phone || !text) {
       log.warn("INVALID_INPUT", {
@@ -68,12 +53,6 @@ router.post("/outbound", authenticate, async (req, res) => {
         error: "phone and text are required",
       });
     }
-
-    /*
-    ========================================
-    SEND WHATSAPP
-    ========================================
-    */
 
     const response = await fetch(
       `https://graph.facebook.com/v18.0/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`,
@@ -106,17 +85,10 @@ router.post("/outbound", authenticate, async (req, res) => {
       });
     }
 
-    /*
-    ========================================
-    RESPONSE
-    ========================================
-    */
-
     return res.json({
       success: true,
       data,
     });
-
   } catch (err) {
     log.error("OUTBOUND_ERROR", {
       message: err.message,
@@ -129,7 +101,6 @@ router.post("/outbound", authenticate, async (req, res) => {
   }
 });
 
-
 /*
 ========================================
 POST /v1/messages/inbound
@@ -138,8 +109,6 @@ POST /v1/messages/inbound
 
 router.post("/inbound", authenticate, async (req, res) => {
   const request_id = crypto.randomUUID();
-
-  // 🔥 FIX: usar SIEMPRE organization_id directo
   const organization_id = req.organization_id || req.organization?.id || null;
 
   const log = createLogger({
@@ -152,12 +121,6 @@ router.post("/inbound", authenticate, async (req, res) => {
       raw: req.body,
     });
 
-    /*
-    ========================================
-    AUTH
-    ========================================
-    */
-
     if (!organization_id) {
       log.error("AUTH_FAILED");
 
@@ -165,12 +128,6 @@ router.post("/inbound", authenticate, async (req, res) => {
         error: "Unauthorized",
       });
     }
-
-    /*
-    ========================================
-    VALIDATION
-    ========================================
-    */
 
     const validated = validateInbound(req.body);
 
@@ -183,12 +140,6 @@ router.post("/inbound", authenticate, async (req, res) => {
         error: validated.message,
       });
     }
-
-    /*
-    ========================================
-    🔒 RATE LIMIT
-    ========================================
-    */
 
     const rateKey = `${organization_id}:${validated.phone}`;
     const rate = checkRateLimit(rateKey);
@@ -203,12 +154,6 @@ router.post("/inbound", authenticate, async (req, res) => {
       });
     }
 
-    /*
-    ========================================
-    PAYLOAD (ALINEADO AL SOT)
-    ========================================
-    */
-
     const payload = {
       organization_id,
       phone: validated.phone,
@@ -219,23 +164,12 @@ router.post("/inbound", authenticate, async (req, res) => {
 
     log.info("PAYLOAD_READY", payload);
 
-    /*
-    ========================================
-    BRAIN
-    ========================================
-    */
-
     const result = await handleInbound(payload);
 
     log.info("BRAIN_RESPONSE", {
-      preview: result?.reply?.text?.slice(0, 100) || null,
+      preview: result?.reply?.text?.slice(0, 120) || null,
+      meta: result?.meta || null,
     });
-
-    /*
-    ========================================
-    CONTRACT VALIDATION
-    ========================================
-    */
 
     try {
       validateHandleInboundResult(result);
@@ -250,16 +184,9 @@ router.post("/inbound", authenticate, async (req, res) => {
       });
     }
 
-    /*
-    ========================================
-    RESPONSE
-    ========================================
-    */
-
     const response = buildMessagesRouteResponse(result);
 
     return res.json(response);
-
   } catch (err) {
     log.error("INBOUND_ERROR", {
       message: err.message,
