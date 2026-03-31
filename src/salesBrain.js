@@ -254,22 +254,39 @@ CATALOG
 ====================================================
 */
 
-function decideCatalogUsage({ strategy, intent, stage }) {
-  if (strategy === "RECOMMEND") return true;
-  if (strategy === "CLOSE") return true;
-  if (normalizeStage(stage) === "consideration" && normalizeIntent(intent) === "BUY") return true;
+function decideCatalogUsage({ strategy, intent, stage, text }) {
+  const safeIntent = normalizeIntent(intent);
+  const safeStage = normalizeStage(stage);
+  const safeStrategy = String(strategy || "").toUpperCase();
+  const t = String(text || "").toLowerCase();
+
+  // 🔥 1. SIEMPRE usar catálogo en intención de compra
+  if (safeIntent === "BUY") return true;
+
+  // 🔥 2. Si pregunta por productos explícitamente
+  if (
+    t.includes("que tienes") ||
+    t.includes("qué tienes") ||
+    t.includes("que venden") ||
+    t.includes("productos") ||
+    t.includes("laptop") ||
+    t.includes("laptops") ||
+    t.includes("computadora") ||
+    t.includes("computadoras")
+  ) {
+    return true;
+  }
+
+  // 🔥 3. Si es servicio → también usar catálogo (para servicios)
+  if (safeIntent === "SERVICE") return true;
+
+  // 🔥 4. Estrategias avanzadas
+  if (safeStrategy === "RECOMMEND") return true;
+  if (safeStrategy === "CLOSE") return true;
+
+  if (safeStage === "consideration" && safeIntent === "BUY") return true;
 
   return false;
-}
-
-function filterCatalogResults(results = []) {
-  if (!Array.isArray(results)) return [];
-
-  const active = results.filter((p) => p?.is_active !== false);
-
-  active.sort((a, b) => (b.score || 0) - (a.score || 0));
-
-  return active;
 }
 
 /*
@@ -811,10 +828,11 @@ export async function handleInbound(payload) {
     let safeCatalog = [];
 
     const shouldUseCatalog = decideCatalogUsage({
-      strategy,
-      intent,
-      stage: lead.stage,
-    });
+  strategy,
+  intent,
+  stage: lead.stage,
+  text, // 🔥 IMPORTANTE
+});
 
     if (shouldUseCatalog) {
       try {
