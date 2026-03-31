@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — SALES BRAIN (FIXED + CLEAN)
+EVA CORE — SALES BRAIN (BRAIN BLOCK FIXED)
 ====================================================
 */
 
@@ -25,6 +25,130 @@ import { getPromptConfig } from "./brain/utils/getPromptConfig.js";
 /* ✅ FIX: usar engines, no intent */
 import { detectPipelineEvent } from "./brain/engines/pipelineEngine.js";
 import { detectIntent } from "./brain/engines/intentEngine.js";
+
+/*
+====================================================
+BRAIN HELPERS
+====================================================
+*/
+
+function normalizeStage(stage) {
+  const safeStage = String(stage || "new").toLowerCase();
+
+  if (
+    safeStage === "new" ||
+    safeStage === "early"
+  ) return "new";
+
+  if (
+    safeStage === "qualifying"
+  ) return "qualifying";
+
+  if (
+    safeStage === "consideration" ||
+    safeStage === "mid"
+  ) return "consideration";
+
+  if (
+    safeStage === "hot" ||
+    safeStage === "ready_to_buy"
+  ) return "hot";
+
+  if (
+    safeStage === "closing"
+  ) return "closing";
+
+  if (
+    safeStage === "post"
+  ) return "post";
+
+  return "new";
+}
+
+function buildKnownData({ text, lead, history }) {
+  return {
+    last_message: text || "",
+    lead_stage: lead?.stage || "new",
+    history_count: Array.isArray(history) ? history.length : 0,
+    has_history: Array.isArray(history) && history.length > 0,
+  };
+}
+
+function decideStrategy({ intent, stage, known_data }) {
+  const safeIntent = String(intent || "OTHER").toUpperCase();
+  const safeStage = normalizeStage(stage);
+  const data = known_data || {};
+
+  // ====================================================
+  // SERVICE
+  // ====================================================
+  if (safeIntent === "SERVICE") {
+    if (!data.problem) return "ASK";
+    return "EXPLAIN_CLOSE";
+  }
+
+  // ====================================================
+  // BUY / CLOSE
+  // ====================================================
+  if (safeIntent === "BUY" || safeIntent === "CLOSE_INTENT") {
+    if (safeStage === "new") return "QUALIFY";
+    if (safeStage === "qualifying") return "QUALIFY";
+    if (safeStage === "consideration") return "RECOMMEND";
+    if (safeStage === "hot") return "CLOSE";
+    if (safeStage === "closing") return "CLOSE";
+    return "QUALIFY";
+  }
+
+  // ====================================================
+  // FOLLOWUP
+  // ====================================================
+  if (safeIntent === "FOLLOWUP") {
+    return "FOLLOWUP";
+  }
+
+  // ====================================================
+  // INFO
+  // ====================================================
+  if (safeIntent === "INFO") {
+    return "EXPLAIN";
+  }
+
+  // ====================================================
+  // GREETING
+  // ====================================================
+  if (safeIntent === "GREETING") {
+    return "ASK";
+  }
+
+  // ====================================================
+  // DEFAULT
+  // ====================================================
+  return "ASK";
+}
+
+function buildContext({
+  organization_id,
+  phone,
+  text,
+  intent,
+  stage,
+  strategy,
+  history,
+  known_data,
+  config,
+}) {
+  return {
+    organization_id,
+    phone,
+    text,
+    intent,
+    stage,
+    strategy,
+    history,
+    known_data,
+    config: config || null,
+  };
+}
 
 /*
 ====================================================
@@ -54,7 +178,8 @@ export async function handleInbound(payload) {
       const existing = await db.query(
         `SELECT id FROM messages
          WHERE organization_id = $1
-         AND external_message_id = $2 LIMIT 1`,
+         AND external_message_id = $2
+         LIMIT 1`,
         [organization_id, message_id]
       );
 
@@ -82,7 +207,7 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    2. SAVE USER MESSAGE (FIX)
+    2. SAVE USER MESSAGE
     ========================================
     */
 
@@ -104,7 +229,8 @@ export async function handleInbound(payload) {
       `SELECT role, content AS text
        FROM messages
        WHERE conversation_id = $1
-       ORDER BY created_at ASC LIMIT 10`,
+       ORDER BY created_at ASC
+       LIMIT 10`,
       [conversation.id]
     );
 
@@ -130,64 +256,80 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    5. STAGE ENGINE (FIX REAL)
+    5. STAGE ENGINE
     ========================================
     */
 
-    let newStage = lead.stage || "new";
+    let newStage = normalizeStage(lead.stage);
 
     if (pipelineEvent === "PRICE_REQUEST") newStage = "qualifying";
     if (pipelineEvent === "CATALOG_REQUEST") newStage = "consideration";
     if (pipelineEvent === "READY_TO_BUY") newStage = "hot";
     if (pipelineEvent === "PAYMENT_INTENT") newStage = "closing";
 
-    if (newStage !== lead.stage) {
+    if (newStage !== normalizeStage(lead.stage)) {
       await db.query(
         `UPDATE leads
          SET stage = $1, updated_at = NOW()
-         WHERE id = $2 AND organization_id = $3`,
+         WHERE id = $2
+         AND organization_id = $3`,
         [newStage, lead.id, organization_id]
       );
 
       lead.stage = newStage;
+    } else {
+      lead.stage = normalizeStage(lead.stage);
     }
 
     /*
     ========================================
-    6. STRATEGY ENGINE (FIX)
+    6. CONFIG
     ========================================
     */
 
-    let strategy = "ASK";
-
-    if (intent === "BUY") {
-      if (lead.stage === "new") strategy = "QUALIFY";
-      else if (lead.stage === "qualifying") strategy = "QUALIFY";
-      else if (lead.stage === "consideration") strategy = "RECOMMEND";
-      else if (lead.stage === "hot") strategy = "CLOSE";
-      else if (lead.stage === "closing") strategy = "CLOSE";
-    }
-
-    if (intent === "CLOSE_INTENT") strategy = "CLOSE";
+    const config = await getPromptConfig(organization_id);
 
     /*
     ========================================
-    7. CONTEXT
+    7. KNOWN DATA + STRATEGY
     ========================================
     */
 
-    const context = {
+    const known_data = buildKnownData({
+      text,
+      lead,
+      history,
+    });
+
+    const strategy = decideStrategy({
+      intent,
+      stage: lead.stage,
+      known_data,
+    });
+
+    console.log("🧠 STRATEGY:", strategy);
+
+    /*
+    ========================================
+    8. CONTEXT
+    ========================================
+    */
+
+    const context = buildContext({
       organization_id,
       phone,
       text,
       intent,
       stage: lead.stage,
       strategy,
-    };
+      history,
+      known_data,
+      config,
+    });
 
     /*
     ========================================
-    8. CATALOG
+    9. CATALOG
     ========================================
     */
 
@@ -206,14 +348,6 @@ export async function handleInbound(payload) {
       strategy === "RECOMMEND" || strategy === "CLOSE"
         ? catalogResults.slice(0, 1)
         : [];
-
-    /*
-    ========================================
-    9. CONFIG
-    ========================================
-    */
-
-    const config = await getPromptConfig(organization_id);
 
     /*
     ========================================
@@ -244,7 +378,9 @@ export async function handleInbound(payload) {
         context,
       });
 
-      if (guarded?.text) aiText = guarded.text;
+      if (guarded?.text) {
+        aiText = guarded.text;
+      }
     } catch (err) {
       console.warn("⚠️ AI error:", err);
     }
@@ -273,7 +409,7 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    13. SAVE
+    13. SAVE ASSISTANT MESSAGE
     ========================================
     */
 
