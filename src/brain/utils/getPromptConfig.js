@@ -24,10 +24,9 @@ export async function getPromptConfig(organization_id) {
 
       return {
         business_name: "NEGOCIO_NO_CONFIGURADO",
-        assistant_name: "Asistente",
+        agent_name: "Asistente",
         tone: "profesional cercano",
-        objective: "ayudar al cliente",
-        language: "es",
+        instructions: "",
         __source: "fallback_missing_config"
       };
     }
@@ -36,15 +35,14 @@ export async function getPromptConfig(organization_id) {
 
     /*
     ========================================
-    2. VALIDACIÓN DE CAMPOS CRÍTICOS
+    2. NORMALIZACIÓN ALINEADA AL CORE
     ========================================
     */
     const normalized = {
       business_name: config.business_name || "este negocio",
-      assistant_name: config.assistant_name || "Asistente",
+      agent_name: config.agent_name || "Asistente", // ✅ FIX CLAVE
       tone: config.tone || "profesional cercano",
-      objective: config.objective || "ayudar al cliente",
-      language: config.language || "es",
+      instructions: config.instructions || "", // ✅ FIX CLAVE
       __source: "database"
     };
 
@@ -56,7 +54,8 @@ export async function getPromptConfig(organization_id) {
     console.log("🧠 PROMPT_CONFIG_LOADED", {
       organization_id,
       source: normalized.__source,
-      business_name: normalized.business_name
+      business_name: normalized.business_name,
+      agent_name: normalized.agent_name
     });
 
     return normalized;
@@ -69,10 +68,9 @@ export async function getPromptConfig(organization_id) {
 
     return {
       business_name: "ERROR_CONFIG",
-      assistant_name: "Asistente",
+      agent_name: "Asistente",
       tone: "profesional cercano",
-      objective: "ayudar al cliente",
-      language: "es",
+      instructions: "",
       __source: "fallback_error"
     };
   }
