@@ -133,6 +133,18 @@ export async function handleInbound(payload) {
 
     let safeCatalog = [];
 
+    // ================================
+    // LOAD PROMPT CONFIG (SOT)
+    // ================================
+    let promptConfig = null;
+
+    try {
+      promptConfig = await getPromptConfig(organization_id);
+      console.log("🧠 prompt_config loaded:", !!promptConfig);
+    } catch (err) {
+      console.warn("⚠️ No prompt_config found, using defaults");
+    }
+
     const lead = await findOrCreateLead({ organization_id, phone });
     const conversation = await findOrCreateConversation({
       organization_id,
@@ -193,6 +205,7 @@ export async function handleInbound(payload) {
         context: { intent },
         catalogResults: safeCatalog,
         history,
+        promptConfig, // ✅ INYECCIÓN REAL
       });
 
       const aiResult = await runAI({ prompt });
@@ -208,20 +221,20 @@ export async function handleInbound(payload) {
 
     let replyText = aiText;
 
-// 🔒 FALLBACK CONTROLADO POR STRATEGY
-if (!replyText) {
-  if (strategy === "ASK") {
-    replyText = "Hola 😊 con mucho gusto le ayudo. ¿Me podría indicar qué problema presenta el equipo?";
-  }
+    // 🔒 FALLBACK CONTROLADO POR STRATEGY
+    if (!replyText) {
+      if (strategy === "ASK") {
+        replyText = "Hola 😊 con mucho gusto le ayudo. ¿Me podría indicar qué problema presenta el equipo?";
+      }
 
-  else if (strategy === "QUALIFY") {
-    replyText = "Hola 😊 con mucho gusto le ayudo. ¿Para qué tipo de uso está buscando el equipo?";
-  }
+      else if (strategy === "QUALIFY") {
+        replyText = "Hola 😊 con mucho gusto le ayudo. ¿Para qué tipo de uso está buscando el equipo?";
+      }
 
-  else {
-    replyText = "Hola 😊 con mucho gusto le ayudo. ¿En qué le puedo colaborar?";
-  }
-}
+      else {
+        replyText = "Hola 😊 con mucho gusto le ayudo. ¿En qué le puedo colaborar?";
+      }
+    }
 
     const reply = generateReply({
       text: replyText,
