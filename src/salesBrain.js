@@ -155,6 +155,19 @@ export async function handleInbound(payload) {
     }
 
     // ================================
+// GREETING CONTROL (BLOCK 1.4)
+// ================================
+if (refinedIntent === "GREETING") {
+  return {
+    reply: {
+      text: `Hola 😊 soy ${orgContext.assistant_name} de ${orgContext.business_name}, con gusto te ayudo. ¿En qué te puedo colaborar?`,
+      media: [],
+    },
+    meta: { intent: "GREETING" },
+  };
+}
+    
+    // ================================
     // AI
     // ================================
     let aiText = null;
