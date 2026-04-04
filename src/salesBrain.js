@@ -122,6 +122,32 @@ export async function handleInbound(payload) {
     const rawIntent = detectIntent(text);
     const intent = normalizeIntent(rawIntent);
 
+    // ================================
+// LOG EVENT (🔥 BLOQUE 4.1)
+// ================================
+try {
+  await db.query(
+    `
+    INSERT INTO pipeline_events (
+      organization_id,
+      conversation_id,
+      type,
+      meta,
+      created_at
+    )
+    VALUES ($1, $2, $3, $4, NOW())
+  `,
+    [
+      organization_id,
+      conversation.id,
+      "intent_detected",
+      JSON.stringify({ intent: refinedIntent }),
+    ]
+  );
+} catch (err) {
+  console.warn("⚠️ pipeline log error:", err.message);
+}
+
     let refinedIntent = intent;
 
     const t = String(text || "").toLowerCase();
