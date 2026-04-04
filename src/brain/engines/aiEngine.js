@@ -1,7 +1,5 @@
 // src/brain/engines/aiEngine.js
 
-
-
 export async function runAI({ prompt }) {
   try {
     const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
@@ -11,8 +9,8 @@ export async function runAI({ prompt }) {
       return null;
     }
 
-    if (!prompt) {
-      throw new Error("Missing prompt");
+    if (!prompt || !Array.isArray(prompt)) {
+      throw new Error("Invalid prompt format (expected messages array)");
     }
 
     console.log("🧠 AI START");
@@ -29,17 +27,7 @@ export async function runAI({ prompt }) {
       },
       body: JSON.stringify({
         model: "gpt-4o-mini",
-        messages: [
-          {
-            role: "system",
-            content:
-              "Eres un asistente comercial experto en ventas por WhatsApp. Responde claro, humano, breve y siempre cierra con una acción.",
-          },
-          {
-            role: "user",
-            content: prompt,
-          },
-        ],
+        messages: prompt, // ✅ FIX CLAVE
         temperature: 0.7,
         max_tokens: 200,
       }),
