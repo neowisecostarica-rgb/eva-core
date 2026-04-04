@@ -67,9 +67,7 @@ ${catalogResults
 
     messages.push({
   role: "system",
-  content: [
-    { type: "text", text: system + catalogContext }
-  ],
+ content: system + catalogContext,
 });
 
     history.slice(-10).forEach((msg) => {
