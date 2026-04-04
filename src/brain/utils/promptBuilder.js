@@ -66,14 +66,18 @@ ${catalogResults
     const messages = [];
 
     messages.push({
-      role: "system",
-      content: system + catalogContext,
-    });
+  role: "system",
+  content: [
+    { type: "text", text: system + catalogContext }
+  ],
+});
 
     history.slice(-10).forEach((msg) => {
       messages.push({
         role: msg.role === "assistant" ? "assistant" : "user",
-        content: msg.content || msg.text,
+        content: [
+  { type: "text", text: msg.content || msg.text }
+],
       });
     });
 
