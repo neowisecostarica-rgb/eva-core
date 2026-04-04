@@ -234,6 +234,32 @@ if (refinedIntent === "GREETING") {
       text: reply.text,
     });
 
+    // ================================
+// FOLLOWUP CREATE (🔥 BLOQUE 3.1)
+// ================================
+try {
+  const followupDate = new Date();
+  followupDate.setHours(followupDate.getHours() + 24);
+
+  await db.query(
+    `
+    INSERT INTO followups (
+      organization_id,
+      conversation_id,
+      scheduled_for,
+      status,
+      created_at
+    )
+    VALUES ($1, $2, $3, 'pending', NOW())
+  `,
+    [organization_id, conversation.id, followupDate]
+  );
+
+  console.log("📆 Followup scheduled");
+} catch (err) {
+  console.warn("⚠️ Followup create error:", err);
+}
+    
     return {
       reply,
       meta: { intent: refinedIntent },
