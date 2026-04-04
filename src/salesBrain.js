@@ -143,16 +143,33 @@ export async function handleInbound(payload) {
     // ================================
     // CATALOG
     // ================================
-    try {
-      const rawResults = await searchCatalogSmart({
-        organization_id,
-        query: text,
-      });
+   // ================================
+// CATALOG
+// ================================
+try {
+  const rawResults = await searchCatalogSmart({
+    organization_id,
+    query: text,
+  });
 
-      safeCatalog = (rawResults || []).slice(0, 3);
-    } catch (err) {
-      console.warn("Catalog error:", err);
-    }
+  safeCatalog = (rawResults || []).slice(0, 3);
+
+  // ================================
+  // CATALOG FILTER (🔥 FIX)
+  // ================================
+  const queryText = String(text || "").toLowerCase();
+
+  safeCatalog = safeCatalog.filter((p) => {
+    const name = String(p?.name || "").toLowerCase();
+
+    return queryText
+      .split(" ")
+      .some((word) => name.includes(word));
+  });
+
+} catch (err) {
+  console.warn("Catalog error:", err);
+}
 
     // ================================
 // GREETING CONTROL (BLOCK 1.4)
