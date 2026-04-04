@@ -152,6 +152,24 @@ try {
 
     const t = String(text || "").toLowerCase();
 
+    // ================================
+// COMMERCIAL SIGNALS (🔥 BLOQUE 4.2)
+// ================================
+let commercialSignal = null;
+
+if (t.includes("precio") || t.includes("cuánto") || t.includes("vale")) {
+  commercialSignal = "price_interest";
+}
+
+if (t.includes("quiero") || t.includes("ocupo") || t.includes("me interesa")) {
+  commercialSignal = "high_intent";
+}
+
+if (t.includes("tienen") || t.includes("hay disponibles")) {
+  commercialSignal = "availability_check";
+}
+    
+
     if (refinedIntent === "INFO" && (t.includes("precio") || t.includes("cuánto"))) {
       refinedIntent = "BUY";
     }
