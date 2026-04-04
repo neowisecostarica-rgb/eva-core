@@ -1,17 +1,17 @@
 /*
 ====================================================
-EVA CORE — CONTEXT BUILDER (BLOCK 4.5)
+EVA CORE — CONTEXT BUILDER (BLOCK 4.5 FIXED)
 ====================================================
 */
 
-import { query } from "./db.js";
+import pool from "./db.js";
 
 export async function buildContext({ organization_id, phone }) {
   try {
     // ================================
     // BUSINESS PROFILE
     // ================================
-    const businessRes = await query(
+    const businessRes = await pool.query(
       `SELECT * FROM business_profile WHERE organization_id = $1 LIMIT 1`,
       [organization_id]
     );
@@ -21,7 +21,7 @@ export async function buildContext({ organization_id, phone }) {
     // ================================
     // PROMPT CONFIG
     // ================================
-    const configRes = await query(
+    const configRes = await pool.query(
       `SELECT * FROM prompt_config WHERE organization_id = $1 LIMIT 1`,
       [organization_id]
     );
@@ -33,7 +33,7 @@ export async function buildContext({ organization_id, phone }) {
     // ================================
     let lead = {};
     if (phone) {
-      const leadRes = await query(
+      const leadRes = await pool.query(
         `SELECT * FROM leads WHERE organization_id = $1 AND phone = $2 LIMIT 1`,
         [organization_id, phone]
       );
