@@ -1,6 +1,7 @@
 import express from "express";
 import crypto from "crypto";
 
+import { buildContext } from "../contextBuilder.js";
 import { authenticate } from "../lib/auth.js";
 import { validateInbound } from "../validators.js";
 import { handleInbound } from "../salesBrain.js";
@@ -162,6 +163,18 @@ router.post("/inbound", authenticate, async (req, res) => {
       message_id: validated.message_id || null,
     };
 
+    const context = await buildContext({
+  organization_id,
+  phone: validated.phone,
+});
+
+log.info("CONTEXT_BUILT", {
+  context_preview: {
+    business_name: context?.organization?.business_name,
+    assistant_name: context?.assistant?.name,
+  },
+});
+    
     log.info("PAYLOAD_READY", payload);
 
     const result = await handleInbound(payload);
