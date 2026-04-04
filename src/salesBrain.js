@@ -169,9 +169,47 @@ export async function handleInbound(payload) {
 
     const rawIntent = detectIntent(text);
     const intent = normalizeIntent(rawIntent);
+    // ========================================
+// INTENT REFINEMENT (SEMANTIC LAYER)
+// ========================================
+
+let refinedIntent = intent;
+
+const t = String(text || "").toLowerCase();
+
+if (refinedIntent === "INFO") {
+  if (
+    t.includes("precio") ||
+    t.includes("cuánto") ||
+    t.includes("vale") ||
+    t.includes("costo")
+  ) {
+    refinedIntent = "BUY";
+  }
+}
+
+if (refinedIntent === "GREETING") {
+  if (
+    t.includes("ocupo") ||
+    t.includes("necesito") ||
+    t.includes("busco")
+  ) {
+    refinedIntent = "BUY";
+  }
+}
+
+if (
+  t.includes("no sirve") ||
+  t.includes("dañado") ||
+  t.includes("fallo") ||
+  t.includes("error")
+) {
+  refinedIntent = "SERVICE";
+}
+    
 
     const strategy = decideStrategy({
-      intent,
+  intent: refinedIntent,
       stage: lead.stage,
     });
 
