@@ -4,6 +4,7 @@ EVA CORE — SALES BRAIN
 (BASELINE ESTABLE + AI + CATALOG + PIPELINE)
 ====================================================
 */
+import { getOrganizationSettings } from "./db.js";
 
 import {
   findOrCreateLead,
@@ -140,6 +141,29 @@ export async function handleInbound(payload) {
 
     try {
       promptConfig = await getPromptConfig(organization_id);
+      let orgSettings = null;
+
+try {
+  orgSettings = await getOrganizationSettings(organization_id);
+} catch (err) {
+  console.warn("No organization settings");
+}
+
+const orgContext = {
+  business_name: orgSettings?.business_name || "el negocio",
+  assistant_name: orgSettings?.assistant_name || "asistente",
+  tone: orgSettings?.tone || "profesional",
+  style: orgSettings?.sales_style || "consultivo",
+};
+      let orgSettings = null;
+
+try {
+  orgSettings = await getOrganizationSettings(organization_id);
+  console.log("🏢 org_settings loaded:", !!orgSettings);
+} catch (err) {
+  console.warn("⚠️ No organization_settings found");
+}
+      
       console.log("🧠 prompt_config loaded:", !!promptConfig);
     } catch (err) {
       console.warn("⚠️ No prompt_config found, using defaults");
@@ -239,12 +263,16 @@ if (
     let aiText = null;
 
     try {
-      const prompt = buildPrompt({
-        context: { intent },
-        catalogResults: safeCatalog,
-        history,
-        promptConfig, // ✅ INYECCIÓN REAL
-      });
+    const prompt = buildPrompt({
+  context: {
+    intent,
+    organization: orgContext, // 🔥 AQUÍ
+  },
+  catalogResults: safeCatalog,
+  history,
+  promptConfig,
+});
+      
 
       const aiResult = await runAI({ prompt });
 
