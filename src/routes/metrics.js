@@ -26,72 +26,64 @@ router.get("/summary", async (req, res) => {
     }
 
     const leadsResult = await pool.query(
-      `
-      SELECT COUNT(*) FROM leads
-      WHERE organization_id = $1
-    `,
+      `SELECT COUNT(*) FROM leads WHERE organization_id = $1`,
       [organization_id]
     );
 
     const conversationsResult = await pool.query(
-      `
-      SELECT COUNT(*) FROM conversations
-      WHERE organization_id = $1
-    `,
+      `SELECT COUNT(*) FROM conversations WHERE organization_id = $1`,
       [organization_id]
     );
 
     const messagesResult = await pool.query(
-      `
-      SELECT COUNT(*) FROM messages
-      WHERE organization_id = $1
-    `,
+      `SELECT COUNT(*) FROM messages WHERE organization_id = $1`,
       [organization_id]
     );
 
     // ================================
-// PIPELINE EVENTS (🔥 NUEVO)
-// ================================
-const eventsResult = await pool.query(
-  `
-  SELECT type, COUNT(*) as count
-  FROM pipeline_events
-  WHERE organization_id = $1
-  GROUP BY type
-`,
-  [organization_id]
-);
+    // PIPELINE EVENTS
+    // ================================
+    const eventsResult = await pool.query(
+      `
+      SELECT event_type, COUNT(*) as count
+      FROM pipeline_events
+      WHERE organization_id = $1
+      GROUP BY event_type
+      `,
+      [organization_id]
+    );
 
-const eventMap = {};
-for (const row of eventsResult.rows) {
-  eventMap[row.type] = Number(row.count);
-}
+    const eventMap = {};
+    for (const row of eventsResult.rows) {
+      eventMap[row.event_type] = Number(row.count);
+    }
 
-// ================================
-// RESPONSE
-// ================================
-return res.json({
-  success: true,
-  data: {
-    leads: Number(leadsResult.rows[0].count || 0),
-    conversations: Number(conversationsResult.rows[0].count || 0),
-    messages: Number(messagesResult.rows[0].count || 0),
+    return res.json({
+      success: true,
+      data: {
+        leads: Number(leadsResult.rows[0].count || 0),
+        conversations: Number(conversationsResult.rows[0].count || 0),
+        messages: Number(messagesResult.rows[0].count || 0),
 
-    // 🔥 NUEVO: FUNNEL
-    funnel: {
-      intents: eventMap["intent_detected"] || 0,
-      price_interest: eventMap["price_interest"] || 0,
-      high_intent: eventMap["high_intent"] || 0,
-      availability_check: eventMap["availability_check"] || 0,
-    },
+        funnel: {
+          intents: eventMap["intent_detected"] || 0,
+          price_interest: eventMap["price_interest"] || 0,
+          high_intent: eventMap["high_intent"] || 0,
+          availability_check: eventMap["availability_check"] || 0,
+        },
 
-    // 🔥 NUEVO: FOLLOWUPS
-    followups: {
-      created: eventMap["followup_created"] || 0,
-    },
-  },
+        followups: {
+          created: eventMap["followup_created"] || 0,
+        },
+      },
+    });
+  } catch (err) {
+    console.error("METRICS SUMMARY ERROR", err);
+    return res.status(500).json({
+      error: "internal_error",
+    });
+  }
 });
-    
 
 /*
 ====================================================
@@ -115,7 +107,7 @@ router.get("/radar", async (req, res) => {
       FROM sales_intelligence_events
       WHERE organization_id = $1
       GROUP BY event_type
-    `,
+      `,
       [organization_id]
     );
 
@@ -132,7 +124,7 @@ router.get("/radar", async (req, res) => {
       AND event_type = 'PRODUCT_DEMAND'
       GROUP BY event_value
       ORDER BY count DESC
-    `,
+      `,
       [organization_id]
     );
 
@@ -144,7 +136,7 @@ router.get("/radar", async (req, res) => {
       AND event_type = 'PRODUCT_SEARCH'
       GROUP BY event_value
       ORDER BY count DESC
-    `,
+      `,
       [organization_id]
     );
 
