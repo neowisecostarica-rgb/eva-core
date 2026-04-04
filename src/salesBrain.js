@@ -168,6 +168,30 @@ if (t.includes("quiero") || t.includes("ocupo") || t.includes("me interesa")) {
 if (t.includes("tienen") || t.includes("hay disponibles")) {
   commercialSignal = "availability_check";
 }
+    if (commercialSignal) {
+  try {
+    await db.query(
+      `
+      INSERT INTO pipeline_events (
+        organization_id,
+        conversation_id,
+        type,
+        meta,
+        created_at
+      )
+      VALUES ($1, $2, $3, $4, NOW())
+    `,
+      [
+        organization_id,
+        conversation.id,
+        commercialSignal,
+        JSON.stringify({ text }),
+      ]
+    );
+  } catch (err) {
+    console.warn("⚠️ commercial log error:", err.message);
+  }
+}
     
 
     if (refinedIntent === "INFO" && (t.includes("precio") || t.includes("cuánto"))) {
@@ -302,6 +326,28 @@ try {
   console.log("📆 Followup scheduled");
 } catch (err) {
   console.warn("⚠️ Followup create error:", err);
+}
+    try {
+  await db.query(
+    `
+    INSERT INTO pipeline_events (
+      organization_id,
+      conversation_id,
+      type,
+      meta,
+      created_at
+    )
+    VALUES ($1, $2, $3, $4, NOW())
+  `,
+    [
+      organization_id,
+      conversation.id,
+      "followup_created",
+      JSON.stringify({ delay_hours: 24 }),
+    ]
+  );
+} catch (err) {
+  console.warn("⚠️ followup log error:", err.message);
 }
     
     return {
