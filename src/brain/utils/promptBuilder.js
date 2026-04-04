@@ -66,16 +66,16 @@ ${catalogResults
     const messages = [];
 
     messages.push({
-  role: "system",
- content: system + catalogContext,
-});
+      role: "system",
+      content: system + catalogContext,
+    });
 
     history.slice(-10).forEach((msg) => {
-  messages.push({
-    role: msg.role === "assistant" ? "assistant" : "user",
-    content: msg.content || msg.text,
-  });
-});
+      messages.push({
+        role: msg.role === "assistant" ? "assistant" : "user",
+        content: msg.content || msg.text,
+      });
+    });
 
     return messages;
   } catch (err) {
