@@ -6,7 +6,7 @@ ALIGNED WITH SOT + DEBUG SAFE
 */
 
 import express from "express";
-import fetch from "node-fetch";
+
 import { splitReply } from "../brain/utils/splitReply.js";
 
 const router = express.Router();
