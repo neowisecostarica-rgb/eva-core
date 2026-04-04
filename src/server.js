@@ -101,7 +101,7 @@ app.listen(PORT, () => {
 // ================================
 // FOLLOWUP WORKER ADAPTER
 // ================================
-import { startFollowupWorker } from "./followupWorker.js";
+
 
 async function sendWhatsAppMessage({ phone, message }) {
   try {
