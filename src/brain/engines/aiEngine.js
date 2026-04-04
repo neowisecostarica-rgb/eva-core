@@ -1,6 +1,6 @@
 // src/brain/engines/aiEngine.js
 
-import fetch from "node-fetch";
+
 
 export async function runAI({ prompt }) {
   try {
