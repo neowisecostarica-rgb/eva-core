@@ -54,6 +54,8 @@ MAIN
 */
 
 export async function handleInbound(payload) {
+  const { context = {} } = payload;
+  
   try {
     const { organization_id, phone, text, channel, message_id } = payload;
 
