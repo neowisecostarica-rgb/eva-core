@@ -177,7 +177,10 @@ log.info("CONTEXT_BUILT", {
     
     log.info("PAYLOAD_READY", payload);
 
-    const result = await handleInbound(payload);
+    const result = await handleInbound({
+  ...payload,
+  context,
+});
 
     log.info("BRAIN_RESPONSE", {
       preview: result?.reply?.text?.slice(0, 120) || null,
