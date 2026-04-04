@@ -28,7 +28,7 @@ export function buildPrompt({
       "respetuoso, cercano y enfocado en ayudar";
 
     // ================================
-    // SYSTEM ROLE
+    // SYSTEM ROLE (FIX 🔥)
     // ================================
     const system = `
 Eres ${agentName}, un asistente comercial de ${businessName}.
@@ -41,6 +41,12 @@ Reglas:
 - Si falta contexto, pregunta
 - Mantén tono ${tone}
 - Siempre busca avanzar la conversación
+
+Reglas críticas de venta:
+- Solo menciona productos que sean relevantes a lo que el cliente está buscando
+- Si el cliente pregunta por una categoría específica (ej: impresoras), no cambies de categoría
+- Si no hay productos relevantes disponibles, no inventes ni sugieras productos incorrectos
+- En ese caso, pide más información o indica que puedes ayudarle a encontrar lo que busca
 `;
 
     // ================================
@@ -50,7 +56,7 @@ Reglas:
 
     if (catalogResults.length > 0) {
       catalogContext = `
-Productos relevantes:
+Productos disponibles:
 ${catalogResults
   .map(
     (p) =>
