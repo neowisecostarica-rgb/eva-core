@@ -74,8 +74,7 @@ ${catalogResults
       messages.push({
         role: msg.role === "assistant" ? "assistant" : "user",
         content: [
-  { type: "text", text: msg.content || msg.text }
-],
+ content: msg.content || msg.text,
       });
     });
 
