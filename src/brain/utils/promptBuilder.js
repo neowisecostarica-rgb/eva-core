@@ -71,12 +71,11 @@ ${catalogResults
 });
 
     history.slice(-10).forEach((msg) => {
-      messages.push({
-        role: msg.role === "assistant" ? "assistant" : "user",
-        content: [
- content: msg.content || msg.text,
-      });
-    });
+  messages.push({
+    role: msg.role === "assistant" ? "assistant" : "user",
+    content: msg.content || msg.text,
+  });
+});
 
     return messages;
   } catch (err) {
