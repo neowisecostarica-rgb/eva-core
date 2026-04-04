@@ -155,7 +155,7 @@ const orgContext = {
   tone: orgSettings?.tone || "profesional",
   style: orgSettings?.sales_style || "consultivo",
 };
-      let orgSettings = null;
+    
 
 try {
   orgSettings = await getOrganizationSettings(organization_id);
