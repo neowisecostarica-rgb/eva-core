@@ -5,7 +5,7 @@ WHATSAPP WEBHOOK — EVA CORE (STABILIZATION PACK v1)
 */
 
 import express from "express";
-import fetch from "node-fetch";
+
 import { splitReply } from "../brain/utils/splitReply.js";
 
 // 🔥 NUEVO: contrato runtime
