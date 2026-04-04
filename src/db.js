@@ -27,12 +27,26 @@ pool.on("error", (err) => {
 
 /*
 ========================================
+UTIL: SOT ENFORCEMENT
+========================================
+*/
+
+function assertOrg(organization_id) {
+  if (!organization_id) {
+    throw new Error("❌ organization_id is required (SOT violation)");
+  }
+}
+
+/*
+========================================
 FIND OR CREATE LEAD (SOT CRM)
 ========================================
 */
 
 export async function findOrCreateLead({ organization_id, phone }) {
   try {
+    assertOrg(organization_id);
+
     const existing = await pool.query(
       `
       SELECT *
@@ -108,6 +122,8 @@ export async function findOrCreateConversation({
   channel,
 }) {
   try {
+    assertOrg(organization_id);
+
     const existing = await pool.query(
       `
       SELECT *
@@ -175,6 +191,8 @@ export async function saveMessage({
   message_id = null,
 }) {
   try {
+    assertOrg(organization_id);
+
     await pool.query(
       `
       INSERT INTO messages (
@@ -220,6 +238,8 @@ export async function savePipelineEvent({
   metadata = {},
 }) {
   try {
+    assertOrg(organization_id);
+
     await pool.query(
       `
       INSERT INTO pipeline_events (
@@ -229,31 +249,40 @@ export async function savePipelineEvent({
         metadata,
         created_at
       )
-      VALUES ($1, $2, $3, $4, NOW())
+      VALUES ($1, $2, $3, $4::jsonb, NOW())
       `,
-      [organization_id, lead_id, event_type, metadata]
+      [organization_id, lead_id, event_type, JSON.stringify(metadata)]
     );
   } catch (err) {
     console.error("❌ savePipelineEvent error:", err);
   }
 }
 
-// ========================================
-// GET ORGANIZATION SETTINGS
-// ========================================
+/*
+========================================
+GET ORGANIZATION SETTINGS (CRÍTICO)
+========================================
+*/
 
-async function getOrganizationSettings(organization_id) {
-  const result = await pool.query(
-    `
-    SELECT *
-    FROM organization_settings
-    WHERE organization_id = $1
-    LIMIT 1
-    `,
-    [organization_id]
-  );
+export async function getOrganizationSettings(organization_id) {
+  try {
+    assertOrg(organization_id);
 
-  return result.rows[0] || null;
+    const result = await pool.query(
+      `
+      SELECT *
+      FROM organization_settings
+      WHERE organization_id = $1
+      LIMIT 1
+      `,
+      [organization_id]
+    );
+
+    return result.rows[0] || null;
+  } catch (err) {
+    console.error("❌ getOrganizationSettings error:", err);
+    return null;
+  }
 }
 
 export default pool;
