@@ -238,4 +238,22 @@ export async function savePipelineEvent({
   }
 }
 
+// ========================================
+// GET ORGANIZATION SETTINGS
+// ========================================
+
+async function getOrganizationSettings(organization_id) {
+  const result = await pool.query(
+    `
+    SELECT *
+    FROM organization_settings
+    WHERE organization_id = $1
+    LIMIT 1
+    `,
+    [organization_id]
+  );
+
+  return result.rows[0] || null;
+}
+
 export default pool;
