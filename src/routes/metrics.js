@@ -49,21 +49,49 @@ router.get("/summary", async (req, res) => {
       [organization_id]
     );
 
-    return res.json({
-      success: true,
-      data: {
-        leads: Number(leadsResult.rows[0].count || 0),
-        conversations: Number(conversationsResult.rows[0].count || 0),
-        messages: Number(messagesResult.rows[0].count || 0),
-      },
-    });
-  } catch (err) {
-    console.error("METRICS SUMMARY ERROR", err);
-    return res.status(500).json({
-      error: "internal_error",
-    });
-  }
+    // ================================
+// PIPELINE EVENTS (🔥 NUEVO)
+// ================================
+const eventsResult = await pool.query(
+  `
+  SELECT type, COUNT(*) as count
+  FROM pipeline_events
+  WHERE organization_id = $1
+  GROUP BY type
+`,
+  [organization_id]
+);
+
+const eventMap = {};
+for (const row of eventsResult.rows) {
+  eventMap[row.type] = Number(row.count);
+}
+
+// ================================
+// RESPONSE
+// ================================
+return res.json({
+  success: true,
+  data: {
+    leads: Number(leadsResult.rows[0].count || 0),
+    conversations: Number(conversationsResult.rows[0].count || 0),
+    messages: Number(messagesResult.rows[0].count || 0),
+
+    // 🔥 NUEVO: FUNNEL
+    funnel: {
+      intents: eventMap["intent_detected"] || 0,
+      price_interest: eventMap["price_interest"] || 0,
+      high_intent: eventMap["high_intent"] || 0,
+      availability_check: eventMap["availability_check"] || 0,
+    },
+
+    // 🔥 NUEVO: FOLLOWUPS
+    followups: {
+      created: eventMap["followup_created"] || 0,
+    },
+  },
 });
+    
 
 /*
 ====================================================
