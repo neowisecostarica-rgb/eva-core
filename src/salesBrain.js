@@ -85,12 +85,24 @@ export async function handleInbound(payload) {
       console.warn("⚠️ No organization_settings found");
     }
 
-    const orgContext = {
-      business_name: orgSettings?.business_name || "el negocio",
-      assistant_name: orgSettings?.assistant_name || "asistente",
-      tone: orgSettings?.tone || "profesional",
-      style: orgSettings?.sales_style || "consultivo",
-    };
+   const orgContext = {
+  business_name:
+    context?.organization?.business_name ||
+    orgSettings?.business_name ||
+    "el negocio",
+
+  assistant_name:
+    context?.assistant?.name ||
+    orgSettings?.assistant_name ||
+    "asistente",
+
+  tone:
+    context?.assistant?.tone ||
+    orgSettings?.tone ||
+    "profesional",
+
+  style: orgSettings?.sales_style || "consultivo",
+};
 
     // ================================
     // CRM
