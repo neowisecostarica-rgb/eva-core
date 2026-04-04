@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — PROMPT BUILDER (AI-FIRST)
+EVA CORE — PROMPT BUILDER (FIXED AI-FIRST)
 ====================================================
 */
 
@@ -12,16 +12,27 @@ export function buildPrompt({
 }) {
   try {
     // ================================
-    // SAFE CONFIG
+    // ORG CONTEXT (🔥 FIX)
+    // ================================
+    const org = context?.organization || {};
+
+    // ================================
+    // SAFE CONFIG (PRIORITY ORDER)
     // ================================
     const businessName =
-      promptConfig?.business_name || "este negocio";
+      org?.business_name ||
+      promptConfig?.business_name ||
+      "este negocio";
 
     const agentName =
-      promptConfig?.agent_name || "Asistente";
+      org?.assistant_name ||
+      promptConfig?.agent_name ||
+      "Asistente";
 
     const tone =
-      promptConfig?.tone || "profesional y cercano";
+      org?.tone ||
+      promptConfig?.tone ||
+      "profesional y cercano";
 
     const instructions =
       promptConfig?.instructions || "";
@@ -49,7 +60,7 @@ export function buildPrompt({
     const intent = context?.intent || "UNKNOWN";
 
     // ================================
-    // PROMPT (CRÍTICO)
+    // PROMPT
     // ================================
     const prompt = `
 Eres ${agentName}, asistente comercial de ${businessName}.
