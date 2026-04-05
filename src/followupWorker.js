@@ -70,7 +70,7 @@ export async function processFollowups(sendMessage) {
   `
   SELECT *
   FROM followups
-  WHERE status = 'pending'
+WHERE status = 'PENDING'
     AND scheduled_for <= NOW()
   ORDER BY scheduled_for ASC
   LIMIT 20
