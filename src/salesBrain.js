@@ -337,10 +337,7 @@ await savePipelineEvent({
       !aiText || aiText.length < 5 || aiText.includes("no sé")
         ? fallbackGreeting
         : aiText;
-let replyText =
-  !aiText || aiText.length < 5 || aiText.includes("no sé")
-    ? fallbackGreeting
-    : aiText;
+
 
 // ================================
 // GUARDRAIL: LIMPIEZA DE TEXTO (NO VENTA)
