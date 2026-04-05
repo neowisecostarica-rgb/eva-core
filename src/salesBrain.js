@@ -419,15 +419,14 @@ if (refinedIntent === "GREETING") {
     }
 
     const reply = generateReply({
-      text: replyText,
-      intent: refinedIntent,
-   products:
-  (refinedIntent === "BUY" || refinedIntent === "CLOSE_INTENT") &&
-  safeCatalog.length > 0
-    ? safeCatalog
-    : [],
-
-    await saveMessage({
+  text: replyText,
+  intent: refinedIntent,
+  products:
+    (refinedIntent === "BUY" || refinedIntent === "CLOSE_INTENT") &&
+    safeCatalog.length > 0
+      ? safeCatalog
+      : [],
+});
       organization_id,
       conversation_id: conversation.id,
       role: "assistant",
