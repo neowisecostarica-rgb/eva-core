@@ -163,7 +163,7 @@ async function createFollowupIfNeeded({
         scheduled_for,
         created_at
       )
-      VALUES ($1, $2, $3, 'PENDING', $4, NOW() + ($5 || ' hours')::interval, NOW())
+      VALUES ($1, $2, $3, 'PENDING', $4, NOW() + ($5 * interval '1 hour'), NOW())
       `,
       [organization_id, conversation_id, phone, reason, hoursFromNow]
     );
