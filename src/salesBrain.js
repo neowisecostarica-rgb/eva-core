@@ -29,6 +29,15 @@ HELPERS
 ====================================================
 */
 
+function decideStrategy({ intent }) {
+  if (intent === "BUY") return "QUALIFY";
+  if (intent === "CLOSE_INTENT") return "CLOSE";
+  if (intent === "SERVICE") return "DIAGNOSE";
+  if (intent === "INFO") return "EDUCATE";
+  if (intent === "FOLLOWUP") return "FOLLOWUP";
+  return "DEFAULT";
+}
+
 function normalizeIntent(intent) {
   if (!intent) return "OTHER";
 
