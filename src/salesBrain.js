@@ -295,11 +295,15 @@ await savePipelineEvent({
     let aiText = null;
 
     const prompt = buildPrompt({
-      context: { intent: refinedIntent, organization: orgContext },
-      catalogResults: safeCatalog,
-      history,
-      promptConfig,
-    });
+  context: {
+    intent: refinedIntent,
+    strategy, // 🔥 NUEVO
+    organization: orgContext,
+  },
+  catalogResults: safeCatalog,
+  history,
+  promptConfig,
+});
 
     const aiResult = await runAI({ prompt });
 
