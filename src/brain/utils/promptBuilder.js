@@ -13,6 +13,7 @@ export function buildPrompt({
   try {
     const org = context?.organization || {};
     const intent = context?.intent || "UNKNOWN";
+    const strategy = context?.strategy || "DEFAULT";
 
     const businessName =
       org?.business_name ||
