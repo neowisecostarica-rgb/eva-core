@@ -135,6 +135,7 @@ export async function handleInbound(payload) {
     // ================================
     const rawIntent = detectIntent(text);
     const intent = normalizeIntent(rawIntent);
+    let refinedIntent = intent;
 
     // ================================
 // LOG EVENT (🔥 BLOQUE 4.1)
@@ -162,7 +163,7 @@ try {
   console.warn("⚠️ pipeline log error:", err.message);
 }
 
-    let refinedIntent = intent;
+  
 
     const t = String(text || "").toLowerCase();
 
