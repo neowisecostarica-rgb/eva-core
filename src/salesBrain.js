@@ -53,13 +53,10 @@ function normalizeIntent(intent) {
   return clean;
 }
 
-function isHotLeadIntent(intent, text = "") {
+function isHotLeadIntent(intent, text, orgConfig) {
   return (
     intent === "CLOSE_INTENT" ||
-    text.includes("quiero comprar") ||
-    text.includes("lo quiero") ||
-    text.includes("como pago") ||
-    text.includes("cómo pago")
+    matchHotSignals(text, orgConfig?.hot_signals || [])
   );
 }
 
