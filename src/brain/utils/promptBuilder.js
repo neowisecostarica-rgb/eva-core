@@ -1,181 +1,63 @@
-/*
-====================================================
-EVA CORE — PROMPT BUILDER (RUNTIME SAFE)
-====================================================
-*/
-
 export function buildPrompt({
-  context = {},
-  history = [],
+  context,
   catalogResults = [],
+  history = [],
   promptConfig = {},
 }) {
-  try {
-    const org = context?.organization || {};
-    const intent = context?.intent || "UNKNOWN";
-    const strategy = context?.strategy || "DEFAULT";
+  const {
+    intent,
+    strategy,
+    organization,
+    force_mode = null,
+  } = context || {};
 
-    const businessName =
-      org?.business_name ||
-      promptConfig?.business_name ||
-      "este negocio";
+  const agentName = organization?.assistant_name || "Asistente";
+  const businessName = organization?.business_name || "el negocio";
 
-    const agentName =
-      org?.assistant_name ||
-      promptConfig?.agent_name ||
-      "Asistente";
+  const customInstructions = promptConfig?.instructions || "";
 
-    const tone =
-      promptConfig?.tone ||
-      "respetuoso, cercano y enfocado en ayudar";
+  const historyText = history
+    .map((m) => `${m.role === "user" ? "Cliente" : agentName}: ${m.text}`)
+    .join("\n");
 
-    // ================================
-    // SYSTEM ROLE (FIX 🔥)
-    // ================================
-    const system = `
-========================================
-INTENCIÓN DETECTADA: ${intent}
-ESTRATEGIA: ${strategy}
-========================================
+  const catalogText =
+    catalogResults && catalogResults.length > 0
+      ? catalogResults
+          .map(
+            (p, i) =>
+              `${i + 1}. ${p.name} - ${p.price ? `₡${p.price}` : ""}`
+          )
+          .join("\n")
+      : "No hay productos disponibles.";
 
-Eres ${agentName}, un asistente comercial de ${businessName}.
+  let behaviorBlock = "";
 
-Tu objetivo es ayudar al cliente y avanzar la conversación según la intención detectada.
-
-No siempre debes vender.
-Primero entiende el contexto, luego actúa.
-
-========================================
-REGLAS GENERALES
-========================================
-- No des respuestas largas innecesarias
-- No inventes información
-- Si falta contexto, pregunta
-- Mantén tono ${tone}
-- Siempre busca avanzar la conversación
-
-========================================
-REGLAS CRÍTICAS DE VENTA
-========================================
-- Solo menciona productos que sean relevantes a lo que el cliente está buscando
-- Si el cliente pregunta por una categoría específica (ej: impresoras), no cambies de categoría
-- Si no hay productos relevantes disponibles, no inventes ni sugieras productos incorrectos
-- En ese caso, pide más información o indica que puedes ayudarle a encontrar lo que busca
-- Si el cliente muestra alta intención de compra, guía la conversación hacia cierre
-
-========================================
-COMPORTAMIENTO SEGÚN INTENCIÓN
-========================================
-
-INTENCIÓN: GREETING
-- Responde de forma natural y cordial
-- NO ofrezcas productos
-- Haz una pregunta para entender qué necesita
-
-INTENCIÓN: INFO
-- Responde la duda de forma clara
-- Si falta contexto, haz preguntas
-- No fuerces venta inmediata
-
-INTENCIÓN: BUY
-- Recomienda 1–2 opciones relevantes
-- Explica beneficios (no solo características)
-- Guía hacia acción (compra, apartado, visita)
-
-INTENCIÓN: SUPPORT
-- Enfócate en ayudar
-- No vendas
-- Guía a solución o siguiente paso
-
-========================================
-COMPORTAMIENTO SEGÚN ESTRATEGIA
-========================================
-
-ESTRATEGIA: QUALIFY
-- Haz preguntas para entender mejor lo que el cliente necesita
-- No recomiendes productos aún si falta información
-
-ESTRATEGIA: CLOSE
-- Asume intención alta de compra
-- Guía directamente a acción (apartado, pago, visita)
-- Reduce fricción
-
-ESTRATEGIA: DIAGNOSE
-- Enfócate en entender el problema
-- Haz preguntas claras
-- No vendas
-
-ESTRATEGIA: EDUCATE
-- Explica de forma clara
-- Ayuda a tomar decisión
-- Avanza hacia siguiente paso
-
-ESTRATEGIA: FOLLOWUP
-- Retoma conversación
-- Refuerza interés
-- Invita a acción
-
-ESTRATEGIA: DEFAULT
-- Mantén conversación natural y avanza hacia claridad
-
-
-========================================
-REGLA GLOBAL
-========================================
-Nunca mezclar comportamientos.
-Primero entender → luego actuar según intención.
+  if (force_mode === "QUALIFY_ONLY") {
+    behaviorBlock = `
+IMPORTANTE:
+- NO recomiendes productos
+- NO menciones precios
+- SOLO haz preguntas para entender al cliente
+- Tu objetivo es calificar antes de vender
 `;
-    
-
-    // ================================
-    // CONTEXTO DE PRODUCTOS
-    // ================================
-    let catalogContext = "";
-
-    if (catalogResults.length > 0) {
-      catalogContext = `
-Productos disponibles:
-${catalogResults
-  .map(
-    (p) =>
-      `- ${p.name} (${p.price || "precio no definido"})`
-  )
-  .join("\n")}
-`;
-    }
-
-    // ================================
-    // HISTORIAL
-    // ================================
-    const messages = [];
-
-    const shouldInjectCatalog =
-  intent === "BUY" || intent === "INFO";
-
-messages.push({
-  role: "system",
-  content: shouldInjectCatalog
-    ? system + catalogContext
-    : system,
-});
-
-    history.slice(-10).forEach((msg) => {
-      messages.push({
-        role: msg.role === "assistant" ? "assistant" : "user",
-        content: msg.content || msg.text,
-      });
-    });
-
-    return messages;
-  } catch (err) {
-    console.error("❌ PROMPT BUILDER ERROR:", err);
-
-    return [
-      {
-        role: "system",
-        content:
-          "Eres un asistente comercial. Ayuda al cliente de forma clara y breve.",
-      },
-    ];
   }
+
+  return `
+Eres ${agentName}, asistente comercial de ${businessName}.
+
+${customInstructions}
+
+Modo actual: ${strategy}
+
+${behaviorBlock}
+
+Historial:
+${historyText}
+
+Productos disponibles:
+${catalogText}
+
+Responde de forma natural, clara y útil.
+Evita sonar forzado o insistente.
+`;
 }
