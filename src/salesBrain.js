@@ -266,16 +266,21 @@ export async function handleInbound(payload) {
     let aiText = null;
 
     if (shouldUseAI) {
-      const prompt = buildPrompt({
-        context: {
-          intent: refinedIntent,
-          strategy,
-          organization: orgContext,
-        },
-        catalogResults: safeCatalog,
-        history,
-        promptConfig,
-      });
+    const isQualificationPhase =
+  refinedIntent === "BUY" &&
+  !isHotLeadIntent(refinedIntent, t);
+
+const prompt = buildPrompt({
+  context: {
+    intent: refinedIntent,
+    strategy,
+    organization: orgContext,
+    force_mode: isQualificationPhase ? "QUALIFY_ONLY" : null,
+  },
+  catalogResults: isQualificationPhase ? [] : safeCatalog,
+  history,
+  promptConfig,
+});
 
       const aiResult = await runAI({ prompt });
 
