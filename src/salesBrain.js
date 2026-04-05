@@ -364,23 +364,22 @@ if (refinedIntent === "GREETING") {
     lower.includes("tenemos");
 
   if (isTryingToSell) {
-    aiText =
-      "Hola 😊 con mucho gusto le ayudo. ¿Qué está buscando o en qué le puedo colaborar?";
+    const fallbackGreeting =
+      promptConfig?.greeting ||
+      `Hola 😊 le atiende ${orgContext?.assistant_name || "nuestro equipo"}, ¿en qué le puedo ayudar?`;
+
+    aiText = fallbackGreeting;
   }
 }
 
-let replyText =
-  aiText ||
-  "Hola 😊 con mucho gusto le ayudo. ¿En qué le puedo colaborar?";
-        
-      }
-    } catch (err) {
-      console.warn("AI error:", err);
-    }
+// ========================================
+// FINAL RESPONSE TEXT
+// ========================================
+const fallbackGreeting =
+  promptConfig?.greeting ||
+  `Hola 😊 le atiende ${orgContext?.assistant_name || "nuestro equipo"}, ¿en qué le puedo ayudar?`;
 
-    let replyText =
-      aiText ||
-      "Hola 😊 con mucho gusto le ayudo. ¿En qué le puedo colaborar?";
+let replyText = aiText || fallbackGreeting;
 
     const reply = generateReply({
       text: replyText,
