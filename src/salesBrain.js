@@ -14,7 +14,7 @@ import db, {
 
 import { searchCatalogSmart } from "./brain/utils/catalogEngine.js";
 import { generateReply } from "./brain/replies/replyEngine.js";
-
+import { updateLeadStageAndScore } from "./db.js";
 import { enforceAIRuntime } from "./system/contracts/aiRuntime.js";
 import { runAI } from "./brain/engines/aiEngine.js";
 import { applyAIGuards } from "./brain/utils/aiGuards.js";
