@@ -345,6 +345,34 @@ export async function handleInbound(payload) {
 
       if (guarded?.text) {
         aiText = guarded.text;
+        const guarded = applyAIGuards({ aiResponse: aiResult });
+
+if (guarded?.text) {
+  aiText = guarded.text;
+}
+
+// ========================================
+// INTENT GUARD (ANTI-VENTA INCORRECTA)
+// ========================================
+if (refinedIntent === "GREETING") {
+  const lower = (aiText || "").toLowerCase();
+
+  const isTryingToSell =
+    lower.includes("₡") ||
+    lower.includes("precio") ||
+    lower.includes("recomiendo") ||
+    lower.includes("tenemos");
+
+  if (isTryingToSell) {
+    aiText =
+      "Hola 😊 con mucho gusto le ayudo. ¿Qué está buscando o en qué le puedo colaborar?";
+  }
+}
+
+let replyText =
+  aiText ||
+  "Hola 😊 con mucho gusto le ayudo. ¿En qué le puedo colaborar?";
+        
       }
     } catch (err) {
       console.warn("AI error:", err);
