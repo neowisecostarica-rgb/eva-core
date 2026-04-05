@@ -297,6 +297,56 @@ export async function updateLeadStageAndScore({
 
 /*
 ========================================
+UPDATE LEAD MEMORY (UNIVERSAL)
+========================================
+*/
+
+export async function updateLeadMemory({
+  organization_id,
+  lead_id,
+  memory = {},
+}) {
+  try {
+    assertOrg(organization_id);
+
+    const {
+      budget = null,
+      use_case = null,
+      product_interest = null,
+      interest_level = null,
+      last_intent = null,
+    } = memory;
+
+    await pool.query(
+      `
+      UPDATE leads
+      SET
+        budget = COALESCE($3, budget),
+        use_case = COALESCE($4, use_case),
+        product_interest = COALESCE($5, product_interest),
+        interest_level = COALESCE($6, interest_level),
+        last_intent = COALESCE($7, last_intent),
+        updated_at = NOW()
+      WHERE id = $1
+        AND organization_id = $2
+      `,
+      [
+        lead_id,
+        organization_id,
+        budget,
+        use_case,
+        product_interest,
+        interest_level,
+        last_intent,
+      ]
+    );
+  } catch (err) {
+    console.error("❌ updateLeadMemory error:", err);
+  }
+}
+
+/*
+========================================
 GET ORGANIZATION SETTINGS (CRÍTICO)
 ========================================
 */
