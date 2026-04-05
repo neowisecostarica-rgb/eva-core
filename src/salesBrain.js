@@ -532,20 +532,30 @@ console.log(JSON.stringify({
   has_catalog: Array.isArray(safeCatalog) && safeCatalog.length > 0 && refinedIntent !== "GREETING",
 }));
 
-    // ================================
+// ================================
 // PIPELINE EVENT (BLOQUE 4 - STEP 2)
 // ================================
 try {
   await savePipelineEvent({
     organization_id,
     lead_id: lead?.id,
+    conversation_id: conversation.id,
     event_type: "MESSAGE_PROCESSED",
     metadata: {
       intent: refinedIntent,
       input_text: text,
       output_text: reply?.text || null,
-      has_catalog: Array.isArray(safeCatalog) && safeCatalog.length > 0,
+      has_catalog:
+        Array.isArray(safeCatalog) &&
+        safeCatalog.length > 0 &&
+        refinedIntent !== "GREETING",
     },
+  });
+
+  console.log("✅ PIPELINE EVENT SAVED:", {
+    event_type: "MESSAGE_PROCESSED",
+    conversation_id: conversation.id,
+    lead_id: lead?.id || null,
   });
 } catch (err) {
   console.error("❌ PIPELINE EVENT ERROR:", err.message);
