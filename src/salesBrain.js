@@ -252,25 +252,28 @@ export async function handleInbound(payload) {
 
     const history = historyRes.rows || [];
 
-    // ================================
-    // INTENT
-    // ================================
-    let refinedIntent = normalizeIntent(detectIntent(text));
-    const t = String(text || "").toLowerCase();
+  // ================================
+// INTENT
+// ================================
+let refinedIntent = normalizeIntent(detectIntent(text));
+const t = String(text || "").toLowerCase();
 
-    if (refinedIntent === "INFO" && t.includes("precio")) refinedIntent = "BUY";
-    if (refinedIntent === "GREETING" && t.includes("busco"))
-      refinedIntent = "BUY";
-    if (t.includes("no sirve") || t.includes("error"))
-      refinedIntent = "SERVICE";
+if (refinedIntent === "INFO" && t.includes("precio")) refinedIntent = "BUY";
+if (refinedIntent === "GREETING" && t.includes("busco"))
+  refinedIntent = "BUY";
+if (t.includes("no sirve") || t.includes("error"))
+  refinedIntent = "SERVICE";
 
-    await savePipelineEvent({
-      organization_id,
-      lead_id: lead?.id,
-      conversation_id: conversation.id,
-      event_type: "INTENT_DETECTED",
-      metadata: { intent: refinedIntent, text },
-    });
+// ✅ AHORA sí calculamos strategy
+const strategy = decideStrategy({ intent: refinedIntent });
+
+await savePipelineEvent({
+  organization_id,
+  lead_id: lead?.id,
+  conversation_id: conversation.id,
+  event_type: "INTENT_DETECTED",
+  metadata: { intent: refinedIntent, text },
+});
 
     // ================================
     // CATALOG
