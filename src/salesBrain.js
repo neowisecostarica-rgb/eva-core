@@ -14,6 +14,7 @@ import db, {
   updateLeadMemory,
 } from "./db.js";
 
+import { matchHotSignals, getHotSignals } from "./brain/utils/intentSignals.js";
 import { searchCatalogSmart } from "./brain/utils/catalogEngine.js";
 import { generateReply } from "./brain/replies/replyEngine.js";
 import { enforceAIRuntime } from "./system/contracts/aiRuntime.js";
@@ -53,7 +54,7 @@ function normalizeIntent(intent) {
   return clean;
 }
 
-function isHotLeadIntent(intent, text, orgConfig) {
+isHotLeadIntent(refinedIntent, t, promptConfig);
   return (
     intent === "CLOSE_INTENT" ||
     matchHotSignals(text, orgConfig?.hot_signals || [])
