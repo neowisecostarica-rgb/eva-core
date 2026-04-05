@@ -200,6 +200,30 @@ try {
     const t = String(text || "").toLowerCase();
 
     // ================================
+// CUSTOMER MEMORY EXTRACT (🔥 BLOQUE 5.1)
+// ================================
+let extractedMemory = {};
+
+if (t.includes("estudio") || t.includes("colegio") || t.includes("universidad")) {
+  extractedMemory.use_case = "ESTUDIO";
+}
+
+if (t.includes("trabajo") || t.includes("oficina")) {
+  extractedMemory.use_case = "TRABAJO";
+}
+
+if (t.includes("gaming") || t.includes("jugar")) {
+  extractedMemory.use_case = "GAMING";
+}
+
+// presupuesto simple (₡)
+const priceMatch = t.match(/(\d{4,7})/);
+if (priceMatch) {
+  extractedMemory.budget_crc = Number(priceMatch[1]);
+}
+    
+
+    // ================================
 // COMMERCIAL SIGNALS (🔥 BLOQUE 4.2)
 // ================================
 let commercialSignal = null;
