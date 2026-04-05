@@ -330,16 +330,7 @@ if (refinedIntent === "GREETING" || refinedIntent === "SUPPORT") {
         orgContext?.assistant_name || "nuestro equipo"
       }, ¿en qué le puedo ayudar?`;
 
-    if (refinedIntent === "GREETING") {
-      const lower = (aiText || "").toLowerCase();
-      const isSelling =
-        lower.includes("₡") ||
-        lower.includes("precio") ||
-        lower.includes("recomiendo") ||
-        lower.includes("tenemos");
-
-      if (isSelling) aiText = fallbackGreeting;
-    }
+    
 
     let replyText =
       !aiText || aiText.length < 5 || aiText.includes("no sé")
