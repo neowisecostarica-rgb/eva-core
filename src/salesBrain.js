@@ -454,33 +454,55 @@ await savePipelineEvent({
   },
 });
     
-    const isHotLead = isHotLeadIntent(refinedIntent, t);
+ const isHotLead = isHotLeadIntent(refinedIntent, t);
 
-    if (!isHotLead) {
-      await createFollowupIfNeeded({
-        organization_id,
-        conversation_id: conversation.id,
-        phone,
-      });
-    }
+// ================================
+// SALES MEMORY ENGINE 🔥
+// ================================
 
-    return {
-      reply,
-      meta: {
-        intent: refinedIntent,
-        lead_id: lead?.id || null,
-        conversation_id: conversation.id,
-      },
-    };
-  } catch (err) {
-    console.error("❌ SALES BRAIN ERROR:", err);
+const memory = {
+  budget: extractBudget(text),
+  use_case: extractUseCase(text),
+  product_interest: extractProductInterest(text),
+  interest_level: computeInterestLevel(refinedIntent, text),
+  last_intent: refinedIntent,
+};
 
-    return {
-      reply: {
-        text: "Hubo un problema procesando el mensaje 🙏",
-        media: [],
-      },
-      meta: { error: true },
-    };
-  }
+// 🔥 SOLO guardar si hay algo útil
+const hasMemory =
+  memory.budget ||
+  memory.use_case ||
+  memory.product_interest ||
+  memory.interest_level;
+
+if (hasMemory) {
+  await updateLeadMemory({
+    organization_id,
+    lead_id: lead?.id,
+    memory,
+  });
+
+  await savePipelineEvent({
+    organization_id,
+    lead_id: lead?.id,
+    event_type: "LEAD_MEMORY_UPDATED",
+    metadata: memory,
+  });
 }
+
+if (!isHotLead) {
+  await createFollowupIfNeeded({
+    organization_id,
+    conversation_id: conversation.id,
+    phone,
+  });
+}
+
+return {
+  reply,
+  meta: {
+    intent: refinedIntent,
+    lead_id: lead?.id || null,
+    conversation_id: conversation.id,
+  },
+};
