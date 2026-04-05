@@ -511,14 +511,35 @@ export async function handleInbound(payload) {
       });
     }
 
-    return {
-      reply,
-      meta: {
-        intent: refinedIntent,
-        lead_id: lead?.id || null,
-        conversation_id: conversation.id,
-      },
-    };
+    
+    // ================================
+// STRUCTURED LOG (BLOQUE 4 - STEP 1)
+// ================================
+console.log(JSON.stringify({
+  tag: "EVA_LOG",
+  timestamp: new Date().toISOString(),
+
+  organization_id,
+  conversation_id: conversation?.id || null,
+  lead_id: lead?.id || null,
+
+  phone,
+  intent: refinedIntent,
+
+  input_text: text,
+  output_text: reply?.text || null,
+
+  has_catalog: safeCatalog?.length > 0,
+}));
+
+return {
+  reply,
+  meta: {
+    intent: refinedIntent,
+    lead_id: lead?.id || null,
+    conversation_id: conversation.id,
+  },
+};
   } catch (err) {
     console.error("❌ SALES BRAIN ERROR:", err);
 
