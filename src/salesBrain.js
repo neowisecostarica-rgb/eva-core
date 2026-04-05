@@ -54,10 +54,12 @@ function normalizeIntent(intent) {
   return clean;
 }
 
-isHotLeadIntent(refinedIntent, t, promptConfig);
+function isHotLeadIntent(intent, text = "", orgConfig = {}) {
+  const signals = getHotSignals(orgConfig);
+
   return (
     intent === "CLOSE_INTENT" ||
-    matchHotSignals(text, orgConfig?.hot_signals || [])
+    matchHotSignals(text, signals)
   );
 }
 
@@ -269,7 +271,7 @@ export async function handleInbound(payload) {
 if (shouldUseAI) {
   const isQualificationPhase =
     refinedIntent === "BUY" &&
-    !isHotLeadIntent(refinedIntent, t);
+   !isHotLeadIntent(refinedIntent, t, promptConfig);
 
   const prompt = buildPrompt({
     context: {
