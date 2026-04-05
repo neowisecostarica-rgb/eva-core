@@ -296,11 +296,12 @@ if (shouldUseAI) {
       promptConfig?.greeting ||
       `Hola 😊 le atiende ${orgContext?.assistant_name || "nuestro equipo"}, ¿en qué le puedo ayudar?`;
 
-    let replyText = !shouldUseAI
-      ? fallbackGreeting
-      : !aiText || aiText.length < 5 || aiText.includes("no sé")
-      ? fallbackGreeting
-      : aiText;
+ const replyText =
+  !shouldUseAI
+    ? fallbackGreeting
+    : !aiText || aiText.length < 5 || aiText.includes("no sé")
+    ? fallbackGreeting
+    : aiText;
 
     const shouldInjectProducts =
       refinedIntent === "CLOSE_INTENT";
