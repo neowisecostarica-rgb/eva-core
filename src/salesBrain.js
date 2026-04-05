@@ -348,6 +348,11 @@ export async function handleInbound(payload) {
     const isHotLead = isHotLeadIntent(refinedIntent, t);
 
     if (!isHotLead) {
+      console.log("FOLLOWUP_TRIGGER", {
+  conversation_id: conversation.id,
+  intent: refinedIntent,
+  text: text,
+});
       await createFollowupIfNeeded({
         organization_id,
         conversation_id: conversation.id,
