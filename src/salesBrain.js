@@ -138,6 +138,38 @@ export async function handleInbound(payload) {
     let refinedIntent = intent;
 
     // ================================
+// PIPELINE STAGE EVENT (🔥 BLOQUE 4.2)
+// ================================
+try {
+  let stage = "EARLY";
+
+  if (refinedIntent === "BUY") stage = "QUALIFYING";
+  if (refinedIntent === "CLOSE_INTENT") stage = "HOT";
+  if (refinedIntent === "SERVICE") stage = "MID";
+
+  await db.query(
+    `
+    INSERT INTO pipeline_events (
+      organization_id,
+      conversation_id,
+      type,
+      meta,
+      created_at
+    )
+    VALUES ($1, $2, $3, $4, NOW())
+  `,
+    [
+      organization_id,
+      conversation.id,
+      "stage_update",
+      JSON.stringify({ stage }),
+    ]
+  );
+} catch (err) {
+  console.warn("⚠️ stage log error:", err.message);
+}
+    
+    // ================================
 // LOG EVENT (🔥 BLOQUE 4.1)
 // ================================
 try {
