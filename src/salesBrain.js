@@ -297,15 +297,14 @@ if (refinedIntent === "GREETING" || refinedIntent === "SUPPORT") {
       console.warn("Catalog error:", err);
     }
 
-    // ================================
-    // AI
-    // ================================
-    let aiText = null;
+   // ================================
+// AI
+// ================================
+let aiText = null;
 
-    const prompt = buildPrompt({
+const prompt = buildPrompt({
   context: {
     intent: refinedIntent,
-    strategy, // 🔥 NUEVO
     organization: orgContext,
   },
   catalogResults: safeCatalog,
@@ -313,13 +312,17 @@ if (refinedIntent === "GREETING" || refinedIntent === "SUPPORT") {
   promptConfig,
 });
 
-    const aiResult = await runAI({ prompt });
+const aiResult = await runAI({ prompt });
 
-    enforceAIRuntime({ aiResponse: aiResult });
+enforceAIRuntime({ aiResponse: aiResult });
 
-    const guarded = applyAIGuards({ aiResponse: aiResult });
+const guarded = applyAIGuards({ aiResponse: aiResult });
 
-    if (guarded?.text) aiText = guarded.text;
+if (guarded?.text) aiText = guarded.text;
+
+const shouldUseAI =
+  refinedIntent !== "GREETING" &&
+  refinedIntent !== "OTHER";
 
     // ================================
     // FALLBACK + GUARDS
