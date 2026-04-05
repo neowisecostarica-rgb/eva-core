@@ -260,6 +260,43 @@ export async function savePipelineEvent({
 
 /*
 ========================================
+UPDATE LEAD STAGE + SCORE
+========================================
+*/
+
+export async function updateLeadStageAndScore({
+  organization_id,
+  lead_id,
+  new_stage,
+  new_score,
+}) {
+  try {
+    assertOrg(organization_id);
+
+    // 🔥 no bajar score nunca
+    await pool.query(
+      `
+      UPDATE leads
+      SET 
+        stage = CASE
+          WHEN stage = 'hot' THEN stage
+          ELSE $3
+        END,
+        score = GREATEST(score, $4),
+        last_contact_at = NOW(),
+        updated_at = NOW()
+      WHERE id = $1
+        AND organization_id = $2
+      `,
+      [lead_id, organization_id, new_stage, new_score]
+    );
+  } catch (err) {
+    console.error("❌ updateLeadStageAndScore error:", err);
+  }
+}
+
+/*
+========================================
 GET ORGANIZATION SETTINGS (CRÍTICO)
 ========================================
 */
