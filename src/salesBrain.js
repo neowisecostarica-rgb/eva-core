@@ -165,7 +165,7 @@ async function createFollowupIfNeeded({
       )
       VALUES ($1, $2, $3, 'PENDING', $4, NOW() + ($5 * interval '1 hour'), NOW())
       `,
-      [organization_id, conversation_id, phone, reason, hoursFromNow]
+      [organization_id, conversation_id, phone, reason, safeHours]
     );
 
     console.log("📌 Followup creado:", conversation_id);
