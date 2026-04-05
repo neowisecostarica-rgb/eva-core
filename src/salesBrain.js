@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — SALES BRAIN (FIXED CLEAN FINAL + EVENTS)
+EVA CORE — SALES BRAIN (CLEAN P5)
 ====================================================
 */
 
@@ -44,21 +44,20 @@ function normalizeIntent(intent) {
   return clean;
 }
 
-function isHotLeadIntent(refinedIntent, normalizedText = "") {
+function isHotLeadIntent(intent, text = "") {
   return (
-    refinedIntent === "CLOSE_INTENT" ||
-    normalizedText.includes("quiero comprar") ||
-    normalizedText.includes("lo quiero") ||
-    normalizedText.includes("como pago") ||
-    normalizedText.includes("cómo pago")
+    intent === "CLOSE_INTENT" ||
+    text.includes("quiero comprar") ||
+    text.includes("lo quiero") ||
+    text.includes("como pago") ||
+    text.includes("cómo pago")
   );
 }
 
 function extractBudget(text = "") {
   try {
     const match = text.replace(/[,\.]/g, "").match(/\b\d{5,}\b/);
-    if (match) return parseInt(match[0], 10);
-    return null;
+    return match ? parseInt(match[0], 10) : null;
   } catch {
     return null;
   }
@@ -67,17 +66,8 @@ function extractBudget(text = "") {
 function extractUseCase(text = "") {
   try {
     const lower = text.toLowerCase();
-
-    if (lower.includes("para ")) {
-      const parts = lower.split("para ");
-      return parts[1]?.slice(0, 40) || null;
-    }
-
-    if (lower.includes("uso ")) {
-      const parts = lower.split("uso ");
-      return parts[1]?.slice(0, 40) || null;
-    }
-
+    if (lower.includes("para ")) return lower.split("para ")[1]?.slice(0, 40);
+    if (lower.includes("uso ")) return lower.split("uso ")[1]?.slice(0, 40);
     return null;
   } catch {
     return null;
@@ -98,29 +88,30 @@ function computeInterestLevel(intent, text = "") {
   if (
     intent === "CLOSE_INTENT" ||
     t.includes("lo quiero") ||
-    t.includes("cómo pago") ||
-    t.includes("como pago")
+    t.includes("como pago") ||
+    t.includes("cómo pago")
   ) {
     return "HIGH";
   }
 
-  if (intent === "BUY" || intent === "FOLLOWUP") {
-    return "MEDIUM";
-  }
+  if (intent === "BUY" || intent === "FOLLOWUP") return "MEDIUM";
 
   return "LOW";
 }
 
+/*
+====================================================
+FOLLOWUPS
+====================================================
+*/
+
 async function cancelPendingFollowups(conversationId) {
   try {
     await db.query(
-      `
-      UPDATE followups
-      SET status = 'CANCELLED',
-          updated_at = NOW()
-      WHERE conversation_id = $1
-        AND UPPER(status) IN ('PENDING', 'SCHEDULED')
-      `,
+      `UPDATE followups
+       SET status = 'CANCELLED', updated_at = NOW()
+       WHERE conversation_id = $1
+       AND UPPER(status) IN ('PENDING','SCHEDULED')`,
       [conversationId]
     );
   } catch (err) {
@@ -137,47 +128,28 @@ async function createFollowupIfNeeded({
 }) {
   try {
     const existing = await db.query(
-      `
-      SELECT id
-      FROM followups
-      WHERE conversation_id = $1
-        AND status IN ('PENDING', 'SCHEDULED')
-        AND scheduled_for > NOW()
-      LIMIT 1
-      `,
+      `SELECT id FROM followups
+       WHERE conversation_id = $1
+       AND status IN ('PENDING','SCHEDULED')
+       AND scheduled_for > NOW()
+       LIMIT 1`,
       [conversation_id]
     );
 
-    if (existing.rows.length > 0) {
-      return;
-    }
-
-    const safeHours = Number(hoursFromNow) || 24;
+    if (existing.rows.length > 0) return;
 
     await db.query(
-      `
-      INSERT INTO followups (
-        organization_id,
-        conversation_id,
-        lead_phone,
-        status,
-        reason,
-        scheduled_for,
-        due_at,
-        created_at
+      `INSERT INTO followups (
+        organization_id, conversation_id, lead_phone,
+        status, reason, scheduled_for, due_at, created_at
       )
       VALUES (
-        $1,
-        $2,
-        $3,
-        'PENDING',
-        $4,
+        $1,$2,$3,'PENDING',$4,
         NOW() + ($5 * interval '1 hour'),
         NOW() + ($5 * interval '1 hour'),
         NOW()
-      )
-      `,
-      [organization_id, conversation_id, phone, reason, safeHours]
+      )`,
+      [organization_id, conversation_id, phone, reason, Number(hoursFromNow)]
     );
 
     console.log("📌 Followup creado:", conversation_id);
@@ -199,19 +171,19 @@ export async function handleInbound(payload) {
     const { organization_id, phone, text, channel, message_id } = payload;
 
     let safeCatalog = [];
-
     let promptConfig = null;
+    let orgSettings = null;
+
     try {
       promptConfig = await getPromptConfig(organization_id);
-    } catch (err) {
-      console.warn("PROMPT_CONFIG_ERROR", err);
+    } catch (e) {
+      console.warn("PROMPT_CONFIG_ERROR", e);
     }
 
-    let orgSettings = null;
     try {
       orgSettings = await getOrganizationSettings(organization_id);
-    } catch (err) {
-      console.warn("ORG_SETTINGS_ERROR", err);
+    } catch (e) {
+      console.warn("ORG_SETTINGS_ERROR", e);
     }
 
     const orgContext = {
@@ -242,7 +214,6 @@ export async function handleInbound(payload) {
       channel,
     });
 
-    // 🔥 EVENT 1
     await savePipelineEvent({
       organization_id,
       lead_id: lead?.id,
@@ -262,13 +233,11 @@ export async function handleInbound(payload) {
     await cancelPendingFollowups(conversation.id);
 
     const historyRes = await db.query(
-      `
-      SELECT role, content AS text
-      FROM messages
-      WHERE conversation_id = $1
-      ORDER BY created_at ASC
-      LIMIT 10
-      `,
+      `SELECT role, content AS text
+       FROM messages
+       WHERE conversation_id = $1
+       ORDER BY created_at ASC
+       LIMIT 10`,
       [conversation.id]
     );
 
@@ -277,24 +246,15 @@ export async function handleInbound(payload) {
     // ================================
     // INTENT
     // ================================
-    const rawIntent = detectIntent(text);
-    let refinedIntent = normalizeIntent(rawIntent);
-
+    let refinedIntent = normalizeIntent(detectIntent(text));
     const t = String(text || "").toLowerCase();
 
-    if (refinedIntent === "INFO" && t.includes("precio")) {
+    if (refinedIntent === "INFO" && t.includes("precio")) refinedIntent = "BUY";
+    if (refinedIntent === "GREETING" && t.includes("busco"))
       refinedIntent = "BUY";
-    }
-
-    if (refinedIntent === "GREETING" && t.includes("busco")) {
-      refinedIntent = "BUY";
-    }
-
-    if (t.includes("no sirve") || t.includes("error")) {
+    if (t.includes("no sirve") || t.includes("error"))
       refinedIntent = "SERVICE";
-    }
 
-    // 🔥 EVENT 2
     await savePipelineEvent({
       organization_id,
       lead_id: lead?.id,
@@ -307,12 +267,12 @@ export async function handleInbound(payload) {
     // CATALOG
     // ================================
     try {
-      const rawResults = await searchCatalogSmart({
+      const results = await searchCatalogSmart({
         organization_id,
         query: text,
       });
 
-      safeCatalog = (rawResults || []).slice(0, 3);
+      safeCatalog = (results || []).slice(0, 3);
     } catch (err) {
       console.warn("Catalog error:", err);
     }
@@ -323,10 +283,7 @@ export async function handleInbound(payload) {
     let aiText = null;
 
     const prompt = buildPrompt({
-      context: {
-        intent: refinedIntent,
-        organization: orgContext,
-      },
+      context: { intent: refinedIntent, organization: orgContext },
       catalogResults: safeCatalog,
       history,
       promptConfig,
@@ -338,56 +295,36 @@ export async function handleInbound(payload) {
 
     const guarded = applyAIGuards({ aiResponse: aiResult });
 
-    if (guarded?.text) {
-      aiText = guarded.text;
-    }
+    if (guarded?.text) aiText = guarded.text;
 
-    // ========================================
-    // INTENT GUARD (ANTI-VENTA INCORRECTA)
-    // ========================================
-    if (refinedIntent === "GREETING") {
-      const lower = (aiText || "").toLowerCase();
-
-      const isTryingToSell =
-        lower.includes("₡") ||
-        lower.includes("precio") ||
-        lower.includes("recomiendo") ||
-        lower.includes("tenemos");
-
-      if (isTryingToSell) {
-        const fallbackGreeting =
-          promptConfig?.greeting ||
-          `Hola 😊 le atiende ${
-            orgContext?.assistant_name || "nuestro equipo"
-          }, ¿en qué le puedo ayudar?`;
-
-        aiText = fallbackGreeting;
-      }
-    }
-
-    // ========================================
-    // FINAL RESPONSE TEXT
-    // ========================================
+    // ================================
+    // FALLBACK + GUARDS
+    // ================================
     const fallbackGreeting =
       promptConfig?.greeting ||
       `Hola 😊 le atiende ${
         orgContext?.assistant_name || "nuestro equipo"
       }, ¿en qué le puedo ayudar?`;
 
-    let replyText = aiText;
+    if (refinedIntent === "GREETING") {
+      const lower = (aiText || "").toLowerCase();
+      const isSelling =
+        lower.includes("₡") ||
+        lower.includes("precio") ||
+        lower.includes("recomiendo") ||
+        lower.includes("tenemos");
 
-    // ========================================
-    // FALLBACK INTELIGENTE (PRO+)
-    // ========================================
-    const isWeakResponse =
-      !replyText ||
-      replyText.length < 5 ||
-      replyText.toLowerCase().includes("no sé");
-
-    if (isWeakResponse) {
-      replyText = fallbackGreeting;
+      if (isSelling) aiText = fallbackGreeting;
     }
 
+    let replyText =
+      !aiText || aiText.length < 5 || aiText.includes("no sé")
+        ? fallbackGreeting
+        : aiText;
+
+    // ================================
+    // FINAL REPLY
+    // ================================
     const reply = generateReply({
       text: replyText,
       intent: refinedIntent,
@@ -404,43 +341,33 @@ export async function handleInbound(payload) {
       text: reply.text,
     });
 
-    // 🔥 EVENT 3
     await savePipelineEvent({
       organization_id,
       lead_id: lead?.id,
       conversation_id: conversation.id,
       event_type: "AI_RESPONSE_SENT",
-      metadata: {
-        intent: refinedIntent,
-        response: reply.text,
-      },
+      metadata: { intent: refinedIntent, response: reply.text },
     });
 
     // ================================
-    // STAGE + SCORE ENGINE 🔥
+    // STAGE + SCORE
     // ================================
     let newStage = "new";
     let newScore = 5;
 
-    if (refinedIntent === "INFO") {
-      newScore = 15;
-    }
-
+    if (refinedIntent === "INFO") newScore = 15;
     if (refinedIntent === "BUY") {
       newStage = "qualified";
       newScore = 45;
     }
-
     if (refinedIntent === "SERVICE") {
       newStage = "qualified";
       newScore = 35;
     }
-
     if (refinedIntent === "FOLLOWUP") {
       newStage = "qualified";
       newScore = 40;
     }
-
     if (refinedIntent === "CLOSE_INTENT" || isHotLeadIntent(refinedIntent, t)) {
       newStage = "hot";
       newScore = 90;
@@ -453,25 +380,8 @@ export async function handleInbound(payload) {
       new_score: newScore,
     });
 
-    const prevStage = lead?.stage || null;
-
-    await savePipelineEvent({
-      organization_id,
-      lead_id: lead?.id,
-      conversation_id: conversation.id,
-      event_type: "LEAD_STAGE_UPDATED",
-      from_stage: prevStage,
-      to_stage: newStage,
-      metadata: {
-        score: newScore,
-        intent: refinedIntent,
-      },
-    });
-
-    const isHotLead = isHotLeadIntent(refinedIntent, t);
-
     // ================================
-    // SALES MEMORY ENGINE 🔥
+    // MEMORY
     // ================================
     const memory = {
       budget: extractBudget(text),
@@ -481,13 +391,7 @@ export async function handleInbound(payload) {
       last_intent: refinedIntent,
     };
 
-    const hasMemory =
-      memory.budget ||
-      memory.use_case ||
-      memory.product_interest ||
-      memory.interest_level;
-
-    if (hasMemory) {
+    if (Object.values(memory).some(Boolean)) {
       await updateLeadMemory({
         organization_id,
         lead_id: lead?.id,
@@ -503,7 +407,7 @@ export async function handleInbound(payload) {
       });
     }
 
-    if (!isHotLead) {
+    if (!isHotLeadIntent(refinedIntent, t)) {
       await createFollowupIfNeeded({
         organization_id,
         conversation_id: conversation.id,
@@ -511,67 +415,33 @@ export async function handleInbound(payload) {
       });
     }
 
-    
     // ================================
-// STRUCTURED LOG (BLOQUE 4 - STEP 1)
-// ================================
-console.log(JSON.stringify({
-  tag: "EVA_LOG",
-  timestamp: new Date().toISOString(),
+    // LOG
+    // ================================
+    console.log(
+      JSON.stringify({
+        tag: "EVA_LOG",
+        timestamp: new Date().toISOString(),
+        organization_id,
+        conversation_id: conversation.id,
+        lead_id: lead?.id,
+        phone,
+        intent: refinedIntent,
+        input_text: text,
+        output_text: reply.text,
+        has_catalog:
+          safeCatalog.length > 0 && refinedIntent !== "GREETING",
+      })
+    );
 
-  organization_id,
-  conversation_id: conversation?.id || null,
-  lead_id: lead?.id || null,
-
-  phone,
-  intent: refinedIntent,
-
-  input_text: text,
-  output_text: reply?.text || null,
-
-  has_catalog:
-  Array.isArray(safeCatalog) &&
-  safeCatalog.length > 0 &&
-  refinedIntent !== "GREETING",
-}));
-
-// ================================
-// PIPELINE EVENT (BLOQUE 4 - STEP 2)
-// ================================
-try {
-  await savePipelineEvent({
-    organization_id,
-    lead_id: lead?.id,
-    conversation_id: conversation.id,
-    event_type: "MESSAGE_PROCESSED",
-    metadata: {
-      intent: refinedIntent,
-      input_text: text,
-      output_text: reply?.text || null,
-      has_catalog:
-        Array.isArray(safeCatalog) &&
-        safeCatalog.length > 0 &&
-        refinedIntent !== "GREETING",
-    },
-  });
-
-  console.log("✅ PIPELINE EVENT SAVED:", {
-    event_type: "MESSAGE_PROCESSED",
-    conversation_id: conversation.id,
-    lead_id: lead?.id || null,
-  });
-} catch (err) {
-  console.error("❌ PIPELINE EVENT ERROR:", err.message);
-}
-    
-return {
-  reply,
-  meta: {
-    intent: refinedIntent,
-    lead_id: lead?.id || null,
-    conversation_id: conversation.id,
-  },
-};
+    return {
+      reply,
+      meta: {
+        intent: refinedIntent,
+        lead_id: lead?.id || null,
+        conversation_id: conversation.id,
+      },
+    };
   } catch (err) {
     console.error("❌ SALES BRAIN ERROR:", err);
 
