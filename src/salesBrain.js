@@ -289,7 +289,7 @@ await savePipelineEvent({
       // ================================
 // GUARDRAIL: NO VENTA SEGÚN INTENT
 // ================================
-if (refinedIntent === "GREETING" || refinedIntent === "SUPPORT") {
+if (refinedIntent === "GREETING" || refinedIntent === "SERVICE") {
   safeCatalog = [];
 }
       
@@ -352,7 +352,7 @@ if (!shouldUseAI) {
     // ================================
 // GUARDRAIL: NO VENTA SEGÚN INTENT
 // ================================
-if (refinedIntent === "GREETING" || refinedIntent === "SUPPORT") {
+if (refinedIntent === "GREETING" || refinedIntent === "SERVICE") {
   safeCatalog = [];
 }
     
