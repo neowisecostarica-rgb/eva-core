@@ -425,7 +425,7 @@ if (refinedIntent === "GREETING") {
     (refinedIntent === "BUY" || refinedIntent === "CLOSE_INTENT") &&
     safeCatalog.length > 0
       ? safeCatalog
-      : [],
+       [],
 });
       organization_id,
       conversation_id: conversation.id,
