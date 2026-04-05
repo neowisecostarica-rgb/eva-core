@@ -66,7 +66,7 @@ PROCESS FOLLOWUPS
 
 export async function processFollowups(sendMessage) {
   try {
-    const { rows: followups } = await db.query(
+  const { rows: followups } = await pool.query(
   `
   SELECT *
   FROM followups
@@ -77,8 +77,8 @@ export async function processFollowups(sendMessage) {
 `
 );
 
-    const followups = result.rows;
-    if (!followups.length) return;
+if (!followups.length) return;
+    
 
     for (const f of followups) {
       try {
