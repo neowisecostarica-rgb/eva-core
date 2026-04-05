@@ -352,9 +352,21 @@ if (refinedIntent === "GREETING") {
     try {
       const prompt = buildPrompt({
         context: {
-          intent: refinedIntent,
-          organization: orgContext,
-        },
+  intent: refinedIntent,
+  organization: orgContext,
+  is_hot_lead: (() => {
+    const t = String(text || "").toLowerCase();
+
+    return (
+      refinedIntent === "CLOSE_INTENT" ||
+      t.includes("quiero comprar") ||
+      t.includes("lo quiero") ||
+      t.includes("cómo pago") ||
+      t.includes("puedo ir hoy")
+    );
+  })(),
+},
+        
         catalogResults: safeCatalog,
         history,
         promptConfig,
