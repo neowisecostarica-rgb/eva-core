@@ -339,6 +339,13 @@ await savePipelineEvent({
         : aiText;
 
     // ================================
+// GUARDRAIL: NO VENTA SEGÚN INTENT
+// ================================
+if (refinedIntent === "GREETING" || refinedIntent === "SUPPORT") {
+  safeCatalog = [];
+}
+    
+    // ================================
     // FINAL REPLY
     // ================================
     const reply = generateReply({
