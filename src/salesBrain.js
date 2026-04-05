@@ -252,28 +252,30 @@ export async function handleInbound(payload) {
 
     const history = historyRes.rows || [];
 
-  // ================================
-// INTENT
-// ================================
-let refinedIntent = normalizeIntent(detectIntent(text));
-const t = String(text || "").toLowerCase();
+    // ================================
+    // INTENT
+    // ================================
+    let refinedIntent = normalizeIntent(detectIntent(text));
+    const t = String(text || "").toLowerCase();
 
-if (refinedIntent === "INFO" && t.includes("precio")) refinedIntent = "BUY";
-if (refinedIntent === "GREETING" && t.includes("busco"))
-  refinedIntent = "BUY";
-if (t.includes("no sirve") || t.includes("error"))
-  refinedIntent = "SERVICE";
+    if (refinedIntent === "INFO" && t.includes("precio")) refinedIntent = "BUY";
+    if (refinedIntent === "GREETING" && t.includes("busco")) refinedIntent = "BUY";
+    if (t.includes("no sirve") || t.includes("error")) refinedIntent = "SERVICE";
 
-// ✅ AHORA sí calculamos strategy
-const strategy = decideStrategy({ intent: refinedIntent });
+    const strategy = decideStrategy({ intent: refinedIntent });
 
-await savePipelineEvent({
-  organization_id,
-  lead_id: lead?.id,
-  conversation_id: conversation.id,
-  event_type: "INTENT_DETECTED",
-  metadata: { intent: refinedIntent, text },
-});
+    // 🔥 DECISIÓN ANTES DE AI
+    const shouldUseAI =
+      refinedIntent !== "GREETING" &&
+      refinedIntent !== "OTHER";
+
+    await savePipelineEvent({
+      organization_id,
+      lead_id: lead?.id,
+      conversation_id: conversation.id,
+      event_type: "INTENT_DETECTED",
+      metadata: { intent: refinedIntent, strategy, text },
+    });
 
     // ================================
     // CATALOG
@@ -285,44 +287,42 @@ await savePipelineEvent({
       });
 
       safeCatalog = (results || []).slice(0, 3);
-      
+
       // ================================
-// GUARDRAIL: NO VENTA SEGÚN INTENT
-// ================================
-if (refinedIntent === "GREETING" || refinedIntent === "SERVICE") {
-  safeCatalog = [];
-}
-      
+      // GUARDRAIL: NO VENTA SEGÚN INTENT
+      // ================================
+      if (refinedIntent === "GREETING" || refinedIntent === "SERVICE") {
+        safeCatalog = [];
+      }
     } catch (err) {
       console.warn("Catalog error:", err);
     }
 
-   // ================================
-// AI
-// ================================
-let aiText = null;
+    // ================================
+    // AI
+    // ================================
+    let aiText = null;
 
-const prompt = buildPrompt({
-  context: {
-    intent: refinedIntent,
-    organization: orgContext,
-  },
-  catalogResults: safeCatalog,
-  history,
-  promptConfig,
-});
+    if (shouldUseAI) {
+      const prompt = buildPrompt({
+        context: {
+          intent: refinedIntent,
+          strategy,
+          organization: orgContext,
+        },
+        catalogResults: safeCatalog,
+        history,
+        promptConfig,
+      });
 
-const aiResult = await runAI({ prompt });
+      const aiResult = await runAI({ prompt });
 
-enforceAIRuntime({ aiResponse: aiResult });
+      enforceAIRuntime({ aiResponse: aiResult });
 
-const guarded = applyAIGuards({ aiResponse: aiResult });
+      const guarded = applyAIGuards({ aiResponse: aiResult });
 
-if (guarded?.text) aiText = guarded.text;
-
-const shouldUseAI =
-  refinedIntent !== "GREETING" &&
-  refinedIntent !== "OTHER";
+      if (guarded?.text) aiText = guarded.text;
+    }
 
     // ================================
     // FALLBACK + GUARDS
@@ -333,21 +333,16 @@ const shouldUseAI =
         orgContext?.assistant_name || "nuestro equipo"
       }, ¿en qué le puedo ayudar?`;
 
-    
-
     let replyText;
 
-if (!shouldUseAI) {
-  replyText = fallbackGreeting;
-} else {
-  replyText =
-    !aiText || aiText.length < 5 || aiText.includes("no sé")
-      ? fallbackGreeting
-      : aiText;
-}
-
-
-
+    if (!shouldUseAI) {
+      replyText = fallbackGreeting;
+    } else {
+      replyText =
+        !aiText || aiText.length < 5 || aiText.includes("no sé")
+          ? fallbackGreeting
+          : aiText;
+    }
 
     // ================================
     // FINAL REPLY
@@ -373,7 +368,12 @@ if (!shouldUseAI) {
       lead_id: lead?.id,
       conversation_id: conversation.id,
       event_type: "AI_RESPONSE_SENT",
-      metadata: { intent: refinedIntent, response: reply.text },
+      metadata: {
+        intent: refinedIntent,
+        strategy,
+        used_ai: shouldUseAI,
+        response: reply.text,
+      },
     });
 
     // ================================
@@ -454,6 +454,8 @@ if (!shouldUseAI) {
         lead_id: lead?.id,
         phone,
         intent: refinedIntent,
+        strategy,
+        used_ai: shouldUseAI,
         input_text: text,
         output_text: reply.text,
         has_catalog:
