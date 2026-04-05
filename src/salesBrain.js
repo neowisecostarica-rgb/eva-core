@@ -343,13 +343,10 @@ export async function handleInbound(payload) {
 
       const guarded = applyAIGuards({ aiResponse: aiResult });
 
-      if (guarded?.text) {
-        aiText = guarded.text;
-        const guarded = applyAIGuards({ aiResponse: aiResult });
-
 if (guarded?.text) {
   aiText = guarded.text;
 }
+
 
 // ========================================
 // INTENT GUARD (ANTI-VENTA INCORRECTA)
