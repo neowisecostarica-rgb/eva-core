@@ -99,6 +99,12 @@ async function createFollowupIfNeeded({
     const followupDate = new Date();
     followupDate.setHours(followupDate.getHours() + hoursFromNow);
 
+    // 🔥 ESTE ES EL LOG CLAVE
+    console.log("FOLLOWUP_CREATING", {
+      conversation_id,
+      phone,
+    });
+
     await db.query(
       `
       INSERT INTO followups (
@@ -120,8 +126,8 @@ async function createFollowupIfNeeded({
 
     console.log("FOLLOWUP_CREATED", {
       conversation_id,
-      scheduled_for: followupDate.toISOString(),
     });
+
   } catch (err) {
     console.warn("Followup error:", err);
   }
