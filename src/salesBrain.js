@@ -151,7 +151,8 @@ async function createFollowupIfNeeded({
     if (existing.rows.length > 0) {
       return;
     }
-
+const safeHours = Number(hoursFromNow) || 24;
+    
     await db.query(
       `
       INSERT INTO followups (
