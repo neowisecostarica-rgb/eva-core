@@ -335,10 +335,16 @@ const shouldUseAI =
 
     
 
-    let replyText =
-      !aiText || aiText.length < 5 || aiText.includes("no sé")
-        ? fallbackGreeting
-        : aiText;
+    let replyText;
+
+if (!shouldUseAI) {
+  replyText = fallbackGreeting;
+} else {
+  replyText =
+    !aiText || aiText.length < 5 || aiText.includes("no sé")
+      ? fallbackGreeting
+      : aiText;
+}
 
 
 // ================================
