@@ -114,6 +114,23 @@ export async function handleInbound(payload) {
       message_id,
     });
 
+    // ========================================
+// CANCEL PENDING FOLLOWUPS (🔥 FIX REAL)
+// ========================================
+try {
+  await db.query(
+    `
+    UPDATE followups
+    SET status = 'CANCELLED'
+    WHERE conversation_id = $1
+      AND status IN ('pending', 'scheduled')
+    `,
+    [conversationId]
+  );
+} catch (err) {
+  logger.error("FOLLOWUP_CANCEL_ERROR", err);
+}
+    
     const historyRes = await db.query(
       `SELECT role, content AS text FROM messages WHERE conversation_id = $1 ORDER BY created_at ASC LIMIT 10`,
       [conversation.id]
@@ -241,6 +258,23 @@ export async function handleInbound(payload) {
         const followupDate = new Date();
         followupDate.setHours(followupDate.getHours() + 24);
 
+        // ========================================
+// PREVENT DUPLICATE FOLLOWUPS
+// ========================================
+const existingFollowup = await db.query(
+  `
+  SELECT id FROM followups
+  WHERE conversation_id = $1
+    AND status IN ('pending', 'scheduled')
+  LIMIT 1
+  `,
+  [conversationId]
+);
+
+if (existingFollowup.rows.length > 0) {
+  logger.info("FOLLOWUP_SKIPPED_DUPLICATE", { conversationId });
+} else {
+  
         await db.query(
           `
           INSERT INTO followups (
