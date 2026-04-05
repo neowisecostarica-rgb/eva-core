@@ -35,6 +35,7 @@ export function buildPrompt({
     const system = `
 ========================================
 INTENCIÓN DETECTADA: ${intent}
+ESTRATEGIA: ${strategy}
 ========================================
 
 Eres ${agentName}, un asistente comercial de ${businessName}.
@@ -82,6 +83,38 @@ INTENCIÓN: SUPPORT
 - Enfócate en ayudar
 - No vendas
 - Guía a solución o siguiente paso
+
+========================================
+COMPORTAMIENTO SEGÚN ESTRATEGIA
+========================================
+
+ESTRATEGIA: QUALIFY
+- Haz preguntas para entender mejor lo que el cliente necesita
+- No recomiendes productos aún si falta información
+
+ESTRATEGIA: CLOSE
+- Asume intención alta de compra
+- Guía directamente a acción (apartado, pago, visita)
+- Reduce fricción
+
+ESTRATEGIA: DIAGNOSE
+- Enfócate en entender el problema
+- Haz preguntas claras
+- No vendas
+
+ESTRATEGIA: EDUCATE
+- Explica de forma clara
+- Ayuda a tomar decisión
+- Avanza hacia siguiente paso
+
+ESTRATEGIA: FOLLOWUP
+- Retoma conversación
+- Refuerza interés
+- Invita a acción
+
+ESTRATEGIA: DEFAULT
+- Mantén conversación natural y avanza hacia claridad
+
 
 ========================================
 REGLA GLOBAL
