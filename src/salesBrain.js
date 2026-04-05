@@ -136,23 +136,44 @@ async function createFollowupIfNeeded({
   hoursFromNow = 24,
 }) {
   try {
-    const existingFollowup = await db.query(
+    const existing = await db.query(
       `
       SELECT id
       FROM followups
       WHERE conversation_id = $1
-        AND UPPER(status) IN ('PENDING', 'SCHEDULED')
+        AND status IN ('PENDING', 'SCHEDULED')
+        AND scheduled_for > NOW()
       LIMIT 1
       `,
       [conversation_id]
     );
 
-    if (existingFollowup.rows.length > 0) {
-      console.log("FOLLOWUP_SKIPPED_DUPLICATE", {
-        conversation_id,
-      });
+    if (existing.rows.length > 0) {
       return;
     }
+
+    await db.query(
+      `
+      INSERT INTO followups (
+        organization_id,
+        conversation_id,
+        lead_phone,
+        status,
+        reason,
+        scheduled_for,
+        created_at
+      )
+      VALUES ($1, $2, $3, 'PENDING', $4, NOW() + ($5 || ' hours')::interval, NOW())
+      `,
+      [organization_id, conversation_id, phone, reason, hoursFromNow]
+    );
+
+    console.log("📌 Followup creado:", conversation_id);
+
+  } catch (err) {
+    console.error("❌ Error creando followup:", err);
+  }
+}
 
     const followupDate = new Date();
     followupDate.setHours(followupDate.getHours() + hoursFromNow);
