@@ -348,14 +348,7 @@ if (!shouldUseAI) {
 
 
 
-    
-    // ================================
-// GUARDRAIL: NO VENTA SEGÚN INTENT
-// ================================
-if (refinedIntent === "GREETING" || refinedIntent === "SERVICE") {
-  safeCatalog = [];
-}
-    
+
     // ================================
     // FINAL REPLY
     // ================================
