@@ -407,39 +407,52 @@ if (refinedIntent === "GREETING") {
       text: reply.text,
     });
 
-    // ================================
+// ================================
 // FOLLOWUP CREATE (🔥 BLOQUE 3.1)
 // ================================
 try {
-  const followupDate = new Date();
-  followupDate.setHours(followupDate.getHours() + 24);
+  const t = String(text || "").toLowerCase();
 
-  await db.query(
-  `
-  INSERT INTO followups (
-    organization_id,
-    conversation_id,
-    lead_phone,
-    message,
-    scheduled_for,
-    status,
-    sent,
-    retry_count,
-    created_at,
-    updated_at
-  )
-  VALUES ($1, $2, $3, $4, $5, 'pending', false, 0, NOW(), NOW())
-`,
-  [
-    organization_id,
-    conversation.id,
-    phone,
-    "Hola 😊 solo quería darle seguimiento a su consulta. ¿Le puedo ayudar en algo más?",
-    followupTime,
-  ]
-);
+  const isHotLead =
+    refinedIntent === "CLOSE_INTENT" ||
+    t.includes("quiero comprar") ||
+    t.includes("lo quiero") ||
+    t.includes("cómo pago") ||
+    t.includes("puedo ir hoy");
 
-  console.log("📆 Followup scheduled");
+  if (!isHotLead) {
+    const followupDate = new Date();
+    followupDate.setHours(followupDate.getHours() + 24);
+
+    await db.query(
+      `
+      INSERT INTO followups (
+        organization_id,
+        conversation_id,
+        lead_phone,
+        message,
+        scheduled_for,
+        status,
+        sent,
+        retry_count,
+        created_at,
+        updated_at
+      )
+      VALUES ($1, $2, $3, $4, $5, 'PENDING', false, 0, NOW(), NOW())
+    `,
+      [
+        organization_id,
+        conversation.id,
+        phone,
+        "Hola 😊 solo quería darle seguimiento a su consulta. ¿Le puedo ayudar en algo más?",
+        followupDate,
+      ]
+    );
+
+    console.log("📆 Followup scheduled");
+  } else {
+    console.log("🔥 HOT lead → no followup created");
+  }
 } catch (err) {
   console.warn("⚠️ Followup create error:", err);
 }
