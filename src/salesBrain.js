@@ -529,7 +529,7 @@ console.log(JSON.stringify({
   input_text: text,
   output_text: reply?.text || null,
 
-  has_catalog: safeCatalog?.length > 0,
+  has_catalog: Array.isArray(safeCatalog) && safeCatalog.length > 0 && refinedIntent !== "GREETING",
 }));
 
 return {
