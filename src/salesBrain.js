@@ -498,11 +498,27 @@ if (!isHotLead) {
   });
 }
 
-return {
-  reply,
-  meta: {
-    intent: refinedIntent,
-    lead_id: lead?.id || null,
-    conversation_id: conversation.id,
-  },
-};
+    return {
+      reply,
+      meta: {
+        intent: refinedIntent,
+        lead_id: lead?.id || null,
+        conversation_id: conversation.id,
+      },
+    };
+
+  } catch (err) {
+    console.error("❌ SALES BRAIN ERROR:", err);
+
+    return {
+      reply: {
+        text: "Hubo un problema procesando tu solicitud. Intenta nuevamente.",
+      },
+      meta: {
+        intent: "ERROR",
+        lead_id: null,
+        conversation_id: null,
+      },
+    };
+  }
+}
