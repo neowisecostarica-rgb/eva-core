@@ -381,19 +381,26 @@ const fallbackGreeting =
 
 let replyText = aiText;
 
-if (!replyText || replyText.length < 5) {
+// ========================================
+// FALLBACK INTELIGENTE (PRO+)
+// ========================================
+const isWeakResponse =
+  !replyText ||
+  replyText.length < 5 ||
+  replyText.toLowerCase().includes("no sé");
+
+if (isWeakResponse) {
   replyText = fallbackGreeting;
 }
 
-    const reply = generateReply({
-      text: replyText,
-      intent: refinedIntent,
-      products:
-        refinedIntent === "BUY" || refinedIntent === "CLOSE_INTENT"
-          ? safeCatalog
-          : [],
-    });
-
+const reply = generateReply({
+  text: replyText,
+  intent: refinedIntent,
+  products:
+    refinedIntent === "BUY" || refinedIntent === "CLOSE_INTENT"
+      ? safeCatalog
+      : [],
+});
     await saveMessage({
       organization_id,
       conversation_id: conversation.id,
