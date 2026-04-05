@@ -285,6 +285,14 @@ await savePipelineEvent({
       });
 
       safeCatalog = (results || []).slice(0, 3);
+      
+      // ================================
+// GUARDRAIL: NO VENTA SEGÚN INTENT
+// ================================
+if (refinedIntent === "GREETING" || refinedIntent === "SUPPORT") {
+  safeCatalog = [];
+}
+      
     } catch (err) {
       console.warn("Catalog error:", err);
     }
