@@ -255,9 +255,54 @@ if (t.includes("tienen") || t.includes("hay disponibles")) {
 
     const strategy = "DEFAULT";
 
-    // ================================
-    // CATALOG
-    // ================================
+   // ================================
+// HOT LEAD DETECTION (🔥 BLOQUE 4.3)
+// ================================
+try {
+  let isHot = false;
+
+  const t = String(text || "").toLowerCase();
+
+  if (
+    t.includes("quiero comprar") ||
+    t.includes("lo quiero") ||
+    t.includes("dónde lo tienen") ||
+    t.includes("puedo ir hoy") ||
+    t.includes("me interesa ese") ||
+    t.includes("cómo pago") ||
+    t.includes("lo tenés disponible")
+  ) {
+    isHot = true;
+  }
+
+  if (refinedIntent === "CLOSE_INTENT") {
+    isHot = true;
+  }
+
+  if (isHot) {
+    await db.query(
+      `
+      INSERT INTO pipeline_events (
+        organization_id,
+        conversation_id,
+        type,
+        meta,
+        created_at
+      )
+      VALUES ($1, $2, $3, $4, NOW())
+    `,
+      [
+        organization_id,
+        conversation.id,
+        "hot_lead_detected",
+        JSON.stringify({ text }),
+      ]
+    );
+  }
+} catch (err) {
+  console.warn("⚠️ hot lead error:", err.message);
+}
+    
    // ================================
 // CATALOG
 // ================================
