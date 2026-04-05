@@ -20,7 +20,7 @@ import { runAI } from "./brain/engines/aiEngine.js";
 import { applyAIGuards } from "./brain/utils/aiGuards.js";
 import { buildPrompt } from "./brain/utils/promptBuilder.js";
 import { getPromptConfig } from "./brain/utils/getPromptConfig.js";
-
+import { updateLeadMemory } from "./db.js";
 import { detectIntent } from "./brain/engines/intentEngine.js";
 
 /*
