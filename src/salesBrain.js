@@ -4,15 +4,12 @@ EVA CORE — SALES BRAIN (FIXED CLEAN FINAL)
 ====================================================
 */
 
-import { getOrganizationSettings } from "./db.js";
-
-import {
+import db, {
+  getOrganizationSettings,
   findOrCreateLead,
   findOrCreateConversation,
   saveMessage,
 } from "./db.js";
-
-import db from "./db.js";
 
 import { searchCatalogSmart } from "./brain/utils/catalogEngine.js";
 import { generateReply } from "./brain/replies/replyEngine.js";
@@ -46,6 +43,90 @@ function normalizeIntent(intent) {
   return clean;
 }
 
+function isHotLeadIntent(refinedIntent, normalizedText) {
+  return (
+    refinedIntent === "CLOSE_INTENT" ||
+    normalizedText.includes("quiero comprar") ||
+    normalizedText.includes("lo quiero") ||
+    normalizedText.includes("como pago") ||
+    normalizedText.includes("cómo pago")
+  );
+}
+
+async function cancelPendingFollowups(conversationId) {
+  try {
+    await db.query(
+      `
+      UPDATE followups
+      SET status = 'CANCELLED',
+          updated_at = NOW()
+      WHERE conversation_id = $1
+        AND UPPER(status) IN ('PENDING', 'SCHEDULED')
+      `,
+      [conversationId]
+    );
+  } catch (err) {
+    console.error("FOLLOWUP_CANCEL_ERROR", err);
+  }
+}
+
+async function createFollowupIfNeeded({
+  organization_id,
+  conversation_id,
+  phone,
+  reason = "sales_followup",
+  hoursFromNow = 24,
+}) {
+  try {
+    const existingFollowup = await db.query(
+      `
+      SELECT id
+      FROM followups
+      WHERE conversation_id = $1
+        AND UPPER(status) IN ('PENDING', 'SCHEDULED')
+      LIMIT 1
+      `,
+      [conversation_id]
+    );
+
+    if (existingFollowup.rows.length > 0) {
+      console.log("FOLLOWUP_SKIPPED_DUPLICATE", {
+        conversation_id,
+      });
+      return;
+    }
+
+    const followupDate = new Date();
+    followupDate.setHours(followupDate.getHours() + hoursFromNow);
+
+    await db.query(
+      `
+      INSERT INTO followups (
+        organization_id,
+        conversation_id,
+        lead_phone,
+        reason,
+        scheduled_for,
+        status,
+        sent,
+        retry_count,
+        created_at,
+        updated_at
+      )
+      VALUES ($1, $2, $3, $4, $5, 'PENDING', false, 0, NOW(), NOW())
+      `,
+      [organization_id, conversation_id, phone, reason, followupDate]
+    );
+
+    console.log("FOLLOWUP_CREATED", {
+      conversation_id,
+      scheduled_for: followupDate.toISOString(),
+    });
+  } catch (err) {
+    console.warn("Followup error:", err);
+  }
+}
+
 /*
 ====================================================
 MAIN
@@ -67,7 +148,9 @@ export async function handleInbound(payload) {
 
     try {
       promptConfig = await getPromptConfig(organization_id);
-    } catch {}
+    } catch (err) {
+      console.warn("PROMPT_CONFIG_ERROR", err);
+    }
 
     // ================================
     // ORG SETTINGS
@@ -76,7 +159,9 @@ export async function handleInbound(payload) {
 
     try {
       orgSettings = await getOrganizationSettings(organization_id);
-    } catch {}
+    } catch (err) {
+      console.warn("ORG_SETTINGS_ERROR", err);
+    }
 
     const orgContext = {
       business_name:
@@ -115,24 +200,18 @@ export async function handleInbound(payload) {
     });
 
     // ========================================
-// CANCEL PENDING FOLLOWUPS (🔥 FIX REAL)
-// ========================================
-try {
-  await db.query(
-    `
-    UPDATE followups
-    SET status = 'CANCELLED'
-    WHERE conversation_id = $1
-      AND status IN ('pending', 'scheduled')
-    `,
-    [conversation.id]
-  );
-} catch (err) {
-  console.error("FOLLOWUP_CANCEL_ERROR", err);
-}
-    
+    // CANCEL PENDING FOLLOWUPS
+    // ========================================
+    await cancelPendingFollowups(conversation.id);
+
     const historyRes = await db.query(
-      `SELECT role, content AS text FROM messages WHERE conversation_id = $1 ORDER BY created_at ASC LIMIT 10`,
+      `
+      SELECT role, content AS text
+      FROM messages
+      WHERE conversation_id = $1
+      ORDER BY created_at ASC
+      LIMIT 10
+      `,
       [conversation.id]
     );
 
@@ -176,11 +255,28 @@ try {
     // GREETING DIRECT RESPONSE
     // ================================
     if (refinedIntent === "GREETING") {
+      const greetingReply = {
+        text: `Hola 😊 soy ${orgContext.assistant_name} de ${orgContext.business_name}, con gusto te ayudo. ¿En qué te puedo colaborar?`,
+        media: [],
+      };
+
+      await saveMessage({
+        organization_id,
+        conversation_id: conversation.id,
+        role: "assistant",
+        text: greetingReply.text,
+      });
+
+      await createFollowupIfNeeded({
+        organization_id,
+        conversation_id: conversation.id,
+        phone,
+        reason: "sales_followup",
+        hoursFromNow: 24,
+      });
+
       return {
-        reply: {
-          text: `Hola 😊 soy ${orgContext.assistant_name} de ${orgContext.business_name}, con gusto te ayudo. ¿En qué te puedo colaborar?`,
-          media: [],
-        },
+        reply: greetingReply,
         meta: { intent: "GREETING" },
       };
     }
@@ -207,7 +303,9 @@ try {
 
       const guarded = applyAIGuards({ aiResponse: aiResult });
 
-      if (guarded?.text) aiText = guarded.text;
+      if (guarded?.text) {
+        aiText = guarded.text;
+      }
     } catch (err) {
       console.warn("AI error:", err);
     }
@@ -223,7 +321,7 @@ try {
     }
 
     // ================================
-    // GENERATE REPLY (FIX 🔥)
+    // GENERATE REPLY
     // ================================
     const reply = generateReply({
       text: replyText,
@@ -235,7 +333,7 @@ try {
     });
 
     // ================================
-    // SAVE MESSAGE (FIX 🔥)
+    // SAVE MESSAGE
     // ================================
     await saveMessage({
       organization_id,
@@ -244,72 +342,28 @@ try {
       text: reply.text,
     });
 
-// ================================
-// FOLLOWUP
-// ================================
-try {
-  const isHotLead =
-    refinedIntent === "CLOSE_INTENT" ||
-    t.includes("quiero comprar") ||
-    t.includes("lo quiero") ||
-    t.includes("cómo pago");
+    // ================================
+    // FOLLOWUP
+    // ================================
+    const isHotLead = isHotLeadIntent(refinedIntent, t);
 
-  if (!isHotLead) {
-    const followupDate = new Date();
-    followupDate.setHours(followupDate.getHours() + 24);
-
-    // ========================================
-    // PREVENT DUPLICATE FOLLOWUPS
-    // ========================================
-    const existingFollowup = await db.query(
-      `
-      SELECT id FROM followups
-      WHERE conversation_id = $1
-        AND status IN ('pending', 'scheduled')
-      LIMIT 1
-      `,
-      [conversation.id]
-    );
-
-    if (existingFollowup.rows.length === 0) {
-      await db.query(
-        `
-        INSERT INTO followups (
-          organization_id,
-          conversation_id,
-          lead_phone,
-          reason,
-          scheduled_for,
-          status,
-          sent,
-          retry_count,
-          created_at,
-          updated_at
-        )
-        VALUES ($1, $2, $3, $4, $5, 'PENDING', false, 0, NOW(), NOW())
-        `,
-        [
-          organization_id,
-          conversation.id,
-          phone,
-          "sales_followup",
-          followupDate,
-        ]
-      );
-    } else {
-      console.log("FOLLOWUP_SKIPPED_DUPLICATE", {
+    if (!isHotLead) {
+      await createFollowupIfNeeded({
+        organization_id,
         conversation_id: conversation.id,
+        phone,
+        reason: "sales_followup",
+        hoursFromNow: 24,
       });
     }
-  } // ✅ cierre del if
-
-} catch (err) {
-  console.warn("Followup error:", err);
-}
 
     return {
       reply,
-      meta: { intent: refinedIntent },
+      meta: {
+        intent: refinedIntent,
+        lead_id: lead?.id || null,
+        conversation_id: conversation.id,
+      },
     };
   } catch (err) {
     console.error("❌ SALES BRAIN ERROR:", err);
