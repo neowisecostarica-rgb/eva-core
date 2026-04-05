@@ -528,7 +528,7 @@ if (!isHotLead) {
       },
     };
 
-  } catch (err) {
+   catch (err) {
     console.error("❌ SALES BRAIN ERROR:", err);
 
     return {
