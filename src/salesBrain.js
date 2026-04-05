@@ -379,7 +379,11 @@ const fallbackGreeting =
   promptConfig?.greeting ||
   `Hola 😊 le atiende ${orgContext?.assistant_name || "nuestro equipo"}, ¿en qué le puedo ayudar?`;
 
-let replyText = aiText || fallbackGreeting;
+let replyText = aiText;
+
+if (!replyText || replyText.length < 5) {
+  replyText = fallbackGreeting;
+}
 
     const reply = generateReply({
       text: replyText,
