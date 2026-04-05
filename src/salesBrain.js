@@ -9,18 +9,18 @@ import db, {
   findOrCreateLead,
   findOrCreateConversation,
   saveMessage,
-  savePipelineEvent, // 🔥 NUEVO
+  savePipelineEvent,
+  updateLeadStageAndScore,
+  updateLeadMemory,
 } from "./db.js";
 
 import { searchCatalogSmart } from "./brain/utils/catalogEngine.js";
 import { generateReply } from "./brain/replies/replyEngine.js";
-import { updateLeadStageAndScore } from "./db.js";
 import { enforceAIRuntime } from "./system/contracts/aiRuntime.js";
 import { runAI } from "./brain/engines/aiEngine.js";
 import { applyAIGuards } from "./brain/utils/aiGuards.js";
 import { buildPrompt } from "./brain/utils/promptBuilder.js";
 import { getPromptConfig } from "./brain/utils/getPromptConfig.js";
-import { updateLeadMemory } from "./db.js";
 import { detectIntent } from "./brain/engines/intentEngine.js";
 
 /*
@@ -44,7 +44,7 @@ function normalizeIntent(intent) {
   return clean;
 }
 
-function isHotLeadIntent(refinedIntent, normalizedText) {
+function isHotLeadIntent(refinedIntent, normalizedText = "") {
   return (
     refinedIntent === "CLOSE_INTENT" ||
     normalizedText.includes("quiero comprar") ||
@@ -151,42 +151,40 @@ async function createFollowupIfNeeded({
     if (existing.rows.length > 0) {
       return;
     }
-const safeHours = Number(hoursFromNow) || 24;
-    
+
+    const safeHours = Number(hoursFromNow) || 24;
+
     await db.query(
       `
       INSERT INTO followups (
-  organization_id,
-  conversation_id,
-  lead_phone,
-  status,
-  reason,
-  scheduled_for,
-  due_at,
-  created_at
-)
-     VALUES (
-  $1,
-  $2,
-  $3,
-  'PENDING',
-  $4,
-  NOW() + ($5 * interval '1 hour'),
-  NOW() + ($5 * interval '1 hour'),
-  NOW()
-)
+        organization_id,
+        conversation_id,
+        lead_phone,
+        status,
+        reason,
+        scheduled_for,
+        due_at,
+        created_at
+      )
+      VALUES (
+        $1,
+        $2,
+        $3,
+        'PENDING',
+        $4,
+        NOW() + ($5 * interval '1 hour'),
+        NOW() + ($5 * interval '1 hour'),
+        NOW()
+      )
       `,
       [organization_id, conversation_id, phone, reason, safeHours]
     );
 
     console.log("📌 Followup creado:", conversation_id);
-
   } catch (err) {
     console.error("❌ Error creando followup:", err);
   }
 }
-
-    
 
 /*
 ====================================================
@@ -246,12 +244,12 @@ export async function handleInbound(payload) {
 
     // 🔥 EVENT 1
     await savePipelineEvent({
-  organization_id,
-  lead_id: lead?.id,
-  conversation_id: conversation.id,
-  event_type: "INBOUND_RECEIVED",
-  metadata: { text, channel },
-});
+      organization_id,
+      lead_id: lead?.id,
+      conversation_id: conversation.id,
+      event_type: "INBOUND_RECEIVED",
+      metadata: { text, channel },
+    });
 
     await saveMessage({
       organization_id,
@@ -319,85 +317,86 @@ export async function handleInbound(payload) {
       console.warn("Catalog error:", err);
     }
 
-    
-
     // ================================
     // AI
     // ================================
     let aiText = null;
 
-    try {
-      const prompt = buildPrompt({
-        context: {
-          intent: refinedIntent,
-          organization: orgContext,
-        },
-        catalogResults: safeCatalog,
-        history,
-        promptConfig,
-      });
+    const prompt = buildPrompt({
+      context: {
+        intent: refinedIntent,
+        organization: orgContext,
+      },
+      catalogResults: safeCatalog,
+      history,
+      promptConfig,
+    });
 
-      const aiResult = await runAI({ prompt });
+    const aiResult = await runAI({ prompt });
 
-      enforceAIRuntime({ aiResponse: aiResult });
+    enforceAIRuntime({ aiResponse: aiResult });
 
-      const guarded = applyAIGuards({ aiResponse: aiResult });
+    const guarded = applyAIGuards({ aiResponse: aiResult });
 
-if (guarded?.text) {
-  aiText = guarded.text;
-}
+    if (guarded?.text) {
+      aiText = guarded.text;
+    }
 
+    // ========================================
+    // INTENT GUARD (ANTI-VENTA INCORRECTA)
+    // ========================================
+    if (refinedIntent === "GREETING") {
+      const lower = (aiText || "").toLowerCase();
 
-// ========================================
-// INTENT GUARD (ANTI-VENTA INCORRECTA)
-// ========================================
-if (refinedIntent === "GREETING") {
-  const lower = (aiText || "").toLowerCase();
+      const isTryingToSell =
+        lower.includes("₡") ||
+        lower.includes("precio") ||
+        lower.includes("recomiendo") ||
+        lower.includes("tenemos");
 
-  const isTryingToSell =
-    lower.includes("₡") ||
-    lower.includes("precio") ||
-    lower.includes("recomiendo") ||
-    lower.includes("tenemos");
+      if (isTryingToSell) {
+        const fallbackGreeting =
+          promptConfig?.greeting ||
+          `Hola 😊 le atiende ${
+            orgContext?.assistant_name || "nuestro equipo"
+          }, ¿en qué le puedo ayudar?`;
 
-  if (isTryingToSell) {
+        aiText = fallbackGreeting;
+      }
+    }
+
+    // ========================================
+    // FINAL RESPONSE TEXT
+    // ========================================
     const fallbackGreeting =
       promptConfig?.greeting ||
-      `Hola 😊 le atiende ${orgContext?.assistant_name || "nuestro equipo"}, ¿en qué le puedo ayudar?`;
+      `Hola 😊 le atiende ${
+        orgContext?.assistant_name || "nuestro equipo"
+      }, ¿en qué le puedo ayudar?`;
 
-    aiText = fallbackGreeting;
-  }
-}
+    let replyText = aiText;
 
-// ========================================
-// FINAL RESPONSE TEXT
-// ========================================
-const fallbackGreeting =
-  promptConfig?.greeting ||
-  `Hola 😊 le atiende ${orgContext?.assistant_name || "nuestro equipo"}, ¿en qué le puedo ayudar?`;
+    // ========================================
+    // FALLBACK INTELIGENTE (PRO+)
+    // ========================================
+    const isWeakResponse =
+      !replyText ||
+      replyText.length < 5 ||
+      replyText.toLowerCase().includes("no sé");
 
-let replyText = aiText;
+    if (isWeakResponse) {
+      replyText = fallbackGreeting;
+    }
 
-// ========================================
-// FALLBACK INTELIGENTE (PRO+)
-// ========================================
-const isWeakResponse =
-  !replyText ||
-  replyText.length < 5 ||
-  replyText.toLowerCase().includes("no sé");
+    const reply = generateReply({
+      text: replyText,
+      intent: refinedIntent,
+      products:
+        refinedIntent === "BUY" || refinedIntent === "CLOSE_INTENT"
+          ? safeCatalog
+          : [],
+    });
 
-if (isWeakResponse) {
-  replyText = fallbackGreeting;
-}
-
-const reply = generateReply({
-  text: replyText,
-  intent: refinedIntent,
-  products:
-    refinedIntent === "BUY" || refinedIntent === "CLOSE_INTENT"
-      ? safeCatalog
-      : [],
-});
     await saveMessage({
       organization_id,
       conversation_id: conversation.id,
@@ -409,133 +408,129 @@ const reply = generateReply({
     await savePipelineEvent({
       organization_id,
       lead_id: lead?.id,
-      event_type: "AI_RESPONSE_SENT",
       conversation_id: conversation.id,
+      event_type: "AI_RESPONSE_SENT",
       metadata: {
         intent: refinedIntent,
         response: reply.text,
       },
     });
-// ================================
-// STAGE + SCORE ENGINE 🔥
-// ================================
 
-let newStage = "new";
-let newScore = 5;
+    // ================================
+    // STAGE + SCORE ENGINE 🔥
+    // ================================
+    let newStage = "new";
+    let newScore = 5;
 
-if (refinedIntent === "INFO") {
-  newScore = 15;
-}
+    if (refinedIntent === "INFO") {
+      newScore = 15;
+    }
 
-if (refinedIntent === "BUY") {
-  newStage = "qualified";
-  newScore = 45;
-}
+    if (refinedIntent === "BUY") {
+      newStage = "qualified";
+      newScore = 45;
+    }
 
-if (refinedIntent === "SERVICE") {
-  newStage = "qualified";
-  newScore = 35;
-}
+    if (refinedIntent === "SERVICE") {
+      newStage = "qualified";
+      newScore = 35;
+    }
 
-if (refinedIntent === "FOLLOWUP") {
-  newStage = "qualified";
-  newScore = 40;
-}
+    if (refinedIntent === "FOLLOWUP") {
+      newStage = "qualified";
+      newScore = 40;
+    }
 
-if (refinedIntent === "CLOSE_INTENT" || isHotLeadIntent(refinedIntent, t)) {
-  newStage = "hot";
-  newScore = 90;
-}
+    if (refinedIntent === "CLOSE_INTENT" || isHotLeadIntent(refinedIntent, t)) {
+      newStage = "hot";
+      newScore = 90;
+    }
 
-// 🔥 UPDATE LEAD
-await updateLeadStageAndScore({
-  organization_id,
-  lead_id: lead?.id,
-  new_stage: newStage,
-  new_score: newScore,
-});
+    await updateLeadStageAndScore({
+      organization_id,
+      lead_id: lead?.id,
+      new_stage: newStage,
+      new_score: newScore,
+    });
 
-// 🔥 EVENT
     const prevStage = lead?.stage || null;
-    
-await savePipelineEvent({
-  organization_id,
-  lead_id: lead?.id,
-  conversation_id: conversation.id,
-  event_type: "LEAD_STAGE_UPDATED",
-  from_stage: prevStage,
-  to_stage: newStage,
-  metadata: {
-    score: newScore,
-    intent: refinedIntent,
-  },
-});
-    
- const isHotLead = isHotLeadIntent(refinedIntent, t);
 
-// ================================
-// SALES MEMORY ENGINE 🔥
-// ================================
+    await savePipelineEvent({
+      organization_id,
+      lead_id: lead?.id,
+      conversation_id: conversation.id,
+      event_type: "LEAD_STAGE_UPDATED",
+      from_stage: prevStage,
+      to_stage: newStage,
+      metadata: {
+        score: newScore,
+        intent: refinedIntent,
+      },
+    });
 
-const memory = {
-  budget: extractBudget(text),
-  use_case: extractUseCase(text),
-  product_interest: extractProductInterest(text),
-  interest_level: computeInterestLevel(refinedIntent, text),
-  last_intent: refinedIntent,
-};
+    const isHotLead = isHotLeadIntent(refinedIntent, t);
 
-// 🔥 SOLO guardar si hay algo útil
-const hasMemory =
-  memory.budget ||
-  memory.use_case ||
-  memory.product_interest ||
-  memory.interest_level;
+    // ================================
+    // SALES MEMORY ENGINE 🔥
+    // ================================
+    const memory = {
+      budget: extractBudget(text),
+      use_case: extractUseCase(text),
+      product_interest: extractProductInterest(text),
+      interest_level: computeInterestLevel(refinedIntent, text),
+      last_intent: refinedIntent,
+    };
 
-if (hasMemory) {
-  await updateLeadMemory({
-    organization_id,
-    lead_id: lead?.id,
-    memory,
-  });
+    const hasMemory =
+      memory.budget ||
+      memory.use_case ||
+      memory.product_interest ||
+      memory.interest_level;
 
-  await savePipelineEvent({
-    organization_id,
-    lead_id: lead?.id,
-    conversation_id: conversation.id,
-    event_type: "LEAD_MEMORY_UPDATED",
-    metadata: memory,
-  });
-}
+    if (hasMemory) {
+      await updateLeadMemory({
+        organization_id,
+        lead_id: lead?.id,
+        memory,
+      });
 
-if (!isHotLead) {
-  await createFollowupIfNeeded({
-    organization_id,
-    conversation_id: conversation.id,
-    phone,
-  });
-}
+      await savePipelineEvent({
+        organization_id,
+        lead_id: lead?.id,
+        conversation_id: conversation.id,
+        event_type: "LEAD_MEMORY_UPDATED",
+        metadata: memory,
+      });
+    }
 
-return {
-  reply,
-  meta: {
-    intent: refinedIntent,
-    lead_id: lead?.id || null,
-    conversation_id: conversation.id,
-  },
-};
+    if (!isHotLead) {
+      await createFollowupIfNeeded({
+        organization_id,
+        conversation_id: conversation.id,
+        phone,
+      });
+    }
 
-} catch (err) {  // 👈 ESTE } FALTABA
-  console.error("❌ SALES BRAIN ERROR:", err);
+    return {
+      reply,
+      meta: {
+        intent: refinedIntent,
+        lead_id: lead?.id || null,
+        conversation_id: conversation.id,
+      },
+    };
+  } catch (err) {
+    console.error("❌ SALES BRAIN ERROR:", err);
 
-  return {
-    reply: {
-      text: "Hubo un problema procesando tu solicitud. Intenta nuevamente.",
-    },
-    meta: {
-      intent: "ERROR",
-      lead_id: null,
-      conversation_id: null,
-    },
-  };
+    return {
+      reply: {
+        text: "Hubo un problema procesando tu solicitud. Intenta nuevamente.",
+      },
+      meta: {
+        intent: "ERROR",
+        lead_id: null,
+        conversation_id: null,
+      },
+    };
+  }
 }
