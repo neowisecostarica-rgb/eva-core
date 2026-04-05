@@ -420,8 +420,11 @@ if (refinedIntent === "GREETING") {
 
     const reply = generateReply({
       text: replyText,
-      intent: "AI",
-      products: safeCatalog,
+      intent: refinedIntent,
+      products:
+  refinedIntent === "BUY" || refinedIntent === "CLOSE_INTENT"
+    ? safeCatalog
+    : [],
     });
 
     await saveMessage({
