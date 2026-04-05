@@ -125,10 +125,10 @@ try {
     WHERE conversation_id = $1
       AND status IN ('pending', 'scheduled')
     `,
-    [conversationId]
+    [conversation.id]
   );
 } catch (err) {
-  logger.error("FOLLOWUP_CANCEL_ERROR", err);
+  console.error("FOLLOWUP_CANCEL_ERROR", err);
 }
     
     const historyRes = await db.query(
