@@ -319,30 +319,7 @@ export async function handleInbound(payload) {
       console.warn("Catalog error:", err);
     }
 
-    // ================================
-    // GREETING
-    // ================================
-    if (refinedIntent === "GREETING") {
-      const greetingReply = {
-        text: `Hola 😊 soy ${orgContext.assistant_name} de ${orgContext.business_name}, con gusto te ayudo. ¿En qué te puedo colaborar?`,
-        media: [],
-      };
-
-      await saveMessage({
-        organization_id,
-        conversation_id: conversation.id,
-        role: "assistant",
-        text: greetingReply.text,
-      });
-
-      await createFollowupIfNeeded({
-        organization_id,
-        conversation_id: conversation.id,
-        phone,
-      });
-
-      return { reply: greetingReply, meta: { intent: "GREETING" } };
-    }
+    
 
     // ================================
     // AI
