@@ -449,10 +449,11 @@ await updateLeadStageAndScore({
 await savePipelineEvent({
   organization_id,
   lead_id: lead?.id,
-   conversation_id: conversation.id,
+  conversation_id: conversation.id,
   event_type: "LEAD_STAGE_UPDATED",
+  from_stage: prevStage,
+  to_stage: newStage,
   metadata: {
-    stage: newStage,
     score: newScore,
     intent: refinedIntent,
   },
