@@ -325,18 +325,29 @@ try {
   followupDate.setHours(followupDate.getHours() + 24);
 
   await db.query(
-    `
-    INSERT INTO followups (
-      organization_id,
-      conversation_id,
-      scheduled_for,
-      status,
-      created_at
-    )
-    VALUES ($1, $2, $3, 'pending', NOW())
-  `,
-    [organization_id, conversation.id, followupDate]
-  );
+  `
+  INSERT INTO followups (
+    organization_id,
+    conversation_id,
+    lead_phone,
+    message,
+    scheduled_for,
+    status,
+    sent,
+    retry_count,
+    created_at,
+    updated_at
+  )
+  VALUES ($1, $2, $3, $4, $5, 'pending', false, 0, NOW(), NOW())
+`,
+  [
+    organization_id,
+    conversation.id,
+    phone,
+    "Hola 😊 solo quería darle seguimiento a su consulta. ¿Le puedo ayudar en algo más?",
+    followupTime,
+  ]
+);
 
   console.log("📆 Followup scheduled");
 } catch (err) {
