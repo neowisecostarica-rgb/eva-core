@@ -350,11 +350,14 @@ export async function handleInbound(payload) {
     const reply = generateReply({
       text: replyText,
       intent: refinedIntent,
-      products:
-        refinedIntent === "BUY" || refinedIntent === "CLOSE_INTENT"
-          ? safeCatalog
-          : [],
-    });
+      const shouldInjectProducts =
+  refinedIntent === "CLOSE_INTENT";
+
+const reply = generateReply({
+  text: replyText,
+  intent: refinedIntent,
+  products: shouldInjectProducts ? safeCatalog : [],
+});
 
     await saveMessage({
       organization_id,
