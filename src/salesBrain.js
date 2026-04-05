@@ -345,7 +345,57 @@ export async function handleInbound(payload) {
         response: reply.text,
       },
     });
+// ================================
+// STAGE + SCORE ENGINE 🔥
+// ================================
 
+let newStage = "new";
+let newScore = 5;
+
+if (refinedIntent === "INFO") {
+  newScore = 15;
+}
+
+if (refinedIntent === "BUY") {
+  newStage = "qualified";
+  newScore = 45;
+}
+
+if (refinedIntent === "SERVICE") {
+  newStage = "qualified";
+  newScore = 35;
+}
+
+if (refinedIntent === "FOLLOWUP") {
+  newStage = "qualified";
+  newScore = 40;
+}
+
+if (refinedIntent === "CLOSE_INTENT" || isHotLeadIntent(refinedIntent, t)) {
+  newStage = "hot";
+  newScore = 90;
+}
+
+// 🔥 UPDATE LEAD
+await updateLeadStageAndScore({
+  organization_id,
+  lead_id: lead?.id,
+  new_stage: newStage,
+  new_score: newScore,
+});
+
+// 🔥 EVENT
+await savePipelineEvent({
+  organization_id,
+  lead_id: lead?.id,
+  event_type: "LEAD_STAGE_UPDATED",
+  metadata: {
+    stage: newStage,
+    score: newScore,
+    intent: refinedIntent,
+  },
+});
+    
     const isHotLead = isHotLeadIntent(refinedIntent, t);
 
     if (!isHotLead) {
