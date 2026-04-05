@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — SALES BRAIN (FIXED CLEAN FINAL)
+EVA CORE — SALES BRAIN (FIXED CLEAN FINAL + EVENTS)
 ====================================================
 */
 
@@ -9,6 +9,7 @@ import db, {
   findOrCreateLead,
   findOrCreateConversation,
   saveMessage,
+  savePipelineEvent, // 🔥 NUEVO
 } from "./db.js";
 
 import { searchCatalogSmart } from "./brain/utils/catalogEngine.js";
@@ -99,41 +100,33 @@ async function createFollowupIfNeeded({
     const followupDate = new Date();
     followupDate.setHours(followupDate.getHours() + hoursFromNow);
 
-    // 🔥 ESTE ES EL LOG CLAVE
     console.log("FOLLOWUP_CREATING", {
       conversation_id,
       phone,
     });
 
     await db.query(
-  `
-  INSERT INTO followups (
-    organization_id,
-    conversation_id,
-    lead_phone,
-    reason,
-    scheduled_for,
-    due_at,
-    status,
-    sent,
-    created_at,
-    updated_at
-  )
-  VALUES ($1, $2, $3, $4, $5, $5, 'PENDING', false, NOW(), NOW())
-  `,
-  [
-    organization_id,
-    conversation_id,
-    phone,
-    reason,
-    followupDate,
-  ]
-);
+      `
+      INSERT INTO followups (
+        organization_id,
+        conversation_id,
+        lead_phone,
+        reason,
+        scheduled_for,
+        due_at,
+        status,
+        sent,
+        created_at,
+        updated_at
+      )
+      VALUES ($1, $2, $3, $4, $5, $5, 'PENDING', false, NOW(), NOW())
+      `,
+      [organization_id, conversation_id, phone, reason, followupDate]
+    );
 
     console.log("FOLLOWUP_CREATED", {
       conversation_id,
     });
-
   } catch (err) {
     console.warn("Followup error:", err);
   }
@@ -153,22 +146,14 @@ export async function handleInbound(payload) {
 
     let safeCatalog = [];
 
-    // ================================
-    // PROMPT CONFIG
-    // ================================
     let promptConfig = null;
-
     try {
       promptConfig = await getPromptConfig(organization_id);
     } catch (err) {
       console.warn("PROMPT_CONFIG_ERROR", err);
     }
 
-    // ================================
-    // ORG SETTINGS
-    // ================================
     let orgSettings = null;
-
     try {
       orgSettings = await getOrganizationSettings(organization_id);
     } catch (err) {
@@ -203,6 +188,14 @@ export async function handleInbound(payload) {
       channel,
     });
 
+    // 🔥 EVENT 1
+    await savePipelineEvent({
+      organization_id,
+      lead_id: lead?.id,
+      event_type: "INBOUND_RECEIVED",
+      metadata: { text, channel },
+    });
+
     await saveMessage({
       organization_id,
       conversation_id: conversation.id,
@@ -211,9 +204,6 @@ export async function handleInbound(payload) {
       message_id,
     });
 
-    // ========================================
-    // CANCEL PENDING FOLLOWUPS
-    // ========================================
     await cancelPendingFollowups(conversation.id);
 
     const historyRes = await db.query(
@@ -249,6 +239,14 @@ export async function handleInbound(payload) {
       refinedIntent = "SERVICE";
     }
 
+    // 🔥 EVENT 2
+    await savePipelineEvent({
+      organization_id,
+      lead_id: lead?.id,
+      event_type: "INTENT_DETECTED",
+      metadata: { intent: refinedIntent, text },
+    });
+
     // ================================
     // CATALOG
     // ================================
@@ -264,7 +262,7 @@ export async function handleInbound(payload) {
     }
 
     // ================================
-    // GREETING DIRECT RESPONSE
+    // GREETING
     // ================================
     if (refinedIntent === "GREETING") {
       const greetingReply = {
@@ -283,14 +281,9 @@ export async function handleInbound(payload) {
         organization_id,
         conversation_id: conversation.id,
         phone,
-        reason: "sales_followup",
-        hoursFromNow: 24,
       });
 
-      return {
-        reply: greetingReply,
-        meta: { intent: "GREETING" },
-      };
+      return { reply: greetingReply, meta: { intent: "GREETING" } };
     }
 
     // ================================
@@ -322,19 +315,10 @@ export async function handleInbound(payload) {
       console.warn("AI error:", err);
     }
 
-    // ================================
-    // FALLBACK
-    // ================================
-    let replyText = aiText;
+    let replyText =
+      aiText ||
+      "Hola 😊 con mucho gusto le ayudo. ¿En qué le puedo colaborar?";
 
-    if (!replyText) {
-      replyText =
-        "Hola 😊 con mucho gusto le ayudo. ¿En qué le puedo colaborar?";
-    }
-
-    // ================================
-    // GENERATE REPLY
-    // ================================
     const reply = generateReply({
       text: replyText,
       intent: refinedIntent,
@@ -344,9 +328,6 @@ export async function handleInbound(payload) {
           : [],
     });
 
-    // ================================
-    // SAVE MESSAGE
-    // ================================
     await saveMessage({
       organization_id,
       conversation_id: conversation.id,
@@ -354,26 +335,26 @@ export async function handleInbound(payload) {
       text: reply.text,
     });
 
-    // ================================
-    // FOLLOWUP
-    // ================================
+    // 🔥 EVENT 3
+    await savePipelineEvent({
+      organization_id,
+      lead_id: lead?.id,
+      event_type: "AI_RESPONSE_SENT",
+      metadata: {
+        intent: refinedIntent,
+        response: reply.text,
+      },
+    });
+
     const isHotLead = isHotLeadIntent(refinedIntent, t);
 
-  if (!isHotLead) {
-  console.log("FOLLOWUP_TRIGGER", {
-    conversation_id: conversation.id,
-    intent: refinedIntent,
-    text: text,
-  });
-
-  await createFollowupIfNeeded({
-    organization_id,
-    conversation_id: conversation.id,
-    phone,
-    reason: "sales_followup",
-    hoursFromNow: 24,
-  });
-}
+    if (!isHotLead) {
+      await createFollowupIfNeeded({
+        organization_id,
+        conversation_id: conversation.id,
+        phone,
+      });
+    }
 
     return {
       reply,
