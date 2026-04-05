@@ -421,11 +421,11 @@ if (refinedIntent === "GREETING") {
     const reply = generateReply({
       text: replyText,
       intent: refinedIntent,
-      products:
-  refinedIntent === "BUY" || refinedIntent === "CLOSE_INTENT"
+   products:
+  (refinedIntent === "BUY" || refinedIntent === "CLOSE_INTENT") &&
+  safeCatalog.length > 0
     ? safeCatalog
     : [],
-    });
 
     await saveMessage({
       organization_id,
