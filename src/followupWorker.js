@@ -66,14 +66,16 @@ PROCESS FOLLOWUPS
 
 export async function processFollowups(sendMessage) {
   try {
-    const result = await pool.query(`
-      SELECT *
-      FROM followups
-      WHERE status = 'PENDING'
-      AND scheduled_for <= NOW()
-      ORDER BY scheduled_for ASC
-      LIMIT 20
-    `);
+    const { rows: followups } = await db.query(
+  `
+  SELECT *
+  FROM followups
+  WHERE status = 'pending'
+    AND scheduled_for <= NOW()
+  ORDER BY scheduled_for ASC
+  LIMIT 20
+`
+);
 
     const followups = result.rows;
     if (!followups.length) return;
