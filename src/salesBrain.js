@@ -333,8 +333,7 @@ export async function handleInbound(payload) {
         orgContext?.assistant_name || "nuestro equipo"
       }, ¿en qué le puedo ayudar?`;
 
-    let replyText;
-
+   
     if (!shouldUseAI) {
       replyText = fallbackGreeting;
     } else {
