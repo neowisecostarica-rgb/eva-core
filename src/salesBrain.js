@@ -239,6 +239,9 @@ export async function handleInbound(payload) {
 
     let refinedIntent = normalizeIntent(detectIntent(text));
     const t = String(text || "").toLowerCase();
+    if (refinedIntent === "OTHER" && history.length > 0) {
+  refinedIntent = "FOLLOWUP";
+}
 
     if (refinedIntent === "INFO" && t.includes("precio")) refinedIntent = "BUY";
     if (refinedIntent === "GREETING" && t.includes("busco")) refinedIntent = "BUY";
