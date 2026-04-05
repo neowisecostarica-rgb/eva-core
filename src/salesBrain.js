@@ -244,65 +244,67 @@ try {
       text: reply.text,
     });
 
-    // ================================
-    // FOLLOWUP
-    // ================================
-    try {
-      const isHotLead =
-        refinedIntent === "CLOSE_INTENT" ||
-        t.includes("quiero comprar") ||
-        t.includes("lo quiero") ||
-        t.includes("cómo pago");
+// ================================
+// FOLLOWUP
+// ================================
+try {
+  const isHotLead =
+    refinedIntent === "CLOSE_INTENT" ||
+    t.includes("quiero comprar") ||
+    t.includes("lo quiero") ||
+    t.includes("cómo pago");
 
-      if (!isHotLead) {
-        const followupDate = new Date();
-        followupDate.setHours(followupDate.getHours() + 24);
+  if (!isHotLead) {
+    const followupDate = new Date();
+    followupDate.setHours(followupDate.getHours() + 24);
 
-        // ========================================
-// PREVENT DUPLICATE FOLLOWUPS
-// ========================================
-// ========================================
-// PREVENT DUPLICATE FOLLOWUPS (FIX)
-// ========================================
-const existingFollowup = await db.query(
-  `
-  SELECT id FROM followups
-  WHERE conversation_id = $1
-    AND status IN ('pending', 'scheduled')
-  LIMIT 1
-  `,
-  [conversation.id]
-);
+    // ========================================
+    // PREVENT DUPLICATE FOLLOWUPS
+    // ========================================
+    const existingFollowup = await db.query(
+      `
+      SELECT id FROM followups
+      WHERE conversation_id = $1
+        AND status IN ('pending', 'scheduled')
+      LIMIT 1
+      `,
+      [conversation.id]
+    );
 
-if (existingFollowup.rows.length === 0) {
-  await db.query(
-    `
-    INSERT INTO followups (
-      organization_id,
-      conversation_id,
-      lead_phone,
-      reason,
-      scheduled_for,
-      status,
-      sent,
-      retry_count,
-      created_at,
-      updated_at
-    )
-    VALUES ($1, $2, $3, $4, $5, 'PENDING', false, 0, NOW(), NOW())
-    `,
-    [
-      organization_id,
-      conversation.id,
-      phone,
-      "sales_followup",
-      followupDate,
-    ]
-  );
-} else {
-  console.log("FOLLOWUP_SKIPPED_DUPLICATE", {
-    conversation_id: conversation.id,
-  });
+    if (existingFollowup.rows.length === 0) {
+      await db.query(
+        `
+        INSERT INTO followups (
+          organization_id,
+          conversation_id,
+          lead_phone,
+          reason,
+          scheduled_for,
+          status,
+          sent,
+          retry_count,
+          created_at,
+          updated_at
+        )
+        VALUES ($1, $2, $3, $4, $5, 'PENDING', false, 0, NOW(), NOW())
+        `,
+        [
+          organization_id,
+          conversation.id,
+          phone,
+          "sales_followup",
+          followupDate,
+        ]
+      );
+    } else {
+      console.log("FOLLOWUP_SKIPPED_DUPLICATE", {
+        conversation_id: conversation.id,
+      });
+    }
+  } // ✅ cierre del if
+
+} catch (err) {
+  console.warn("Followup error:", err);
 }
 
     return {
