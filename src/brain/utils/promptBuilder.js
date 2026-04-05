@@ -112,10 +112,15 @@ ${catalogResults
     // ================================
     const messages = [];
 
-    messages.push({
-      role: "system",
-      content: system + catalogContext,
-    });
+    const shouldInjectCatalog =
+  intent === "BUY" || intent === "INFO";
+
+messages.push({
+  role: "system",
+  content: shouldInjectCatalog
+    ? system + catalogContext
+    : system,
+});
 
     history.slice(-10).forEach((msg) => {
       messages.push({
