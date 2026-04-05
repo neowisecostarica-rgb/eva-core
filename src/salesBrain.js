@@ -54,6 +54,63 @@ function isHotLeadIntent(refinedIntent, normalizedText) {
   );
 }
 
+function extractBudget(text = "") {
+  try {
+    const match = text.replace(/[,\.]/g, "").match(/\b\d{5,}\b/);
+    if (match) return parseInt(match[0], 10);
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function extractUseCase(text = "") {
+  try {
+    const lower = text.toLowerCase();
+
+    if (lower.includes("para ")) {
+      const parts = lower.split("para ");
+      return parts[1]?.slice(0, 40) || null;
+    }
+
+    if (lower.includes("uso ")) {
+      const parts = lower.split("uso ");
+      return parts[1]?.slice(0, 40) || null;
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function extractProductInterest(text = "") {
+  try {
+    return text.split(" ").slice(0, 6).join(" ");
+  } catch {
+    return null;
+  }
+}
+
+function computeInterestLevel(intent, text = "") {
+  const t = text.toLowerCase();
+
+  if (
+    intent === "CLOSE_INTENT" ||
+    t.includes("lo quiero") ||
+    t.includes("cómo pago") ||
+    t.includes("como pago")
+  ) {
+    return "HIGH";
+  }
+
+  if (intent === "BUY" || intent === "FOLLOWUP") {
+    return "MEDIUM";
+  }
+
+  return "LOW";
+}
+
 async function cancelPendingFollowups(conversationId) {
   try {
     await db.query(
@@ -131,6 +188,7 @@ async function createFollowupIfNeeded({
     console.warn("Followup error:", err);
   }
 }
+
 
 /*
 ====================================================
