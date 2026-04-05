@@ -108,18 +108,17 @@ async function createFollowupIfNeeded({
     await db.query(
       `
       INSERT INTO followups (
-        organization_id,
-        conversation_id,
-        lead_phone,
-        reason,
-        scheduled_for,
-        status,
-        sent,
-        retry_count,
-        created_at,
-        updated_at
-      )
-      VALUES ($1, $2, $3, $4, $5, 'PENDING', false, 0, NOW(), NOW())
+  organization_id,
+  conversation_id,
+  lead_phone,
+  reason,
+  scheduled_for,
+  status,
+  sent,
+  created_at,
+  updated_at
+)
+VALUES ($1, $2, $3, $4, $5, 'PENDING', false, NOW(), NOW())
       `,
       [organization_id, conversation_id, phone, reason, followupDate]
     );
