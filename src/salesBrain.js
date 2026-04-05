@@ -246,11 +246,12 @@ export async function handleInbound(payload) {
 
     // 🔥 EVENT 1
     await savePipelineEvent({
-      organization_id,
-      lead_id: lead?.id,
-      event_type: "INBOUND_RECEIVED",
-      metadata: { text, channel },
-    });
+  organization_id,
+  lead_id: lead?.id,
+  conversation_id: conversation.id,
+  event_type: "INBOUND_RECEIVED",
+  metadata: { text, channel },
+});
 
     await saveMessage({
       organization_id,
@@ -299,6 +300,7 @@ export async function handleInbound(payload) {
     await savePipelineEvent({
       organization_id,
       lead_id: lead?.id,
+      conversation_id: conversation.id,
       event_type: "INTENT_DETECTED",
       metadata: { intent: refinedIntent, text },
     });
@@ -396,6 +398,7 @@ export async function handleInbound(payload) {
       organization_id,
       lead_id: lead?.id,
       event_type: "AI_RESPONSE_SENT",
+      conversation_id: conversation.id,
       metadata: {
         intent: refinedIntent,
         response: reply.text,
@@ -441,9 +444,12 @@ await updateLeadStageAndScore({
 });
 
 // 🔥 EVENT
+    const prevStage = lead?.stage || null;
+    
 await savePipelineEvent({
   organization_id,
   lead_id: lead?.id,
+   conversation_id: conversation.id,
   event_type: "LEAD_STAGE_UPDATED",
   metadata: {
     stage: newStage,
@@ -483,6 +489,7 @@ if (hasMemory) {
   await savePipelineEvent({
     organization_id,
     lead_id: lead?.id,
+    conversation_id: conversation.id,
     event_type: "LEAD_MEMORY_UPDATED",
     metadata: memory,
   });
