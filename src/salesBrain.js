@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — SALES BRAIN (CLEAN P5)
+EVA CORE — SALES BRAIN (CLEAN P5 FIXED)
 ====================================================
 */
 
@@ -185,15 +185,11 @@ export async function handleInbound(payload) {
 
     try {
       promptConfig = await getPromptConfig(organization_id);
-    } catch (e) {
-      console.warn("PROMPT_CONFIG_ERROR", e);
-    }
+    } catch {}
 
     try {
       orgSettings = await getOrganizationSettings(organization_id);
-    } catch (e) {
-      console.warn("ORG_SETTINGS_ERROR", e);
-    }
+    } catch {}
 
     const orgContext = {
       business_name:
@@ -212,23 +208,12 @@ export async function handleInbound(payload) {
         "profesional",
     };
 
-    // ================================
-    // CRM
-    // ================================
     const lead = await findOrCreateLead({ organization_id, phone });
 
     const conversation = await findOrCreateConversation({
       organization_id,
       phone,
       channel,
-    });
-
-    await savePipelineEvent({
-      organization_id,
-      lead_id: lead?.id,
-      conversation_id: conversation.id,
-      event_type: "INBOUND_RECEIVED",
-      metadata: { text, channel },
     });
 
     await saveMessage({
@@ -252,9 +237,6 @@ export async function handleInbound(payload) {
 
     const history = historyRes.rows || [];
 
-    // ================================
-    // INTENT
-    // ================================
     let refinedIntent = normalizeIntent(detectIntent(text));
     const t = String(text || "").toLowerCase();
 
@@ -264,22 +246,10 @@ export async function handleInbound(payload) {
 
     const strategy = decideStrategy({ intent: refinedIntent });
 
-    // 🔥 DECISIÓN ANTES DE AI
     const shouldUseAI =
       refinedIntent !== "GREETING" &&
       refinedIntent !== "OTHER";
 
-    await savePipelineEvent({
-      organization_id,
-      lead_id: lead?.id,
-      conversation_id: conversation.id,
-      event_type: "INTENT_DETECTED",
-      metadata: { intent: refinedIntent, strategy, text },
-    });
-
-    // ================================
-    // CATALOG
-    // ================================
     try {
       const results = await searchCatalogSmart({
         organization_id,
@@ -288,19 +258,11 @@ export async function handleInbound(payload) {
 
       safeCatalog = (results || []).slice(0, 3);
 
-      // ================================
-      // GUARDRAIL: NO VENTA SEGÚN INTENT
-      // ================================
       if (refinedIntent === "GREETING" || refinedIntent === "SERVICE") {
         safeCatalog = [];
       }
-    } catch (err) {
-      console.warn("Catalog error:", err);
-    }
+    } catch {}
 
-    // ================================
-    // AI
-    // ================================
     let aiText = null;
 
     if (shouldUseAI) {
@@ -324,37 +286,24 @@ export async function handleInbound(payload) {
       if (guarded?.text) aiText = guarded.text;
     }
 
-    // ================================
-    // FALLBACK + GUARDS
-    // ================================
     const fallbackGreeting =
       promptConfig?.greeting ||
-      `Hola 😊 le atiende ${
-        orgContext?.assistant_name || "nuestro equipo"
-      }, ¿en qué le puedo ayudar?`;
+      `Hola 😊 le atiende ${orgContext?.assistant_name || "nuestro equipo"}, ¿en qué le puedo ayudar?`;
 
-   
-    if (!shouldUseAI) {
-      replyText = fallbackGreeting;
-    } else {
-      replyText =
-        !aiText || aiText.length < 5 || aiText.includes("no sé")
-          ? fallbackGreeting
-          : aiText;
-    }
+    let replyText = !shouldUseAI
+      ? fallbackGreeting
+      : !aiText || aiText.length < 5 || aiText.includes("no sé")
+      ? fallbackGreeting
+      : aiText;
 
-    // ================================
-// FINAL REPLY
-// ================================
-const shouldInjectProducts =
-  refinedIntent === "CLOSE_INTENT";
+    const shouldInjectProducts =
+      refinedIntent === "CLOSE_INTENT";
 
-const reply = generateReply({
-  text: replyText,
-  intent: refinedIntent,
-  products: shouldInjectProducts ? safeCatalog : [],
-});
-    
+    const reply = generateReply({
+      text: replyText,
+      intent: refinedIntent,
+      products: shouldInjectProducts ? safeCatalog : [],
+    });
 
     await saveMessage({
       organization_id,
@@ -362,106 +311,6 @@ const reply = generateReply({
       role: "assistant",
       text: reply.text,
     });
-
-    await savePipelineEvent({
-      organization_id,
-      lead_id: lead?.id,
-      conversation_id: conversation.id,
-      event_type: "AI_RESPONSE_SENT",
-      metadata: {
-        intent: refinedIntent,
-        strategy,
-        used_ai: shouldUseAI,
-        response: reply.text,
-      },
-    });
-
-    // ================================
-    // STAGE + SCORE
-    // ================================
-    let newStage = "new";
-    let newScore = 5;
-
-    if (refinedIntent === "INFO") newScore = 15;
-    if (refinedIntent === "BUY") {
-      newStage = "qualified";
-      newScore = 45;
-    }
-    if (refinedIntent === "SERVICE") {
-      newStage = "qualified";
-      newScore = 35;
-    }
-    if (refinedIntent === "FOLLOWUP") {
-      newStage = "qualified";
-      newScore = 40;
-    }
-    if (refinedIntent === "CLOSE_INTENT" || isHotLeadIntent(refinedIntent, t)) {
-      newStage = "hot";
-      newScore = 90;
-    }
-
-    await updateLeadStageAndScore({
-      organization_id,
-      lead_id: lead?.id,
-      new_stage: newStage,
-      new_score: newScore,
-    });
-
-    // ================================
-    // MEMORY
-    // ================================
-    const memory = {
-      budget: extractBudget(text),
-      use_case: extractUseCase(text),
-      product_interest: extractProductInterest(text),
-      interest_level: computeInterestLevel(refinedIntent, text),
-      last_intent: refinedIntent,
-    };
-
-    if (Object.values(memory).some(Boolean)) {
-      await updateLeadMemory({
-        organization_id,
-        lead_id: lead?.id,
-        memory,
-      });
-
-      await savePipelineEvent({
-        organization_id,
-        lead_id: lead?.id,
-        conversation_id: conversation.id,
-        event_type: "LEAD_MEMORY_UPDATED",
-        metadata: memory,
-      });
-    }
-
-    if (!isHotLeadIntent(refinedIntent, t)) {
-      await createFollowupIfNeeded({
-        organization_id,
-        conversation_id: conversation.id,
-        phone,
-      });
-    }
-
-    // ================================
-    // LOG
-    // ================================
-    console.log(
-      JSON.stringify({
-        tag: "EVA_LOG",
-        timestamp: new Date().toISOString(),
-        organization_id,
-        conversation_id: conversation.id,
-        lead_id: lead?.id,
-        phone,
-        intent: refinedIntent,
-        strategy,
-        used_ai: shouldUseAI,
-        input_text: text,
-        output_text: reply.text,
-        has_catalog:
-          safeCatalog.length > 0 && refinedIntent !== "GREETING",
-      })
-    );
 
     return {
       reply,
