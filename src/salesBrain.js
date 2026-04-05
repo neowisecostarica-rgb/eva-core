@@ -156,15 +156,25 @@ const safeHours = Number(hoursFromNow) || 24;
     await db.query(
       `
       INSERT INTO followups (
-        organization_id,
-        conversation_id,
-        lead_phone,
-        status,
-        reason,
-        scheduled_for,
-        created_at
-      )
-      VALUES ($1, $2, $3, 'PENDING', $4, NOW() + ($5 * interval '1 hour'), NOW())
+  organization_id,
+  conversation_id,
+  lead_phone,
+  status,
+  reason,
+  scheduled_for,
+  due_at,
+  created_at
+)
+     VALUES (
+  $1,
+  $2,
+  $3,
+  'PENDING',
+  $4,
+  NOW() + ($5 * interval '1 hour'),
+  NOW() + ($5 * interval '1 hour'),
+  NOW()
+)
       `,
       [organization_id, conversation_id, phone, reason, safeHours]
     );
