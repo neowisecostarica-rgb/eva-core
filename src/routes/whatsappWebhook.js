@@ -1,6 +1,6 @@
 /*
 ====================================================
-WHATSAPP WEBHOOK — EVA CORE (STABILIZATION PACK v1)
+WHATSAPP WEBHOOK — EVA CORE (STABILIZATION PACK v2)
 ====================================================
 */
 
@@ -8,7 +8,6 @@ import express from "express";
 
 import { splitReply } from "../brain/utils/splitReply.js";
 
-// 🔥 NUEVO: contrato runtime
 import {
   extractReplyFromMessagesRouteResponse,
   validateMessagesRouteResponse
@@ -25,6 +24,12 @@ const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
 const EVA_ENDPOINT = process.env.EVA_ENDPOINT;
 const EVA_API_KEY = process.env.EVA_API_KEY;
+
+/* ======================================
+   IDEMPOTENCY MEMORY
+====================================== */
+
+const processedMessages = new Set();
 
 /* ======================================
    DEBUG
@@ -93,6 +98,19 @@ router.post("/", async (req, res) => {
       message_id
     });
 
+    /* ======================================
+       🔥 IDENTITY / DUPLICATE BLOCK
+    ====================================== */
+
+    if (message_id && processedMessages.has(message_id)) {
+      console.log("⚠️ Duplicate message skipped:", message_id);
+      return res.sendStatus(200);
+    }
+
+    if (message_id) {
+      processedMessages.add(message_id);
+    }
+
     if (!EVA_ENDPOINT || !EVA_API_KEY) {
       console.error("❌ EVA CONFIG MISSING");
       return res.sendStatus(500);
@@ -126,11 +144,9 @@ router.post("/", async (req, res) => {
 
     console.log("🧠 EVA RESPONSE:", data);
 
-    /*
-    ======================================
-    🔥 CONTRACT VALIDATION
-    ======================================
-    */
+    /* ======================================
+       CONTRACT VALIDATION
+    ====================================== */
 
     try {
       validateMessagesRouteResponse(data);
@@ -143,25 +159,15 @@ router.post("/", async (req, res) => {
       return res.sendStatus(500);
     }
 
-    /*
-    ======================================
-    🔥 EXTRACT REPLY (OFICIAL)
-    ======================================
-    */
+    /* ======================================
+       EXTRACT REPLY
+    ====================================== */
 
     const { text: replyText, meta } =
       extractReplyFromMessagesRouteResponse(data);
 
-    const isDuplicate = meta?.duplicate === true;
-
-    /*
-    ======================================
-       IDEMPOTENCY HANDLING
-    ======================================
-    */
-
-    if (isDuplicate) {
-      console.log("♻️ Duplicate detected — no reply sent");
+    if (meta?.duplicate === true) {
+      console.log("♻️ Duplicate detected (core)");
       return res.sendStatus(200);
     }
 
@@ -170,38 +176,31 @@ router.post("/", async (req, res) => {
       return res.sendStatus(200);
     }
 
-    /*
-    ======================================
-       SEND TO WHATSAPP
-    ======================================
-    */
+    /* ======================================
+       SEND TO WHATSAPP (🔥 SINGLE MESSAGE)
+    ====================================== */
 
-    const messages = splitReply(replyText);
+    const msg = splitReply(replyText)[0];
 
-    for (const msg of messages) {
-      const waResponse = await fetch(
-        `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${WHATSAPP_TOKEN}`,
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            messaging_product: "whatsapp",
-            to: phone,
-            text: { body: msg }
-          })
-        }
-      );
+    const waResponse = await fetch(
+      `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${WHATSAPP_TOKEN}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          messaging_product: "whatsapp",
+          to: phone,
+          text: { body: msg }
+        })
+      }
+    );
 
-      const waData = await waResponse.json();
+    const waData = await waResponse.json();
 
-      console.log("✅ WhatsApp OK:", waData);
-
-      // delay humano
-      await new Promise((res) => setTimeout(res, 1200));
-    }
+    console.log("✅ WhatsApp OK:", waData);
 
     return res.sendStatus(200);
 
