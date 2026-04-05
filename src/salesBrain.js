@@ -261,6 +261,9 @@ try {
         // ========================================
 // PREVENT DUPLICATE FOLLOWUPS
 // ========================================
+// ========================================
+// PREVENT DUPLICATE FOLLOWUPS (FIX)
+// ========================================
 const existingFollowup = await db.query(
   `
   SELECT id FROM followups
@@ -268,41 +271,39 @@ const existingFollowup = await db.query(
     AND status IN ('pending', 'scheduled')
   LIMIT 1
   `,
-  [conversationId]
+  [conversation.id]
 );
 
-if (existingFollowup.rows.length > 0) {
-  logger.info("FOLLOWUP_SKIPPED_DUPLICATE", { conversationId });
+if (existingFollowup.rows.length === 0) {
+  await db.query(
+    `
+    INSERT INTO followups (
+      organization_id,
+      conversation_id,
+      lead_phone,
+      reason,
+      scheduled_for,
+      status,
+      sent,
+      retry_count,
+      created_at,
+      updated_at
+    )
+    VALUES ($1, $2, $3, $4, $5, 'PENDING', false, 0, NOW(), NOW())
+    `,
+    [
+      organization_id,
+      conversation.id,
+      phone,
+      "sales_followup",
+      followupDate,
+    ]
+  );
 } else {
-  
-        await db.query(
-          `
-          INSERT INTO followups (
-            organization_id,
-            conversation_id,
-            lead_phone,
-            reason,
-            scheduled_for,
-            status,
-            sent,
-            retry_count,
-            created_at,
-            updated_at
-          )
-          VALUES ($1, $2, $3, $4, $5, 'PENDING', false, 0, NOW(), NOW())
-        `,
-          [
-            organization_id,
-            conversation.id,
-            phone,
-            "sales_followup",
-            followupDate,
-          ]
-        );
-      }
-    } catch (err) {
-      console.warn("Followup error:", err);
-    }
+  console.log("FOLLOWUP_SKIPPED_DUPLICATE", {
+    conversation_id: conversation.id,
+  });
+}
 
     return {
       reply,
