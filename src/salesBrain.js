@@ -345,12 +345,9 @@ export async function handleInbound(payload) {
     }
 
     // ================================
-    // FINAL REPLY
-    // ================================
-    const reply = generateReply({
-      text: replyText,
-      intent: refinedIntent,
-      const shouldInjectProducts =
+// FINAL REPLY
+// ================================
+const shouldInjectProducts =
   refinedIntent === "CLOSE_INTENT";
 
 const reply = generateReply({
@@ -358,6 +355,7 @@ const reply = generateReply({
   intent: refinedIntent,
   products: shouldInjectProducts ? safeCatalog : [],
 });
+    
 
     await saveMessage({
       organization_id,
