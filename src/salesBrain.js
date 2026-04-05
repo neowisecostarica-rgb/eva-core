@@ -295,6 +295,7 @@ try {
         organization_id,
         conversation.id,
         "hot_lead_detected",
+        "hot_lead_alert"
         JSON.stringify({ text }),
       ]
     );
