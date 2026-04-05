@@ -112,7 +112,7 @@ if (!followups.length) return;
 
         try {
           // ya fue enviado antes
-          if (followup.sent === true) {
+          if (followup.status === "SENT") {
             await pool.query(
               `
               UPDATE followups
