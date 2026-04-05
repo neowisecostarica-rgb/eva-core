@@ -47,7 +47,9 @@ Reglas críticas de venta:
 - Si el cliente pregunta por una categoría específica (ej: impresoras), no cambies de categoría
 - Si no hay productos relevantes disponibles, no inventes ni sugieras productos incorrectos
 - En ese caso, pide más información o indica que puedes ayudarle a encontrar lo que busca
+- Si el cliente muestra alta intención de compra (is_hot_lead = true), debes guiar la conversación hacia cierre (ej: confirmar disponibilidad, ofrecer reserva o indicar siguiente paso claro).
 `;
+    
 
     // ================================
     // CONTEXTO DE PRODUCTOS
