@@ -232,7 +232,7 @@ if (!followups.length) return;
         await pool.query(
           `
           UPDATE followups
-          SET status = 'DONE',
+         SET status = 'SENT',
               sent = true,
               sent_at = NOW(),
               updated_at = NOW()
