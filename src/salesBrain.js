@@ -337,7 +337,22 @@ await savePipelineEvent({
       !aiText || aiText.length < 5 || aiText.includes("no sé")
         ? fallbackGreeting
         : aiText;
+let replyText =
+  !aiText || aiText.length < 5 || aiText.includes("no sé")
+    ? fallbackGreeting
+    : aiText;
 
+// ================================
+// GUARDRAIL: LIMPIEZA DE TEXTO (NO VENTA)
+// ================================
+if (refinedIntent === "GREETING" || refinedIntent === "SUPPORT") {
+  replyText = replyText
+    .replace(/₡\s?\d+/g, "")
+    .replace(/\*\*.*?\*\*/g, "")
+    .replace(/laptop[s]?|computadora[s]?|equipo[s]?/gi, "");
+}
+    
+    
     // ================================
 // GUARDRAIL: NO VENTA SEGÚN INTENT
 // ================================
