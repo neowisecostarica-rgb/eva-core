@@ -310,7 +310,7 @@ if (shouldUseAI) {
   }
 }
 
-let aiText = null;
+
 
 if (shouldUseAI) {
   const isQualificationPhase =
