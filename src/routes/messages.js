@@ -110,6 +110,10 @@ POST /v1/messages/inbound
 */
 
 router.post("/inbound", authenticate, async (req, res) => {
+  // ================================
+// PERF START
+// ================================
+const startTime = Date.now();
   const request_id = crypto.randomUUID();
   const organization_id = req.organization_id || req.organization?.id || null;
 
