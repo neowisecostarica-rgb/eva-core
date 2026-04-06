@@ -7,6 +7,7 @@ import { validateInbound } from "../validators.js";
 import { handleInbound } from "../salesBrain.js";
 import { createLogger } from "../lib/logger.js";
 import { checkRateLimit } from "../lib/rateLimiter.js";
+import db from "../db.js";
 
 import {
   validateHandleInboundResult,
