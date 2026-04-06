@@ -285,7 +285,26 @@ if (shouldUseAI) {
     promptConfig,
   });
 
-      const aiResult = await runAI({ prompt });
+     const builtPrompt = buildPrompt({
+  context: {
+    intent: refinedIntent,
+    strategy,
+    organization: orgContext,
+  },
+  catalogResults: safeCatalog,
+  history,
+  promptConfig,
+});
+
+// 🔥 convertir a messages correctamente
+const messages = [
+  {
+    role: "system",
+    content: builtPrompt,
+  },
+];
+
+const aiResult = await runAI({ prompt: messages });
 
       enforceAIRuntime({ aiResponse: aiResult });
 
