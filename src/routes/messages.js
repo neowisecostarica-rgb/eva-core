@@ -219,10 +219,25 @@ log.info("CONTEXT_BUILT", {
     
     log.info("PAYLOAD_READY", payload);
 
-    const result = await handleInbound({
+    // ================================
+// PERF BRAIN START
+// ================================
+const brainStart = Date.now();
+
+const result = await handleInbound({
   ...payload,
   context,
 });
+
+// ================================
+// PERF BRAIN END
+// ================================
+const brainTime = Date.now() - brainStart;
+
+log.info("PERF_BRAIN", {
+  ms: brainTime,
+});
+    
 
     log.info("BRAIN_RESPONSE", {
       preview: result?.reply?.text?.slice(0, 120) || null,
