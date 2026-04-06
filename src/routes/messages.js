@@ -191,9 +191,23 @@ if (payload.message_id) {
   }
 }
     
-    const context = await buildContext({
+    // ================================
+// PERF CONTEXT START
+// ================================
+const contextStart = Date.now();
+
+const context = await buildContext({
   organization_id,
   phone: validated.phone,
+});
+
+// ================================
+// PERF CONTEXT END
+// ================================
+const contextTime = Date.now() - contextStart;
+
+log.info("PERF_CONTEXT", {
+  ms: contextTime,
 });
 
 log.info("CONTEXT_BUILT", {
