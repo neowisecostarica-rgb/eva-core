@@ -269,9 +269,13 @@ export async function handleInbound(payload) {
     let aiText = null;
 
 if (shouldUseAI) {
+  // ================================
+  // AI PROMPT OPTIMIZADO (P1.3 FIX)
+  // ================================
+
   const isQualificationPhase =
     refinedIntent === "BUY" &&
-   !isHotLeadIntent(refinedIntent, t, promptConfig);
+    !isHotLeadIntent(refinedIntent, t, promptConfig);
 
   const prompt = buildPrompt({
     context: {
@@ -284,6 +288,27 @@ if (shouldUseAI) {
     history,
     promptConfig,
   });
+
+  const aiResult = await runAI({
+    prompt: [
+      {
+        role: "system",
+        content: prompt,
+      },
+    ],
+  });
+
+  enforceAIRuntime({ aiResponse: aiResult });
+
+  const guarded = applyAIGuards({ aiResponse: aiResult });
+
+  if (guarded?.text) {
+    aiText = formatAIResponse({
+      text: guarded.text,
+      agentName: orgContext?.assistant_name || "Eva",
+    });
+  }
+}
 
      const builtPrompt = buildPrompt({
   context: {
