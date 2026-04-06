@@ -106,7 +106,7 @@ app.listen(PORT, () => {
 async function sendWhatsAppMessage({ phone, message }) {
   try {
     await fetch(
-      `https://graph.facebook.com/v18.0/${process.env.WHATSAPP_PHONE_ID}/messages`,
+      `https://graph.facebook.com/v18.0/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`,
       {
         method: "POST",
         headers: {
