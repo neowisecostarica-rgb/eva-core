@@ -23,7 +23,7 @@ import { applyAIGuards } from "./brain/utils/aiGuards.js";
 import { buildPrompt } from "./brain/utils/promptBuilder.js";
 import { getPromptConfig } from "./brain/utils/getPromptConfig.js";
 import { detectIntent } from "./brain/engines/intentEngine.js";
-
+import { formatAIResponse } from "./utils/responseFormatter.js";
 /*
 ====================================================
 HELPERS
@@ -310,7 +310,12 @@ const aiResult = await runAI({ prompt: messages });
 
       const guarded = applyAIGuards({ aiResponse: aiResult });
 
-      if (guarded?.text) aiText = guarded.text;
+      if (guarded?.text) {
+  aiText = formatAIResponse({
+    text: guarded.text,
+    agentName: orgContext?.agent_name || "Eva",
+  });
+}
     }
 
     const fallbackGreeting =
