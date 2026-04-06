@@ -164,6 +164,28 @@ router.post("/inbound", authenticate, async (req, res) => {
       message_id: validated.message_id || null,
     };
 
+    // ================================
+// IDEMPOTENCIA CHECK (P0.2)
+// ================================
+
+if (payload.message_id) {
+  const existing = await db.query(
+    `SELECT id FROM messages WHERE external_message_id = $1 LIMIT 1`,
+    [payload.message_id]
+  );
+
+  if (existing.rows.length > 0) {
+    log.warn("DUPLICATE_MESSAGE_IGNORED", {
+      message_id: payload.message_id,
+    });
+
+    return res.json({
+      success: true,
+      duplicate: true,
+    });
+  }
+}
+    
     const context = await buildContext({
   organization_id,
   phone: validated.phone,
