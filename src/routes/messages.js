@@ -258,7 +258,15 @@ log.info("PERF_BRAIN", {
     }
 
     const response = buildMessagesRouteResponse(result);
+// ================================
+// PERF TOTAL
+// ================================
+const totalTime = Date.now() - startTime;
 
+log.info("PERF_TOTAL", {
+  ms: totalTime,
+});
+    
     return res.json(response);
   } catch (err) {
     log.error("INBOUND_ERROR", {
