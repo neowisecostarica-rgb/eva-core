@@ -310,38 +310,45 @@ if (shouldUseAI) {
   }
 }
 
-     const builtPrompt = buildPrompt({
-  context: {
-    intent: refinedIntent,
-    strategy,
-    organization: orgContext,
-  },
-  catalogResults: safeCatalog,
-  history,
-  promptConfig,
-});
+let aiText = null;
 
-// 🔥 convertir a messages correctamente
-const messages = [
-  {
-    role: "system",
-    content: builtPrompt,
-  },
-];
+if (shouldUseAI) {
+  const isQualificationPhase =
+    refinedIntent === "BUY" &&
+    !isHotLeadIntent(refinedIntent, t, promptConfig);
 
-const aiResult = await runAI({ prompt: messages });
-
-      enforceAIRuntime({ aiResponse: aiResult });
-
-      const guarded = applyAIGuards({ aiResponse: aiResult });
-
-      if (guarded?.text) {
-  aiText = formatAIResponse({
-    text: guarded.text,
-    agentName: orgContext?.agent_name || "Eva",
+  const prompt = buildPrompt({
+    context: {
+      intent: refinedIntent,
+      strategy,
+      organization: orgContext,
+      force_mode: isQualificationPhase ? "QUALIFY_ONLY" : null,
+    },
+    catalogResults: isQualificationPhase ? [] : safeCatalog,
+    history,
+    promptConfig,
   });
+
+  const aiResult = await runAI({
+    prompt: [
+      {
+        role: "system",
+        content: prompt,
+      },
+    ],
+  });
+
+  enforceAIRuntime({ aiResponse: aiResult });
+
+  const guarded = applyAIGuards({ aiResponse: aiResult });
+
+  if (guarded?.text) {
+    aiText = formatAIResponse({
+      text: guarded.text,
+      agentName: orgContext?.assistant_name || "Eva",
+    });
+  }
 }
-    }
 
     const fallbackGreeting =
       promptConfig?.greeting ||
