@@ -23,7 +23,7 @@ import { applyAIGuards } from "./brain/utils/aiGuards.js";
 import { buildPrompt } from "./brain/utils/promptBuilder.js";
 import { getPromptConfig } from "./brain/utils/getPromptConfig.js";
 import { detectIntent } from "./brain/engines/intentEngine.js";
-import { formatAIResponse } from "./utils/responseFormatter.js";
+import { formatAIResponse } from "./brain/utils/responseFormatter.js";
 /*
 ====================================================
 HELPERS
