@@ -365,27 +365,7 @@ if (shouldUseAI) {
     promptConfig,
   });
 
-  const aiResult = await runAI({
-    prompt: [
-      {
-        role: "system",
-        content: prompt,
-      },
-    ],
-  });
-
-  enforceAIRuntime({ aiResponse: aiResult });
-
-  const guarded = applyAIGuards({ aiResponse: aiResult });
-
-  if (guarded?.text) {
-    aiText = formatAIResponse({
-      text: guarded.text,
-      agentName: orgContext?.assistant_name || "Eva",
-    });
-  }
-}
-
+  
     const fallbackGreeting =
       promptConfig?.greeting ||
       `Hola 😊 le atiende ${orgContext?.assistant_name || "nuestro equipo"}, ¿en qué le puedo ayudar?`;
