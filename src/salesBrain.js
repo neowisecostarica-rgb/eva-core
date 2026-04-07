@@ -283,7 +283,16 @@ export async function handleInbound(payload) {
     if (refinedIntent === "GREETING" && t.includes("busco")) refinedIntent = "BUY";
     if (t.includes("no sirve") || t.includes("error")) refinedIntent = "SERVICE";
 
-    const strategy = decideStrategy({ intent: refinedIntent });
+const knownData = buildKnownData({
+  text,
+  lead,
+});
+
+const strategy = decideStrategy({
+  intent: refinedIntent,
+  stage,
+  known_data: knownData,
+});
 
     const stage = detectStage({
       intent: refinedIntent,
