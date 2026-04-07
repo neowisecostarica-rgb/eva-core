@@ -182,7 +182,15 @@ export async function handleInbound(payload) {
       lead,
       text,
     });
-
+await savePipelineEvent({
+  organization_id,
+  lead_id: lead.id,
+  event_type: "STAGE_UPDATED",
+  metadata: {
+    stage,
+  },
+});
+    
     const shouldUseAI = !!strategy;
 
     try {
