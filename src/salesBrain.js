@@ -193,6 +193,46 @@ export async function handleInbound(payload) {
     let aiText = null;
 
     // ================================
+// SALES RADAR (P1.6)
+// ================================
+let salesRadar = "";
+
+if (refinedIntent === "BUY") {
+  if (t.includes("estudi") || t.includes("colegio") || t.includes("universidad")) {
+    salesRadar = `
+OPORTUNIDAD DETECTADA:
+Cliente busca equipo para estudio.
+Prioriza:
+- equipos confiables
+- buena batería
+- precio accesible
+Sugiere soluciones prácticas.
+`;
+  }
+
+  if (t.includes("trabajo") || t.includes("oficina")) {
+    salesRadar = `
+OPORTUNIDAD DETECTADA:
+Cliente busca equipo para trabajo.
+Prioriza:
+- rendimiento estable
+- multitarea
+- durabilidad
+`;
+  }
+
+  if (t.includes("rápida") || t.includes("lenta")) {
+    salesRadar = `
+OPORTUNIDAD DETECTADA:
+Cliente tiene problema de rendimiento.
+Sugiere:
+- upgrade SSD
+- aumento de RAM
+`;
+  }
+}
+    
+    // ================================
     // AI (ÚNICO BLOQUE)
     // ================================
     if (shouldUseAI) {
