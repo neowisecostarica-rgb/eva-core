@@ -9,7 +9,7 @@ export function buildPrompt({
     strategy,
     stage,
     organization,
-     sales_radar,
+    sales_radar,
     force_mode = null,
   } = context || {};
 
@@ -33,60 +33,108 @@ export function buildPrompt({
       : "No hay productos disponibles.";
 
   // ================================
-  // FORCE MODE (PRIORIDAD ALTA)
+  // 🧠 STRATEGY CONTROL (CORE)
   // ================================
-  let behaviorBlock = "";
+  let strategyBlock = "";
 
-  if (force_mode === "QUALIFY_ONLY") {
-    behaviorBlock = `
-IMPORTANTE:
+  if (strategy === "ASK") {
+    strategyBlock = `
+ESTRATEGIA: SOLICITAR INFORMACIÓN
+
+- Haz preguntas para entender al cliente
 - NO recomiendes productos
 - NO menciones precios
-- SOLO haz preguntas para entender al cliente
-- Tu objetivo es calificar antes de vender
+- Mantén la respuesta corta
+- Termina con una pregunta
 `;
   }
 
-  // ================================
-  // STAGE CONTROL (P1.5)
-  // ================================
-  let stageBlock = "";
+  if (strategy === "QUALIFY") {
+    strategyBlock = `
+ESTRATEGIA: CALIFICACIÓN
 
-  if (stage === "QUALIFYING") {
-    stageBlock = `
-FASE: CALIFICACIÓN
-
+- Profundiza en la necesidad del cliente
+- Pregunta sobre uso, presupuesto o contexto
 - NO recomiendes productos todavía
-- NO menciones precios
-- Haz preguntas para entender:
-  - uso
-  - necesidad
-  - presupuesto
-Tu objetivo es obtener información antes de vender.
+- NO cierres la venta aún
 `;
   }
 
-  if (stage === "MID") {
-    stageBlock = `
-FASE: EXPLORACIÓN
+  if (strategy === "RECOMMEND") {
+    strategyBlock = `
+ESTRATEGIA: RECOMENDACIÓN
 
-- Ya tienes información del cliente
-- Puedes sugerir opciones
-- No cierres agresivamente
-- Guía la conversación hacia una decisión
+- Sugiere 1 a 3 opciones del catálogo
+- Explica brevemente por qué son adecuadas
+- Mantén lenguaje simple
+- Guía hacia una decisión
 `;
   }
 
-  if (stage === "HOT") {
-    stageBlock = `
-FASE: CIERRE
+  if (strategy === "EXPLAIN") {
+    strategyBlock = `
+ESTRATEGIA: EXPLICACIÓN
+
+- Responde la duda de forma clara
+- No des demasiada información
+- Evita lenguaje técnico complejo
+`;
+  }
+
+  if (strategy === "EXPLAIN_CLOSE") {
+    strategyBlock = `
+ESTRATEGIA: EXPLICAR Y CERRAR
+
+- Explica brevemente la situación
+- Da una recomendación clara
+- Sugiere acción inmediata
+`;
+  }
+
+  if (strategy === "CLOSE") {
+    strategyBlock = `
+ESTRATEGIA: CIERRE
 
 - El cliente está listo para comprar
-- Debes guiar al cierre
-- Sugiere acción clara:
+- NO hagas más preguntas innecesarias
+- Indica claramente el siguiente paso:
   - compra
   - apartado
-  - coordinación inmediata
+  - coordinación
+`;
+  }
+
+  if (strategy === "FOLLOWUP") {
+    strategyBlock = `
+ESTRATEGIA: SEGUIMIENTO
+
+- Retoma la conversación de forma natural
+- Menciona el interés previo
+- Invita a continuar
+`;
+  }
+
+  if (!strategyBlock) {
+    strategyBlock = `
+ESTRATEGIA: GENERAL
+
+- Responde de forma útil
+- Mantén la conversación activa
+`;
+  }
+
+  // ================================
+  // 🚨 FORCE MODE (OVERRIDE)
+  // ================================
+  let forceBlock = "";
+
+  if (force_mode === "QUALIFY_ONLY") {
+    forceBlock = `
+MODO FORZADO:
+
+- SOLO hacer preguntas
+- NO recomendar productos
+- NO mencionar precios
 `;
   }
 
@@ -95,12 +143,11 @@ Eres ${agentName}, asistente comercial de ${businessName}.
 
 ${customInstructions}
 
-Modo actual: ${strategy}
+${strategyBlock}
 
-${stageBlock}
+${forceBlock}
+
 ${sales_radar || ""}
-
-${behaviorBlock}
 
 Historial:
 ${historyText}
@@ -109,7 +156,8 @@ Productos disponibles:
 ${catalogText}
 
 Responde de forma natural, clara y útil.
-Evita sonar forzado o insistente.
+Evita sonar forzado.
+Mantén mensajes cortos.
 Siempre guía la conversación hacia el siguiente paso.
 `;
 }
