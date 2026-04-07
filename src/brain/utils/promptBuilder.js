@@ -97,6 +97,7 @@ ${customInstructions}
 Modo actual: ${strategy}
 
 ${stageBlock}
+${sales_radar || ""}
 
 ${behaviorBlock}
 
