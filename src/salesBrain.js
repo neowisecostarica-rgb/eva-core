@@ -173,9 +173,7 @@ export async function handleInbound(payload) {
       text,
     });
 
-    const shouldUseAI =
-      refinedIntent !== "GREETING" &&
-      refinedIntent !== "OTHER";
+    const shouldUseAI = !!strategy;
 
     try {
       const results = await searchCatalogSmart({
