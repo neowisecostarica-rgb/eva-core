@@ -149,6 +149,7 @@ function detectStage({ intent, lead, text = "" }) {
 
   return currentStage;
 }
+
 function buildKnownData({ text = "", lead = {} }) {
   const lower = String(text || "").toLowerCase();
 
@@ -266,14 +267,14 @@ export async function handleInbound(payload) {
     const t = String(text || "").toLowerCase();
 
     await savePipelineEvent({
-  organization_id,
-  lead_id: lead.id,
-  event_type: "INTENT_DETECTED",
-  metadata: {
-    intent: refinedIntent,
-    text,
-  },
-});
+      organization_id,
+      lead_id: lead.id,
+      event_type: "INTENT_DETECTED",
+      metadata: {
+        intent: refinedIntent,
+        text,
+      },
+    });
 
     if (refinedIntent === "OTHER" && history.length > 0) {
       refinedIntent = "FOLLOWUP";
@@ -283,31 +284,38 @@ export async function handleInbound(payload) {
     if (refinedIntent === "GREETING" && t.includes("busco")) refinedIntent = "BUY";
     if (t.includes("no sirve") || t.includes("error")) refinedIntent = "SERVICE";
 
-const knownData = buildKnownData({
-  text,
-  lead,
-});
-
-const strategy = decideStrategy({
-  intent: refinedIntent,
-  stage,
-  known_data: knownData,
-});
-
+    // ================================
+    // STAGE
+    // ================================
     const stage = detectStage({
       intent: refinedIntent,
       lead,
       text,
     });
-await savePipelineEvent({
-  organization_id,
-  lead_id: lead.id,
-  event_type: "STAGE_UPDATED",
-  metadata: {
-    stage,
-  },
-});
-    
+
+    await savePipelineEvent({
+      organization_id,
+      lead_id: lead.id,
+      event_type: "STAGE_UPDATED",
+      metadata: {
+        stage,
+      },
+    });
+
+    // ================================
+    // KNOWN DATA + STRATEGY
+    // ================================
+    const knownData = buildKnownData({
+      text,
+      lead,
+    });
+
+    const strategy = decideStrategy({
+      intent: refinedIntent,
+      stage,
+      known_data: knownData,
+    });
+
     const shouldUseAI = !!strategy;
 
     try {
@@ -326,13 +334,17 @@ await savePipelineEvent({
     let aiText = null;
 
     // ================================
-// SALES RADAR (P1.6)
-// ================================
-let salesRadar = "";
+    // SALES RADAR (P1.6)
+    // ================================
+    let salesRadar = "";
 
-if (refinedIntent === "BUY") {
-  if (t.includes("estudi") || t.includes("colegio") || t.includes("universidad")) {
-    salesRadar = `
+    if (refinedIntent === "BUY") {
+      if (
+        t.includes("estudi") ||
+        t.includes("colegio") ||
+        t.includes("universidad")
+      ) {
+        salesRadar = `
 OPORTUNIDAD DETECTADA:
 Cliente busca equipo para estudio.
 Prioriza:
@@ -341,10 +353,10 @@ Prioriza:
 - precio accesible
 Sugiere soluciones prácticas.
 `;
-  }
+      }
 
-  if (t.includes("trabajo") || t.includes("oficina")) {
-    salesRadar = `
+      if (t.includes("trabajo") || t.includes("oficina")) {
+        salesRadar = `
 OPORTUNIDAD DETECTADA:
 Cliente busca equipo para trabajo.
 Prioriza:
@@ -352,19 +364,19 @@ Prioriza:
 - multitarea
 - durabilidad
 `;
-  }
+      }
 
-  if (t.includes("rápida") || t.includes("lenta")) {
-    salesRadar = `
+      if (t.includes("rápida") || t.includes("lenta")) {
+        salesRadar = `
 OPORTUNIDAD DETECTADA:
 Cliente tiene problema de rendimiento.
 Sugiere:
 - upgrade SSD
 - aumento de RAM
 `;
-  }
-}
-    
+      }
+    }
+
     // ================================
     // AI (ÚNICO BLOQUE)
     // ================================
@@ -421,8 +433,8 @@ Sugiere:
       !shouldUseAI
         ? fallbackGreeting
         : !aiText || aiText.length < 5 || aiText.includes("no sé")
-        ? fallbackGreeting
-        : aiText;
+          ? fallbackGreeting
+          : aiText;
 
     const shouldInjectProducts =
       refinedIntent === "CLOSE_INTENT";
