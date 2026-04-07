@@ -413,6 +413,19 @@ if (shouldUseAI) {
       text: reply.text,
     });
 
+    // ================================
+// UPDATE LEAD STAGE (P1.4)
+// ================================
+try {
+  await updateLeadStageAndScore({
+    organization_id,
+    phone,
+    stage,
+  });
+} catch (err) {
+  console.error("STAGE_UPDATE_ERROR", err);
+}
+    
     return {
       reply,
       meta: {
