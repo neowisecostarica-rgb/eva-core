@@ -24,6 +24,7 @@ import { buildPrompt } from "./brain/utils/promptBuilder.js";
 import { getPromptConfig } from "./brain/utils/getPromptConfig.js";
 import { detectIntent } from "./brain/engines/intentEngine.js";
 import { formatAIResponse } from "./brain/utils/responseFormatter.js";
+
 /*
 ====================================================
 HELPERS
@@ -57,60 +58,12 @@ function normalizeIntent(intent) {
 function isHotLeadIntent(intent, text = "", orgConfig = {}) {
   const signals = getHotSignals(orgConfig);
 
-  return (
-    intent === "CLOSE_INTENT" ||
-    matchHotSignals(text, signals)
-  );
+  return intent === "CLOSE_INTENT" || matchHotSignals(text, signals);
 }
 
-function extractBudget(text = "") {
-  try {
-    const match = text.replace(/[,\.]/g, "").match(/\b\d{5,}\b/);
-    return match ? parseInt(match[0], 10) : null;
-  } catch {
-    return null;
-  }
-}
-
-function extractUseCase(text = "") {
-  try {
-    const lower = text.toLowerCase();
-    if (lower.includes("para ")) return lower.split("para ")[1]?.slice(0, 40);
-    if (lower.includes("uso ")) return lower.split("uso ")[1]?.slice(0, 40);
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-function extractProductInterest(text = "") {
-  try {
-    return text.split(" ").slice(0, 6).join(" ");
-  } catch {
-    return null;
-  }
-}
-
-function computeInterestLevel(intent, text = "") {
-  const t = text.toLowerCase();
-
-  if (
-    intent === "CLOSE_INTENT" ||
-    t.includes("lo quiero") ||
-    t.includes("como pago") ||
-    t.includes("cómo pago")
-  ) {
-    return "HIGH";
-  }
-
-  if (intent === "BUY" || intent === "FOLLOWUP") return "MEDIUM";
-
-  return "LOW";
-}
 function detectStage({ intent, lead, text = "" }) {
   const currentStage = lead?.stage || "EARLY";
 
-  // No mover si solo es saludo
   if (intent === "GREETING") return currentStage;
 
   if (intent === "BUY") {
@@ -128,68 +81,9 @@ function detectStage({ intent, lead, text = "" }) {
   }
 
   if (intent === "CLOSE_INTENT") return "HOT";
-
   if (intent === "FOLLOWUP") return "MID";
 
   return currentStage;
-}
-/*
-====================================================
-FOLLOWUPS
-====================================================
-*/
-
-async function cancelPendingFollowups(conversationId) {
-  try {
-    await db.query(
-      `UPDATE followups
-       SET status = 'CANCELLED', updated_at = NOW()
-       WHERE conversation_id = $1
-       AND UPPER(status) IN ('PENDING','SCHEDULED')`,
-      [conversationId]
-    );
-  } catch (err) {
-    console.error("FOLLOWUP_CANCEL_ERROR", err);
-  }
-}
-
-async function createFollowupIfNeeded({
-  organization_id,
-  conversation_id,
-  phone,
-  reason = "sales_followup",
-  hoursFromNow = 24,
-}) {
-  try {
-    const existing = await db.query(
-      `SELECT id FROM followups
-       WHERE conversation_id = $1
-       AND status IN ('PENDING','SCHEDULED')
-       AND scheduled_for > NOW()
-       LIMIT 1`,
-      [conversation_id]
-    );
-
-    if (existing.rows.length > 0) return;
-
-    await db.query(
-      `INSERT INTO followups (
-        organization_id, conversation_id, lead_phone,
-        status, reason, scheduled_for, due_at, created_at
-      )
-      VALUES (
-        $1,$2,$3,'PENDING',$4,
-        NOW() + ($5 * interval '1 hour'),
-        NOW() + ($5 * interval '1 hour'),
-        NOW()
-      )`,
-      [organization_id, conversation_id, phone, reason, Number(hoursFromNow)]
-    );
-
-    console.log("📌 Followup creado:", conversation_id);
-  } catch (err) {
-    console.error("❌ Error creando followup:", err);
-  }
 }
 
 /*
@@ -249,8 +143,6 @@ export async function handleInbound(payload) {
       message_id,
     });
 
-    await cancelPendingFollowups(conversation.id);
-
     const historyRes = await db.query(
       `SELECT role, content AS text
        FROM messages
@@ -264,24 +156,22 @@ export async function handleInbound(payload) {
 
     let refinedIntent = normalizeIntent(detectIntent(text));
     const t = String(text || "").toLowerCase();
+
     if (refinedIntent === "OTHER" && history.length > 0) {
-  refinedIntent = "FOLLOWUP";
-}
+      refinedIntent = "FOLLOWUP";
+    }
 
     if (refinedIntent === "INFO" && t.includes("precio")) refinedIntent = "BUY";
     if (refinedIntent === "GREETING" && t.includes("busco")) refinedIntent = "BUY";
     if (t.includes("no sirve") || t.includes("error")) refinedIntent = "SERVICE";
 
     const strategy = decideStrategy({ intent: refinedIntent });
-    
-    // ================================
-// STAGE DETECTION (P1.4)
-// ================================
-const stage = detectStage({
-  intent: refinedIntent,
-  lead,
-  text,
-});
+
+    const stage = detectStage({
+      intent: refinedIntent,
+      lead,
+      text,
+    });
 
     const shouldUseAI =
       refinedIntent !== "GREETING" &&
@@ -302,80 +192,63 @@ const stage = detectStage({
 
     let aiText = null;
 
-if (shouldUseAI) {
-  // ================================
-  // AI PROMPT OPTIMIZADO (P1.3 FIX)
-  // ================================
+    // ================================
+    // AI (ÚNICO BLOQUE)
+    // ================================
+    if (shouldUseAI) {
+      const isQualificationPhase =
+        refinedIntent === "BUY" &&
+        !isHotLeadIntent(refinedIntent, t, promptConfig);
 
-  const isQualificationPhase =
-    refinedIntent === "BUY" &&
-    !isHotLeadIntent(refinedIntent, t, promptConfig);
+      const prompt = buildPrompt({
+        context: {
+          intent: refinedIntent,
+          stage,
+          strategy,
+          organization: orgContext,
+          force_mode: isQualificationPhase ? "QUALIFY_ONLY" : null,
+        },
+        catalogResults: isQualificationPhase ? [] : safeCatalog,
+        history,
+        promptConfig,
+      });
 
-  const prompt = buildPrompt({
-    context: {
-      intent: refinedIntent,
-      stage, // 🔥 NUEVO
-      strategy,
-      organization: orgContext,
-      force_mode: isQualificationPhase ? "QUALIFY_ONLY" : null,
-    },
-    catalogResults: isQualificationPhase ? [] : safeCatalog,
-    history,
-    promptConfig,
-  });
+      const aiResult = await runAI({
+        prompt: [
+          {
+            role: "system",
+            content: prompt,
+          },
+        ],
+      });
 
-  const aiResult = await runAI({
-    prompt: [
-      {
-        role: "system",
-        content: prompt,
-      },
-    ],
-  });
+      enforceAIRuntime({ aiResponse: aiResult });
 
-  enforceAIRuntime({ aiResponse: aiResult });
+      const guarded = applyAIGuards({ aiResponse: aiResult });
 
-  const guarded = applyAIGuards({ aiResponse: aiResult });
+      if (guarded?.text) {
+        aiText = formatAIResponse({
+          text: guarded.text,
+          agentName: orgContext?.assistant_name || "Eva",
+        });
+      }
+    }
 
-  if (guarded?.text) {
-    aiText = formatAIResponse({
-      text: guarded.text,
-      agentName: orgContext?.assistant_name || "Eva",
-    });
-  }
-}
-
-
-
-if (shouldUseAI) {
-  const isQualificationPhase =
-    refinedIntent === "BUY" &&
-    !isHotLeadIntent(refinedIntent, t, promptConfig);
-
-  const prompt = buildPrompt({
-    context: {
-      intent: refinedIntent,
-      stage, // 🔥 NUEVO
-      strategy,
-      organization: orgContext,
-      force_mode: isQualificationPhase ? "QUALIFY_ONLY" : null,
-    },
-    catalogResults: isQualificationPhase ? [] : safeCatalog,
-    history,
-    promptConfig,
-  });
-
-  
+    // ================================
+    // FALLBACK + REPLY
+    // ================================
     const fallbackGreeting =
       promptConfig?.greeting ||
-      `Hola 😊 le atiende ${orgContext?.assistant_name || "nuestro equipo"}, ¿en qué le puedo ayudar?`;
+      `Hola 😊 le atiende ${
+        orgContext?.assistant_name || "nuestro equipo"
+      }, ¿en qué le puedo ayudar?`;
 
- const replyText =
-  !shouldUseAI
-    ? fallbackGreeting
-    : !aiText || aiText.length < 5 || aiText.includes("no sé")
-    ? fallbackGreeting
-    : aiText;
+    const replyText =
+      !shouldUseAI
+        ? fallbackGreeting
+        : !aiText || aiText.length < 5 || aiText.includes("no sé")
+        ? fallbackGreeting
+        : aiText;
 
     const shouldInjectProducts =
       refinedIntent === "CLOSE_INTENT";
@@ -393,19 +266,16 @@ if (shouldUseAI) {
       text: reply.text,
     });
 
-    // ================================
-// UPDATE LEAD STAGE (P1.4)
-// ================================
-try {
-  await updateLeadStageAndScore({
-    organization_id,
-    phone,
-    stage,
-  });
-} catch (err) {
-  console.error("STAGE_UPDATE_ERROR", err);
-}
-    
+    try {
+      await updateLeadStageAndScore({
+        organization_id,
+        phone,
+        stage,
+      });
+    } catch (err) {
+      console.error("STAGE_UPDATE_ERROR", err);
+    }
+
     return {
       reply,
       meta: {
