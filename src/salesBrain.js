@@ -107,7 +107,32 @@ function computeInterestLevel(intent, text = "") {
 
   return "LOW";
 }
+function detectStage({ intent, lead, text = "" }) {
+  const currentStage = lead?.stage || "EARLY";
 
+  // No mover si solo es saludo
+  if (intent === "GREETING") return currentStage;
+
+  if (intent === "BUY") {
+    if (!lead?.use_case) return "QUALIFYING";
+
+    if (
+      text.toLowerCase().includes("precio") ||
+      text.toLowerCase().includes("cuánto") ||
+      text.toLowerCase().includes("vale")
+    ) {
+      return "HOT";
+    }
+
+    return "MID";
+  }
+
+  if (intent === "CLOSE_INTENT") return "HOT";
+
+  if (intent === "FOLLOWUP") return "MID";
+
+  return currentStage;
+}
 /*
 ====================================================
 FOLLOWUPS
@@ -248,6 +273,15 @@ export async function handleInbound(payload) {
     if (t.includes("no sirve") || t.includes("error")) refinedIntent = "SERVICE";
 
     const strategy = decideStrategy({ intent: refinedIntent });
+    
+    // ================================
+// STAGE DETECTION (P1.4)
+// ================================
+const stage = detectStage({
+  intent: refinedIntent,
+  lead,
+  text,
+});
 
     const shouldUseAI =
       refinedIntent !== "GREETING" &&
