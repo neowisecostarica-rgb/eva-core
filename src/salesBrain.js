@@ -314,6 +314,7 @@ if (shouldUseAI) {
   const prompt = buildPrompt({
     context: {
       intent: refinedIntent,
+      stage, // 🔥 NUEVO
       strategy,
       organization: orgContext,
       force_mode: isQualificationPhase ? "QUALIFY_ONLY" : null,
@@ -354,6 +355,7 @@ if (shouldUseAI) {
   const prompt = buildPrompt({
     context: {
       intent: refinedIntent,
+      stage, // 🔥 NUEVO
       strategy,
       organization: orgContext,
       force_mode: isQualificationPhase ? "QUALIFY_ONLY" : null,
