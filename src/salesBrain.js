@@ -149,6 +149,50 @@ function detectStage({ intent, lead, text = "" }) {
 
   return currentStage;
 }
+function buildKnownData({ text = "", lead = {} }) {
+  const lower = String(text || "").toLowerCase();
+
+  const extracted = {
+    product_interest:
+      lead?.product_interest ||
+      (lower.includes("laptop") ||
+      lower.includes("computadora") ||
+      lower.includes("impresora") ||
+      lower.includes("monitor")
+        ? true
+        : false),
+
+    use_case:
+      lead?.use_case ||
+      (lower.includes("estudio") ||
+      lower.includes("colegio") ||
+      lower.includes("universidad") ||
+      lower.includes("trabajo") ||
+      lower.includes("oficina")
+        ? "detected"
+        : null),
+
+    budget:
+      lead?.budget ||
+      (lower.includes("presupuesto") ||
+      lower.includes("económica") ||
+      lower.includes("barata") ||
+      lower.includes("precio")
+        ? "mentioned"
+        : null),
+
+    problem:
+      lower.includes("no sirve") ||
+      lower.includes("no enciende") ||
+      lower.includes("error") ||
+      lower.includes("no imprime") ||
+      lower.includes("fallando")
+        ? "detected"
+        : null,
+  };
+
+  return extracted;
+}
 
 /*
 ====================================================
