@@ -11,6 +11,7 @@ export function buildPrompt({
     organization,
     sales_radar,
     force_mode = null,
+    known_data = {},
   } = context || {};
 
   const agentName = organization?.assistant_name || "Asistente";
@@ -18,10 +19,16 @@ export function buildPrompt({
 
   const customInstructions = promptConfig?.instructions || "";
 
+  // ================================
+  // HISTORY
+  // ================================
   const historyText = history
     .map((m) => `${m.role === "user" ? "Cliente" : agentName}: ${m.text}`)
     .join("\n");
 
+  // ================================
+  // CATALOG
+  // ================================
   const catalogText =
     catalogResults && catalogResults.length > 0
       ? catalogResults
@@ -33,135 +40,173 @@ export function buildPrompt({
       : "No hay productos disponibles.";
 
   // ================================
-  // 🧠 STRATEGY CONTROL (FIXED)
+  // CONTEXT BLOCK (CRÍTICO)
+  // ================================
+  const contextBlock = `
+CONTEXTO ACTUAL:
+- Intento: ${intent || "UNKNOWN"}
+- Etapa: ${stage || "UNKNOWN"}
+- Datos conocidos: ${JSON.stringify(known_data || {})}
+`;
+
+  // ================================
+  // STRATEGY BLOCK
   // ================================
   let strategyBlock = "";
 
   if (strategy === "OPEN") {
     strategyBlock = `
 ESTRATEGIA: APERTURA
-
-- Saluda de forma natural
-- Haz 1 pregunta para entender necesidad
-- NO recomiendes productos aún
+- Saluda natural
+- Haz 1 pregunta
+- NO recomendar productos
 `;
-  }
-
-  else if (strategy === "ASK" || strategy === "ASK_DIAGNOSIS") {
+  } else if (strategy === "ASK" || strategy === "ASK_DIAGNOSIS") {
     strategyBlock = `
 ESTRATEGIA: DIAGNÓSTICO
-
-- Haz preguntas claras sobre el problema
-- NO vendas productos
-- NO menciones precios
-- Enfócate en entender el caso
+- Pregunta claro
+- NO vender
+- NO precios
 `;
-  }
-
-  else if (strategy === "QUALIFY") {
+  } else if (strategy === "QUALIFY") {
     strategyBlock = `
 ESTRATEGIA: CALIFICACIÓN
-
-- Profundiza en necesidad
-- Pregunta uso, contexto o presupuesto
-- NO recomiendes productos aún
+- Entender necesidad
+- Preguntar uso/contexto
+- NO recomendar aún
 `;
-  }
-
-  else if (strategy === "RECOMMEND") {
+  } else if (strategy === "RECOMMEND") {
     strategyBlock = `
 ESTRATEGIA: RECOMENDACIÓN
-
-- Sugiere 1 a 3 opciones
-- Explica por qué encajan
-- Guía a decisión
+- Sugiere opciones
+- Explica por qué
+- Guía decisión
 `;
-  }
-
-  else if (strategy === "EXPLAIN") {
+  } else if (strategy === "EXPLAIN") {
     strategyBlock = `
 ESTRATEGIA: EXPLICACIÓN
-
-- Responde claro
-- Sin exceso técnico
+- Claro
+- Sin técnico
 `;
-  }
-
-  else if (strategy === "EXPLAIN_CLOSE") {
+  } else if (strategy === "EXPLAIN_CLOSE") {
     strategyBlock = `
 ESTRATEGIA: EXPLICAR Y CERRAR
-
 - Explica breve
-- Recomienda acción
+- Lleva a acción
 `;
-  }
-
-  else if (strategy === "CLOSE") {
+  } else if (strategy === "CLOSE") {
     strategyBlock = `
 ESTRATEGIA: CIERRE
-
-- Indica siguiente paso claro
-- compra / apartado / coordinación
+- Acción clara
+- Compra / visita / apartado
 `;
-  }
-
-  else if (strategy === "FOLLOWUP") {
+  } else if (strategy === "FOLLOWUP") {
     strategyBlock = `
 ESTRATEGIA: SEGUIMIENTO
-
-- Retoma conversación
-- Invita a continuar
+- Retomar conversación
+- Invitar a continuar
 `;
-  }
-
-  else {
+  } else {
     strategyBlock = `
 ESTRATEGIA: GENERAL
-
-- Responde útil
-- Mantén conversación activa
+- Responder útil
+- Mantener conversación
 `;
   }
 
   // ================================
-  // 🧠 INTENT CONTROL (NUEVO)
+  // INTENT BLOCK (EXPANDIDO)
   // ================================
   let intentBlock = "";
 
   if (intent === "SERVICE") {
     intentBlock = `
-CONTEXTO: SERVICIO TÉCNICO
-
-- El cliente busca reparación o mantenimiento
-- NO vender productos
-- NO asumir compra
+CONTEXTO: SERVICIO
 - Diagnosticar primero
-- Llevar a:
-  - revisión
-  - visita
-  - traer equipo
+- NO explicar de una
+- Llevar a revisión
+`;
+  }
+
+  if (intent === "BUY") {
+    intentBlock = `
+CONTEXTO: COMPRA
+- Entender necesidad
+- No vender de inmediato si falta info
+`;
+  }
+
+  if (intent === "INFO") {
+    intentBlock = `
+CONTEXTO: INFORMACIÓN
+- Responder claro
+- Mantener conversación activa
+`;
+  }
+
+  if (intent === "FOLLOWUP") {
+    intentBlock = `
+CONTEXTO: SEGUIMIENTO
+- Retomar interés
+- Empujar siguiente paso
 `;
   }
 
   // ================================
-  // 🚨 FORCE MODE
+  // FORCE MODE
   // ================================
   let forceBlock = "";
 
   if (force_mode === "QUALIFY_ONLY") {
     forceBlock = `
 MODO FORZADO:
-
 - SOLO preguntas
 - NO vender
 - NO precios
 `;
   }
 
+  // ================================
+  // RESPONSE RULES (CRÍTICO)
+  // ================================
+  const rulesBlock = `
+REGLAS DE RESPUESTA:
+- No saturar con información
+- Primero entender, luego explicar
+- Máximo 1 pregunta por mensaje
+- No dar precios sin contexto
+- Adaptarse a la etapa del cliente
+- Siempre guiar hacia una acción
+`;
+
+  // ================================
+  // ANTI DUMP CONTROL
+  // ================================
+  const antiDumpBlock =
+    stage === "EARLY"
+      ? `
+CONTROL:
+- Respuesta corta
+- Priorizar pregunta
+`
+      : "";
+
+  // ================================
+  // SALES RADAR
+  // ================================
+  const radarBlock = sales_radar
+    ? `
+SALES RADAR:
+${sales_radar}
+`
+    : "";
+
   return `
 Eres ${agentName}, asistente comercial de ${businessName}.
 
 ${customInstructions}
+
+${contextBlock}
 
 ${intentBlock}
 
@@ -169,7 +214,11 @@ ${strategyBlock}
 
 ${forceBlock}
 
-${sales_radar || ""}
+${rulesBlock}
+
+${antiDumpBlock}
+
+${radarBlock}
 
 Historial:
 ${historyText}
@@ -178,7 +227,5 @@ Productos disponibles:
 ${catalogText}
 
 Responde natural, claro y directo.
-Máximo 1 pregunta por mensaje.
-Guía siempre al siguiente paso.
 `;
 }
