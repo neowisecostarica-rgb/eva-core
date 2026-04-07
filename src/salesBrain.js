@@ -246,6 +246,7 @@ Sugiere:
           stage,
           strategy,
           organization: orgContext,
+          sales_radar: salesRadar,
           force_mode: isQualificationPhase ? "QUALIFY_ONLY" : null,
         },
         catalogResults: isQualificationPhase ? [] : safeCatalog,
