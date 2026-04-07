@@ -9,6 +9,7 @@ export function buildPrompt({
     strategy,
     stage,
     organization,
+     sales_radar,
     force_mode = null,
   } = context || {};
 
