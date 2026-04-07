@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — SALES BRAIN (P1.3.1 RECONSTRUIDO)
+EVA CORE — SALES BRAIN (P1.3.1 RECONSTRUIDO + FIXED)
 ====================================================
 */
 
@@ -356,6 +356,32 @@ Sugiere:
   return "";
 }
 
+function cleanAIText(text = "", agentName = "Eva") {
+  let cleaned = String(text || "").trim();
+
+  cleaned = cleaned.replace(/^(cliente|usuario)\s*:\s*/i, "");
+  cleaned = cleaned.replace(/^(asistente|assistant)\s*:\s*/i, "");
+  cleaned = cleaned.replace(new RegExp(`^${agentName}\\s*:\\s*`, "i"), "");
+
+  if (/^(cliente|usuario)\s*:/.test(cleaned.toLowerCase())) {
+    const lines = cleaned.split("\n").map((line) => line.trim()).filter(Boolean);
+    const assistantLine =
+      lines.find(
+        (line) =>
+          !/^(cliente|usuario)\s*:/.test(line.toLowerCase()) &&
+          !/^historial\s*:/.test(line.toLowerCase())
+      ) || "";
+    cleaned = assistantLine
+      .replace(/^(asistente|assistant)\s*:\s*/i, "")
+      .replace(new RegExp(`^${agentName}\\s*:\\s*`, "i"), "")
+      .trim();
+  }
+
+  cleaned = cleaned.replace(/\n{3,}/g, "\n\n").trim();
+
+  return cleaned;
+}
+
 async function createFollowupIfNeeded({
   organization_id,
   conversation_id,
@@ -389,6 +415,7 @@ async function createFollowupIfNeeded({
         reason,
         status,
         scheduled_for,
+        due_at,
         sent,
         created_at,
         updated_at
@@ -399,6 +426,7 @@ async function createFollowupIfNeeded({
         $3,
         $4,
         'PENDING',
+        NOW() + ($5 || ' hours')::interval,
         NOW() + ($5 || ' hours')::interval,
         false,
         NOW(),
@@ -581,7 +609,9 @@ export async function handleInbound(payload) {
         catalogResults:
           isQualificationPhase ||
           refinedIntent === "SERVICE" ||
-          refinedIntent === "GREETING"
+          refinedIntent === "GREETING" ||
+          strategy === "OPEN" ||
+          strategy === "ASK_DIAGNOSIS"
             ? []
             : safeCatalog,
         history,
@@ -602,10 +632,17 @@ export async function handleInbound(payload) {
       const guarded = applyAIGuards({ aiResponse: aiResult });
 
       if (guarded?.text) {
-        aiText = formatAIResponse({
-          text: guarded.text,
-          agentName: orgContext?.assistant_name || "Eva",
-        });
+        const cleanedAIText = cleanAIText(
+          guarded.text,
+          orgContext?.assistant_name || "Eva"
+        );
+
+        if (cleanedAIText) {
+          aiText = formatAIResponse({
+            text: cleanedAIText,
+            agentName: orgContext?.assistant_name || "Eva",
+          });
+        }
       }
     }
 
@@ -617,7 +654,9 @@ export async function handleInbound(payload) {
 
     let fallbackReply = fallbackGreeting;
 
-    if (strategy === "ASK_DIAGNOSIS") {
+    if (strategy === "OPEN") {
+      fallbackReply = `Hola 😊 con mucho gusto le ayudo. ¿Qué está buscando o en qué le puedo ayudar hoy?`;
+    } else if (strategy === "ASK_DIAGNOSIS") {
       fallbackReply = `Hola 😊 con mucho gusto le ayudo. ¿Me podría indicar la marca, el modelo y qué problema está presentando el equipo?`;
     } else if (strategy === "QUALIFY") {
       fallbackReply = `Con mucho gusto le ayudo. ¿La necesita para estudio, trabajo o algún uso específico?`;
@@ -625,6 +664,8 @@ export async function handleInbound(payload) {
       fallbackReply = `Perfecto 🙌 Ya estamos cerca de ayudarle con eso. ¿Desea que coordinemos compra, apartado o entrega?`;
     } else if (strategy === "FOLLOWUP") {
       fallbackReply = `Hola 😊 solo le doy seguimiento a su consulta. ¿Todavía sigue buscando ayuda con eso?`;
+    } else if (strategy === "EDUCATE") {
+      fallbackReply = `Con mucho gusto le ayudo. ¿Me podría indicar un poco más sobre lo que desea conocer para orientarle mejor?`;
     }
 
     const replyText =
@@ -634,7 +675,7 @@ export async function handleInbound(payload) {
 
     const shouldInjectProducts =
       refinedIntent === "CLOSE_INTENT" ||
-      (refinedIntent === "BUY" && stage !== "QUALIFYING");
+      (refinedIntent === "BUY" && stage !== "QUALIFYING" && strategy !== "OPEN");
 
     const reply = generateReply({
       text: replyText,
