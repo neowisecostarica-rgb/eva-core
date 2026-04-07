@@ -157,6 +157,16 @@ export async function handleInbound(payload) {
     let refinedIntent = normalizeIntent(detectIntent(text));
     const t = String(text || "").toLowerCase();
 
+    await savePipelineEvent({
+  organization_id,
+  lead_id: lead.id,
+  event_type: "INTENT_DETECTED",
+  metadata: {
+    intent: refinedIntent,
+    text,
+  },
+});
+
     if (refinedIntent === "OTHER" && history.length > 0) {
       refinedIntent = "FOLLOWUP";
     }
