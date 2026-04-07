@@ -1,9 +1,3 @@
-/*
-====================================================
-EVA CORE — PROMPT BUILDER (P1.5 FIXED)
-====================================================
-*/
-
 export function buildPrompt({
   context,
   catalogResults = [],
@@ -25,7 +19,7 @@ export function buildPrompt({
   const customInstructions = promptConfig?.instructions || "";
 
   const historyText = history
-    .map((m) => `${m.role === "user" ? "Usuario" : "Asistente"}: ${m.text}`)
+    .map((m) => `${m.role === "user" ? "Cliente" : agentName}: ${m.text}`)
     .join("\n");
 
   const catalogText =
@@ -33,13 +27,13 @@ export function buildPrompt({
       ? catalogResults
           .map(
             (p, i) =>
-              `${i + 1}. ${p.name}${p.price ? ` - ₡${p.price}` : ""}`
+              `${i + 1}. ${p.name} - ${p.price ? `₡${p.price}` : ""}`
           )
           .join("\n")
       : "No hay productos disponibles.";
 
   // ================================
-  // 🧠 STRATEGY CONTROL (CORE)
+  // 🧠 STRATEGY CONTROL (FIXED)
   // ================================
   let strategyBlock = "";
 
@@ -48,124 +42,109 @@ export function buildPrompt({
 ESTRATEGIA: APERTURA
 
 - Saluda de forma natural
-- Haz una sola pregunta para entender qué necesita el cliente
-- NO recomiendes productos
-- NO menciones precios
-- Mantén la respuesta corta
+- Haz 1 pregunta para entender necesidad
+- NO recomiendes productos aún
 `;
   }
 
-  if (strategy === "ASK") {
-    strategyBlock = `
-ESTRATEGIA: SOLICITAR INFORMACIÓN
-
-- Haz preguntas para entender al cliente
-- NO recomiendes productos
-- NO menciones precios
-- Mantén la respuesta corta
-- Termina con una pregunta
-`;
-  }
-
-  if (strategy === "ASK_DIAGNOSIS") {
+  else if (strategy === "ASK" || strategy === "ASK_DIAGNOSIS") {
     strategyBlock = `
 ESTRATEGIA: DIAGNÓSTICO
 
-- Primero solicita información del caso
-- Pide marca, modelo y problema
-- NO expliques la reparación todavía
-- NO des precio sin entender el caso
-- Cierra con una pregunta clara
+- Haz preguntas claras sobre el problema
+- NO vendas productos
+- NO menciones precios
+- Enfócate en entender el caso
 `;
   }
 
-  if (strategy === "QUALIFY") {
+  else if (strategy === "QUALIFY") {
     strategyBlock = `
 ESTRATEGIA: CALIFICACIÓN
 
-- Profundiza en la necesidad del cliente
-- Pregunta sobre uso, presupuesto o contexto
-- NO recomiendes productos todavía
-- NO cierres la venta aún
+- Profundiza en necesidad
+- Pregunta uso, contexto o presupuesto
+- NO recomiendes productos aún
 `;
   }
 
-  if (strategy === "RECOMMEND") {
+  else if (strategy === "RECOMMEND") {
     strategyBlock = `
 ESTRATEGIA: RECOMENDACIÓN
 
-- Sugiere 1 a 3 opciones del catálogo
-- Explica brevemente por qué son adecuadas
-- Mantén lenguaje simple
-- Guía hacia una decisión
+- Sugiere 1 a 3 opciones
+- Explica por qué encajan
+- Guía a decisión
 `;
   }
 
-  if (strategy === "EXPLAIN") {
+  else if (strategy === "EXPLAIN") {
     strategyBlock = `
 ESTRATEGIA: EXPLICACIÓN
 
-- Responde la duda de forma clara
-- No des demasiada información
-- Evita lenguaje técnico complejo
+- Responde claro
+- Sin exceso técnico
 `;
   }
 
-  if (strategy === "EXPLAIN_CLOSE") {
+  else if (strategy === "EXPLAIN_CLOSE") {
     strategyBlock = `
 ESTRATEGIA: EXPLICAR Y CERRAR
 
-- Explica brevemente la situación
-- Da una recomendación clara
-- Sugiere acción inmediata
+- Explica breve
+- Recomienda acción
 `;
   }
 
-  if (strategy === "EDUCATE") {
-    strategyBlock = `
-ESTRATEGIA: ORIENTACIÓN
-
-- Responde la duda con claridad
-- Mantén enfoque práctico
-- No satures con información
-- Si ayuda, termina guiando al siguiente paso
-`;
-  }
-
-  if (strategy === "CLOSE") {
+  else if (strategy === "CLOSE") {
     strategyBlock = `
 ESTRATEGIA: CIERRE
 
-- El cliente está listo para comprar
-- NO hagas más preguntas innecesarias
-- Indica claramente el siguiente paso:
-  - compra
-  - apartado
-  - coordinación
+- Indica siguiente paso claro
+- compra / apartado / coordinación
 `;
   }
 
-  if (strategy === "FOLLOWUP") {
+  else if (strategy === "FOLLOWUP") {
     strategyBlock = `
 ESTRATEGIA: SEGUIMIENTO
 
-- Retoma la conversación de forma natural
-- Menciona el interés previo
+- Retoma conversación
 - Invita a continuar
 `;
   }
 
-  if (!strategyBlock) {
+  else {
     strategyBlock = `
 ESTRATEGIA: GENERAL
 
-- Responde de forma útil
-- Mantén la conversación activa
+- Responde útil
+- Mantén conversación activa
 `;
   }
 
   // ================================
-  // 🚨 FORCE MODE (OVERRIDE)
+  // 🧠 INTENT CONTROL (NUEVO)
+  // ================================
+  let intentBlock = "";
+
+  if (intent === "SERVICE") {
+    intentBlock = `
+CONTEXTO: SERVICIO TÉCNICO
+
+- El cliente busca reparación o mantenimiento
+- NO vender productos
+- NO asumir compra
+- Diagnosticar primero
+- Llevar a:
+  - revisión
+  - visita
+  - traer equipo
+`;
+  }
+
+  // ================================
+  // 🚨 FORCE MODE
   // ================================
   let forceBlock = "";
 
@@ -173,9 +152,9 @@ ESTRATEGIA: GENERAL
     forceBlock = `
 MODO FORZADO:
 
-- SOLO hacer preguntas
-- NO recomendar productos
-- NO mencionar precios
+- SOLO preguntas
+- NO vender
+- NO precios
 `;
   }
 
@@ -184,10 +163,7 @@ Eres ${agentName}, asistente comercial de ${businessName}.
 
 ${customInstructions}
 
-CONTEXTO:
-- Intento: ${intent || "OTHER"}
-- Etapa: ${stage || "EARLY"}
-- Estrategia: ${strategy || "DEFAULT"}
+${intentBlock}
 
 ${strategyBlock}
 
@@ -195,21 +171,14 @@ ${forceBlock}
 
 ${sales_radar || ""}
 
-IMPORTANTE:
-- Responde únicamente como ${agentName}
-- NO simules diálogo
-- NO escribas "Cliente:", "Usuario:", "${agentName}:" ni "Asistente:"
-- NO inventes contexto anterior
-- NO inventes productos ni garantías
-- Mantén mensajes cortos, claros y humanos
-- Siempre guía la conversación hacia el siguiente paso
-
 Historial:
 ${historyText}
 
 Productos disponibles:
 ${catalogText}
 
-Genera únicamente el mensaje final que se enviará al cliente.
+Responde natural, claro y directo.
+Máximo 1 pregunta por mensaje.
+Guía siempre al siguiente paso.
 `;
 }
