@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — SALES BRAIN (CLEAN P5 FIXED)
+EVA CORE — SALES BRAIN (P1.3.1 RECONSTRUIDO)
 ====================================================
 */
 
@@ -31,79 +31,6 @@ HELPERS
 ====================================================
 */
 
-function decideStrategy({
-  intent,
-  stage = "EARLY",
-  known_data = {},
-}) {
-  const hasProblem = !!known_data.problem;
-  const hasUseCase = !!known_data.use_case;
-  const hasBudget = !!known_data.budget;
-  const hasProductInterest = !!known_data.product_interest;
-
-  // ================================
-  // SERVICE
-  // ================================
-  if (intent === "SERVICE") {
-    if (!hasProblem) return "ASK_DIAGNOSIS";
-    return "EXPLAIN_CLOSE";
-  }
-
-  // ================================
-  // BUY / CLOSE
-  // ================================
-  if (intent === "CLOSE_INTENT") {
-    return "CLOSE";
-  }
-
-  if (intent === "BUY") {
-    if (stage === "EARLY") {
-      if (!hasUseCase && !hasBudget) return "QUALIFY";
-      if (hasUseCase || hasBudget || hasProductInterest) return "RECOMMEND";
-      return "QUALIFY";
-    }
-
-    if (stage === "QUALIFYING") {
-      if (!hasUseCase || !hasBudget) return "QUALIFY";
-      return "RECOMMEND";
-    }
-
-    if (stage === "MID") {
-      return "RECOMMEND";
-    }
-
-    if (stage === "HOT") {
-      return "CLOSE";
-    }
-
-    return "QUALIFY";
-  }
-
-  // ================================
-  // INFO
-  // ================================
-  if (intent === "INFO") {
-    return "EDUCATE";
-  }
-
-  // ================================
-  // FOLLOWUP
-  // ================================
-  if (intent === "FOLLOWUP") {
-    if (stage === "HOT") return "CLOSE";
-    return "FOLLOWUP";
-  }
-
-  // ================================
-  // GREETING / DEFAULT
-  // ================================
-  if (intent === "GREETING") {
-    return "OPEN";
-  }
-
-  return "DEFAULT";
-}
-
 function normalizeIntent(intent) {
   if (!intent) return "OTHER";
 
@@ -115,28 +42,216 @@ function normalizeIntent(intent) {
   if (["GREETING", "HELLO"].includes(clean)) return "GREETING";
   if (["FOLLOWUP"].includes(clean)) return "FOLLOWUP";
   if (["CLOSE_INTENT"].includes(clean)) return "CLOSE_INTENT";
+  if (["UNKNOWN", "OTHER", "DEFAULT"].includes(clean)) return "OTHER";
 
   return clean;
 }
 
-function isHotLeadIntent(intent, text = "", orgConfig = {}) {
-  const signals = getHotSignals(orgConfig);
+function normalizeStage(stage) {
+  const raw = String(stage || "EARLY").toUpperCase().trim();
 
-  return intent === "CLOSE_INTENT" || matchHotSignals(text, signals);
+  if (["NEW", "EARLY"].includes(raw)) return "EARLY";
+  if (["QUALIFYING", "QUALIFY", "DISCOVERY"].includes(raw)) return "QUALIFYING";
+  if (["MID", "OFFER", "NEGOTIATION"].includes(raw)) return "MID";
+  if (["HOT", "READY_TO_BUY", "READY"].includes(raw)) return "HOT";
+  if (["POST", "WON", "FOLLOWUP"].includes(raw)) return "POST";
+
+  return "EARLY";
 }
 
-function detectStage({ intent, lead, text = "" }) {
-  const currentStage = lead?.stage || "EARLY";
+function stageToDb(stage) {
+  const normalized = normalizeStage(stage);
+
+  if (normalized === "QUALIFYING") return "qualifying";
+  if (normalized === "MID") return "mid";
+  if (normalized === "HOT") return "hot";
+  if (normalized === "POST") return "post";
+
+  return "early";
+}
+
+function extractBudget(text = "", lead = {}) {
+  if (lead?.budget) return lead.budget;
+
+  const normalized = String(text || "").replace(/[.,]/g, "");
+  const amountMatch = normalized.match(
+    /(?:₡|crc|colones?|presupuesto\s*(?:de|es)?\s*)(\d{4,9})/i
+  );
+
+  if (amountMatch?.[1]) {
+    const parsed = Number(amountMatch[1]);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  if (/econ[oó]mic|barat|accesible/i.test(normalized)) return "LOW_BUDGET";
+  if (/premium|mejor|gama alta/i.test(normalized)) return "HIGH_BUDGET";
+
+  return null;
+}
+
+function extractUseCase(text = "", lead = {}) {
+  if (lead?.use_case) return lead.use_case;
+
+  const t = String(text || "").toLowerCase();
+
+  if (
+    t.includes("estudi") ||
+    t.includes("colegio") ||
+    t.includes("universidad") ||
+    t.includes("clases")
+  ) {
+    return "ESTUDIO";
+  }
+
+  if (
+    t.includes("trabajo") ||
+    t.includes("oficina") ||
+    t.includes("excel") ||
+    t.includes("empresa")
+  ) {
+    return "TRABAJO";
+  }
+
+  if (t.includes("gaming") || t.includes("juego") || t.includes("jugar")) {
+    return "GAMING";
+  }
+
+  return null;
+}
+
+function extractProductInterest(text = "", lead = {}) {
+  if (lead?.product_interest) return lead.product_interest;
+
+  const t = String(text || "").toLowerCase();
+
+  if (t.includes("impresora")) return "IMPRESORA";
+  if (t.includes("monitor")) return "MONITOR";
+  if (t.includes("laptop") || t.includes("computadora") || t.includes("pc")) {
+    return "LAPTOP";
+  }
+  if (t.includes("mantenimiento")) return "MANTENIMIENTO";
+  if (t.includes("reparacion") || t.includes("reparación")) return "REPARACION";
+
+  return null;
+}
+
+function extractProblem(text = "") {
+  const t = String(text || "").toLowerCase();
+
+  if (
+    t.includes("no sirve") ||
+    t.includes("no enciende") ||
+    t.includes("error") ||
+    t.includes("no imprime") ||
+    t.includes("fallando") ||
+    t.includes("esta lenta") ||
+    t.includes("está lenta") ||
+    t.includes("dañado") ||
+    t.includes("danado")
+  ) {
+    return "DETECTED";
+  }
+
+  return null;
+}
+
+function computeInterestLevel(intent, text = "") {
+  const t = String(text || "").toLowerCase();
+
+  if (
+    intent === "CLOSE_INTENT" ||
+    t.includes("lo quiero") ||
+    t.includes("como pago") ||
+    t.includes("cómo pago") ||
+    t.includes("sinpe") ||
+    t.includes("tarjeta") ||
+    t.includes("apartar") ||
+    t.includes("reservar")
+  ) {
+    return "HIGH";
+  }
+
+  if (
+    intent === "BUY" ||
+    t.includes("precio") ||
+    t.includes("disponible") ||
+    t.includes("me interesa")
+  ) {
+    return "MEDIUM";
+  }
+
+  return "LOW";
+}
+
+function computeLeadScore({ intent, stage, text = "" }) {
+  let score = 25;
+  const t = String(text || "").toLowerCase();
+
+  if (intent === "BUY") score += 20;
+  if (intent === "SERVICE") score += 15;
+  if (intent === "CLOSE_INTENT") score += 40;
+  if (stage === "QUALIFYING") score += 10;
+  if (stage === "MID") score += 20;
+  if (stage === "HOT") score += 35;
+
+  if (t.includes("precio") || t.includes("cuánto") || t.includes("cuanto")) {
+    score += 10;
+  }
+  if (t.includes("hoy") || t.includes("ahora") || t.includes("urgente")) {
+    score += 10;
+  }
+  if (
+    t.includes("apartar") ||
+    t.includes("reservar") ||
+    t.includes("comprar")
+  ) {
+    score += 15;
+  }
+
+  return Math.min(score, 100);
+}
+
+function buildKnownData({ text = "", lead = {} }) {
+  return {
+    product_interest: extractProductInterest(text, lead),
+    use_case: extractUseCase(text, lead),
+    budget: extractBudget(text, lead),
+    problem: extractProblem(text),
+  };
+}
+
+function detectStage({ intent, lead, text = "", knownData = {} }) {
+  const currentStage = normalizeStage(lead?.stage);
+  const t = String(text || "").toLowerCase();
 
   if (intent === "GREETING") return currentStage;
 
+  if (intent === "SERVICE") {
+    if (knownData.problem) return "QUALIFYING";
+    return currentStage === "EARLY" ? "EARLY" : currentStage;
+  }
+
+  if (intent === "CLOSE_INTENT") return "HOT";
+
   if (intent === "BUY") {
-    if (!lead?.use_case) return "QUALIFYING";
+    if (!knownData.use_case || !knownData.budget) return "QUALIFYING";
 
     if (
-      text.toLowerCase().includes("precio") ||
-      text.toLowerCase().includes("cuánto") ||
-      text.toLowerCase().includes("vale")
+      t.includes("precio") ||
+      t.includes("cuánto") ||
+      t.includes("cuanto") ||
+      t.includes("vale") ||
+      t.includes("disponible")
+    ) {
+      return "MID";
+    }
+
+    if (
+      t.includes("lo quiero") ||
+      t.includes("como pago") ||
+      t.includes("cómo pago") ||
+      t.includes("apartar") ||
+      t.includes("reservar")
     ) {
       return "HOT";
     }
@@ -144,55 +259,157 @@ function detectStage({ intent, lead, text = "" }) {
     return "MID";
   }
 
-  if (intent === "CLOSE_INTENT") return "HOT";
-  if (intent === "FOLLOWUP") return "MID";
+  if (intent === "FOLLOWUP") {
+    if (currentStage === "HOT") return "HOT";
+    if (currentStage === "EARLY") return "QUALIFYING";
+    return currentStage;
+  }
 
   return currentStage;
 }
 
-function buildKnownData({ text = "", lead = {} }) {
-  const lower = String(text || "").toLowerCase();
+function decideStrategy({ intent, stage = "EARLY", known_data = {} }) {
+  const hasProblem = !!known_data.problem;
+  const hasUseCase = !!known_data.use_case;
+  const hasBudget = !!known_data.budget;
+  const hasProductInterest = !!known_data.product_interest;
 
-  const extracted = {
-    product_interest:
-      lead?.product_interest ||
-      (lower.includes("laptop") ||
-      lower.includes("computadora") ||
-      lower.includes("impresora") ||
-      lower.includes("monitor")
-        ? true
-        : false),
+  if (intent === "SERVICE") {
+    if (!hasProblem) return "ASK_DIAGNOSIS";
+    return "EXPLAIN_CLOSE";
+  }
 
-    use_case:
-      lead?.use_case ||
-      (lower.includes("estudio") ||
-      lower.includes("colegio") ||
-      lower.includes("universidad") ||
-      lower.includes("trabajo") ||
-      lower.includes("oficina")
-        ? "detected"
-        : null),
+  if (intent === "CLOSE_INTENT") return "CLOSE";
 
-    budget:
-      lead?.budget ||
-      (lower.includes("presupuesto") ||
-      lower.includes("económica") ||
-      lower.includes("barata") ||
-      lower.includes("precio")
-        ? "mentioned"
-        : null),
+  if (intent === "BUY") {
+    if (stage === "EARLY") return "OPEN";
 
-    problem:
-      lower.includes("no sirve") ||
-      lower.includes("no enciende") ||
-      lower.includes("error") ||
-      lower.includes("no imprime") ||
-      lower.includes("fallando")
-        ? "detected"
-        : null,
-  };
+    if (stage === "QUALIFYING") {
+      if (!hasUseCase || !hasBudget) return "QUALIFY";
+      return "RECOMMEND";
+    }
 
-  return extracted;
+    if (stage === "MID") {
+      if (hasUseCase || hasBudget || hasProductInterest) return "RECOMMEND";
+      return "QUALIFY";
+    }
+
+    if (stage === "HOT") return "CLOSE";
+
+    return "QUALIFY";
+  }
+
+  if (intent === "INFO") return "EDUCATE";
+  if (intent === "FOLLOWUP") return stage === "HOT" ? "CLOSE" : "FOLLOWUP";
+  if (intent === "GREETING") return "OPEN";
+
+  return "DEFAULT";
+}
+
+function isHotLeadIntent(intent, text = "", orgConfig = {}) {
+  const signals = getHotSignals(orgConfig);
+  return intent === "CLOSE_INTENT" || matchHotSignals(text, signals);
+}
+
+function buildSalesRadar({ intent, text = "" }) {
+  const t = String(text || "").toLowerCase();
+
+  if (intent !== "BUY") return "";
+
+  if (
+    t.includes("estudi") ||
+    t.includes("colegio") ||
+    t.includes("universidad")
+  ) {
+    return `
+OPORTUNIDAD DETECTADA:
+Cliente busca equipo para estudio.
+Prioriza:
+- equipos confiables
+- buena batería
+- precio accesible
+Sugiere soluciones prácticas.
+`;
+  }
+
+  if (t.includes("trabajo") || t.includes("oficina") || t.includes("excel")) {
+    return `
+OPORTUNIDAD DETECTADA:
+Cliente busca equipo para trabajo.
+Prioriza:
+- rendimiento estable
+- multitarea
+- durabilidad
+`;
+  }
+
+  if (t.includes("rápida") || t.includes("rapida") || t.includes("lenta")) {
+    return `
+OPORTUNIDAD DETECTADA:
+Cliente tiene problema de rendimiento.
+Sugiere:
+- upgrade SSD
+- aumento de RAM
+`;
+  }
+
+  return "";
+}
+
+async function createFollowupIfNeeded({
+  organization_id,
+  conversation_id,
+  phone,
+  reason = "sales_followup",
+  hoursFromNow = 24,
+}) {
+  try {
+    if (!organization_id || !conversation_id || !phone) return;
+
+    const existingFollowup = await db.query(
+      `
+      SELECT id
+      FROM followups
+      WHERE organization_id = $1
+        AND conversation_id = $2
+        AND UPPER(status) IN ('PENDING', 'SCHEDULED', 'RUNNING')
+      LIMIT 1
+      `,
+      [organization_id, conversation_id]
+    );
+
+    if (existingFollowup.rows.length > 0) return;
+
+    await db.query(
+      `
+      INSERT INTO followups (
+        organization_id,
+        conversation_id,
+        lead_phone,
+        reason,
+        status,
+        scheduled_for,
+        sent,
+        created_at,
+        updated_at
+      )
+      VALUES (
+        $1,
+        $2,
+        $3,
+        $4,
+        'PENDING',
+        NOW() + ($5 || ' hours')::interval,
+        false,
+        NOW(),
+        NOW()
+      )
+      `,
+      [organization_id, conversation_id, phone, reason, String(hoursFromNow)]
+    );
+  } catch (err) {
+    console.error("❌ createFollowupIfNeeded error:", err);
+  }
 }
 
 /*
@@ -222,16 +439,19 @@ export async function handleInbound(payload) {
     const orgContext = {
       business_name:
         context?.organization?.business_name ||
+        promptConfig?.business_name ||
         orgSettings?.business_name ||
         "el negocio",
 
       assistant_name:
         context?.assistant?.name ||
+        promptConfig?.agent_name ||
         orgSettings?.assistant_name ||
-        "asistente",
+        "Asistente",
 
       tone:
         context?.assistant?.tone ||
+        promptConfig?.tone ||
         orgSettings?.tone ||
         "profesional",
     };
@@ -253,22 +473,45 @@ export async function handleInbound(payload) {
     });
 
     const historyRes = await db.query(
-      `SELECT role, content AS text
-       FROM messages
-       WHERE conversation_id = $1
-       ORDER BY created_at ASC
-       LIMIT 10`,
+      `
+      SELECT role, content AS text
+      FROM messages
+      WHERE conversation_id = $1
+      ORDER BY created_at ASC
+      LIMIT 10
+      `,
       [conversation.id]
     );
 
     const history = historyRes.rows || [];
+    const t = String(text || "").toLowerCase();
 
     let refinedIntent = normalizeIntent(detectIntent(text));
-    const t = String(text || "").toLowerCase();
+
+    if (refinedIntent === "OTHER" && history.length > 1) {
+      refinedIntent = "FOLLOWUP";
+    }
+    if (refinedIntent === "INFO" && t.includes("precio")) {
+      refinedIntent = "BUY";
+    }
+    if (
+      refinedIntent === "GREETING" &&
+      (t.includes("busco") || t.includes("ocupo"))
+    ) {
+      refinedIntent = "BUY";
+    }
+    if (
+      t.includes("no sirve") ||
+      t.includes("error") ||
+      t.includes("mantenimiento") ||
+      t.includes("repar")
+    ) {
+      refinedIntent = "SERVICE";
+    }
 
     await savePipelineEvent({
       organization_id,
-      lead_id: lead.id,
+      lead_id: lead?.id || null,
       event_type: "INTENT_DETECTED",
       metadata: {
         intent: refinedIntent,
@@ -276,115 +519,56 @@ export async function handleInbound(payload) {
       },
     });
 
-    if (refinedIntent === "OTHER" && history.length > 0) {
-      refinedIntent = "FOLLOWUP";
-    }
-
-    if (refinedIntent === "INFO" && t.includes("precio")) refinedIntent = "BUY";
-    if (refinedIntent === "GREETING" && t.includes("busco")) refinedIntent = "BUY";
-    if (t.includes("no sirve") || t.includes("error")) refinedIntent = "SERVICE";
-
-    // ================================
-    // STAGE
-    // ================================
+    const knownData = buildKnownData({ text, lead });
     const stage = detectStage({
       intent: refinedIntent,
       lead,
       text,
+      knownData,
     });
-
-    await savePipelineEvent({
-      organization_id,
-      lead_id: lead.id,
-      event_type: "STAGE_UPDATED",
-      metadata: {
-        stage,
-      },
-    });
-
-    // ================================
-    // KNOWN DATA + STRATEGY
-    // ================================
-    const knownData = buildKnownData({
-      text,
-      lead,
-    });
-
     const strategy = decideStrategy({
       intent: refinedIntent,
       stage,
       known_data: knownData,
     });
 
-    const shouldUseAI = !!strategy;
+    await savePipelineEvent({
+      organization_id,
+      lead_id: lead?.id || null,
+      event_type: "STAGE_UPDATED",
+      metadata: { stage },
+    });
 
-    try {
-      const results = await searchCatalogSmart({
-        organization_id,
-        query: text,
-      });
+    await savePipelineEvent({
+      organization_id,
+      lead_id: lead?.id || null,
+      event_type: "STRATEGY_SELECTED",
+      metadata: { strategy, stage, intent: refinedIntent },
+    });
 
-      safeCatalog = (results || []).slice(0, 3);
+    const shouldSearchCatalog =
+      refinedIntent === "BUY" ||
+      refinedIntent === "INFO" ||
+      refinedIntent === "CLOSE_INTENT";
 
-      if (refinedIntent === "GREETING" || refinedIntent === "SERVICE") {
-        safeCatalog = [];
-      }
-    } catch {}
+    if (shouldSearchCatalog) {
+      try {
+        const results = await searchCatalogSmart({
+          organization_id,
+          query: text,
+        });
+
+        safeCatalog = (results || []).slice(0, 3);
+      } catch {}
+    }
+
+    const salesRadar = buildSalesRadar({ intent: refinedIntent, text });
+    const isQualificationPhase =
+      strategy === "QUALIFY" && !isHotLeadIntent(refinedIntent, t, promptConfig);
 
     let aiText = null;
 
-    // ================================
-    // SALES RADAR (P1.6)
-    // ================================
-    let salesRadar = "";
-
-    if (refinedIntent === "BUY") {
-      if (
-        t.includes("estudi") ||
-        t.includes("colegio") ||
-        t.includes("universidad")
-      ) {
-        salesRadar = `
-OPORTUNIDAD DETECTADA:
-Cliente busca equipo para estudio.
-Prioriza:
-- equipos confiables
-- buena batería
-- precio accesible
-Sugiere soluciones prácticas.
-`;
-      }
-
-      if (t.includes("trabajo") || t.includes("oficina")) {
-        salesRadar = `
-OPORTUNIDAD DETECTADA:
-Cliente busca equipo para trabajo.
-Prioriza:
-- rendimiento estable
-- multitarea
-- durabilidad
-`;
-      }
-
-      if (t.includes("rápida") || t.includes("lenta")) {
-        salesRadar = `
-OPORTUNIDAD DETECTADA:
-Cliente tiene problema de rendimiento.
-Sugiere:
-- upgrade SSD
-- aumento de RAM
-`;
-      }
-    }
-
-    // ================================
-    // AI (ÚNICO BLOQUE)
-    // ================================
-    if (shouldUseAI) {
-      const isQualificationPhase =
-        refinedIntent === "BUY" &&
-        !isHotLeadIntent(refinedIntent, t, promptConfig);
-
+    if (strategy && strategy !== "DEFAULT") {
       const prompt = buildPrompt({
         context: {
           intent: refinedIntent,
@@ -394,7 +578,12 @@ Sugiere:
           sales_radar: salesRadar,
           force_mode: isQualificationPhase ? "QUALIFY_ONLY" : null,
         },
-        catalogResults: isQualificationPhase ? [] : safeCatalog,
+        catalogResults:
+          isQualificationPhase ||
+          refinedIntent === "SERVICE" ||
+          refinedIntent === "GREETING"
+            ? []
+            : safeCatalog,
         history,
         promptConfig,
       });
@@ -420,24 +609,32 @@ Sugiere:
       }
     }
 
-    // ================================
-    // FALLBACK + REPLY
-    // ================================
     const fallbackGreeting =
       promptConfig?.greeting ||
       `Hola 😊 le atiende ${
         orgContext?.assistant_name || "nuestro equipo"
       }, ¿en qué le puedo ayudar?`;
 
+    let fallbackReply = fallbackGreeting;
+
+    if (strategy === "ASK_DIAGNOSIS") {
+      fallbackReply = `Hola 😊 con mucho gusto le ayudo. ¿Me podría indicar la marca, el modelo y qué problema está presentando el equipo?`;
+    } else if (strategy === "QUALIFY") {
+      fallbackReply = `Con mucho gusto le ayudo. ¿La necesita para estudio, trabajo o algún uso específico?`;
+    } else if (strategy === "CLOSE") {
+      fallbackReply = `Perfecto 🙌 Ya estamos cerca de ayudarle con eso. ¿Desea que coordinemos compra, apartado o entrega?`;
+    } else if (strategy === "FOLLOWUP") {
+      fallbackReply = `Hola 😊 solo le doy seguimiento a su consulta. ¿Todavía sigue buscando ayuda con eso?`;
+    }
+
     const replyText =
-      !shouldUseAI
-        ? fallbackGreeting
-        : !aiText || aiText.length < 5 || aiText.includes("no sé")
-          ? fallbackGreeting
-          : aiText;
+      !aiText || aiText.length < 5 || aiText.toLowerCase().includes("no sé")
+        ? fallbackReply
+        : aiText;
 
     const shouldInjectProducts =
-      refinedIntent === "CLOSE_INTENT";
+      refinedIntent === "CLOSE_INTENT" ||
+      (refinedIntent === "BUY" && stage !== "QUALIFYING");
 
     const reply = generateReply({
       text: replyText,
@@ -452,20 +649,61 @@ Sugiere:
       text: reply.text,
     });
 
+    const memory = {
+      budget: knownData.budget,
+      use_case: knownData.use_case,
+      product_interest: knownData.product_interest,
+      interest_level: computeInterestLevel(refinedIntent, text),
+      last_intent: refinedIntent,
+    };
+
+    await updateLeadMemory({
+      organization_id,
+      lead_id: lead?.id,
+      memory,
+    });
+
+    await savePipelineEvent({
+      organization_id,
+      lead_id: lead?.id || null,
+      event_type: "LEAD_MEMORY_UPDATED",
+      metadata: memory,
+    });
+
+    const leadScore = computeLeadScore({
+      intent: refinedIntent,
+      stage,
+      text,
+    });
+
     try {
       await updateLeadStageAndScore({
         organization_id,
-        phone,
-        stage,
+        lead_id: lead?.id,
+        new_stage: stageToDb(stage),
+        new_score: leadScore,
       });
     } catch (err) {
       console.error("STAGE_UPDATE_ERROR", err);
+    }
+
+    const isHotLead =
+      isHotLeadIntent(refinedIntent, t, promptConfig) || stage === "HOT";
+
+    if (!isHotLead) {
+      await createFollowupIfNeeded({
+        organization_id,
+        conversation_id: conversation.id,
+        phone,
+      });
     }
 
     return {
       reply,
       meta: {
         intent: refinedIntent,
+        stage,
+        strategy,
         lead_id: lead?.id || null,
         conversation_id: conversation.id,
       },
