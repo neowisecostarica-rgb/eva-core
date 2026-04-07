@@ -1,4 +1,10 @@
-export function buildPrompt({ 
+/*
+====================================================
+EVA CORE — PROMPT BUILDER (P1.5 FIXED)
+====================================================
+*/
+
+export function buildPrompt({
   context,
   catalogResults = [],
   history = [],
@@ -19,7 +25,7 @@ export function buildPrompt({
   const customInstructions = promptConfig?.instructions || "";
 
   const historyText = history
-    .map((m) => `${m.role === "user" ? "Cliente" : agentName}: ${m.text}`)
+    .map((m) => `${m.role === "user" ? "Usuario" : "Asistente"}: ${m.text}`)
     .join("\n");
 
   const catalogText =
@@ -27,7 +33,7 @@ export function buildPrompt({
       ? catalogResults
           .map(
             (p, i) =>
-              `${i + 1}. ${p.name} - ${p.price ? `₡${p.price}` : ""}`
+              `${i + 1}. ${p.name}${p.price ? ` - ₡${p.price}` : ""}`
           )
           .join("\n")
       : "No hay productos disponibles.";
@@ -36,6 +42,18 @@ export function buildPrompt({
   // 🧠 STRATEGY CONTROL (CORE)
   // ================================
   let strategyBlock = "";
+
+  if (strategy === "OPEN") {
+    strategyBlock = `
+ESTRATEGIA: APERTURA
+
+- Saluda de forma natural
+- Haz una sola pregunta para entender qué necesita el cliente
+- NO recomiendes productos
+- NO menciones precios
+- Mantén la respuesta corta
+`;
+  }
 
   if (strategy === "ASK") {
     strategyBlock = `
@@ -46,6 +64,18 @@ ESTRATEGIA: SOLICITAR INFORMACIÓN
 - NO menciones precios
 - Mantén la respuesta corta
 - Termina con una pregunta
+`;
+  }
+
+  if (strategy === "ASK_DIAGNOSIS") {
+    strategyBlock = `
+ESTRATEGIA: DIAGNÓSTICO
+
+- Primero solicita información del caso
+- Pide marca, modelo y problema
+- NO expliques la reparación todavía
+- NO des precio sin entender el caso
+- Cierra con una pregunta clara
 `;
   }
 
@@ -88,6 +118,17 @@ ESTRATEGIA: EXPLICAR Y CERRAR
 - Explica brevemente la situación
 - Da una recomendación clara
 - Sugiere acción inmediata
+`;
+  }
+
+  if (strategy === "EDUCATE") {
+    strategyBlock = `
+ESTRATEGIA: ORIENTACIÓN
+
+- Responde la duda con claridad
+- Mantén enfoque práctico
+- No satures con información
+- Si ayuda, termina guiando al siguiente paso
 `;
   }
 
@@ -143,11 +184,25 @@ Eres ${agentName}, asistente comercial de ${businessName}.
 
 ${customInstructions}
 
+CONTEXTO:
+- Intento: ${intent || "OTHER"}
+- Etapa: ${stage || "EARLY"}
+- Estrategia: ${strategy || "DEFAULT"}
+
 ${strategyBlock}
 
 ${forceBlock}
 
 ${sales_radar || ""}
+
+IMPORTANTE:
+- Responde únicamente como ${agentName}
+- NO simules diálogo
+- NO escribas "Cliente:", "Usuario:", "${agentName}:" ni "Asistente:"
+- NO inventes contexto anterior
+- NO inventes productos ni garantías
+- Mantén mensajes cortos, claros y humanos
+- Siempre guía la conversación hacia el siguiente paso
 
 Historial:
 ${historyText}
@@ -155,9 +210,6 @@ ${historyText}
 Productos disponibles:
 ${catalogText}
 
-Responde de forma natural, clara y útil.
-Evita sonar forzado.
-Mantén mensajes cortos.
-Siempre guía la conversación hacia el siguiente paso.
+Genera únicamente el mensaje final que se enviará al cliente.
 `;
 }
