@@ -31,12 +31,76 @@ HELPERS
 ====================================================
 */
 
-function decideStrategy({ intent }) {
-  if (intent === "BUY") return "QUALIFY";
-  if (intent === "CLOSE_INTENT") return "CLOSE";
-  if (intent === "SERVICE") return "DIAGNOSE";
-  if (intent === "INFO") return "EDUCATE";
-  if (intent === "FOLLOWUP") return "FOLLOWUP";
+function decideStrategy({
+  intent,
+  stage = "EARLY",
+  known_data = {},
+}) {
+  const hasProblem = !!known_data.problem;
+  const hasUseCase = !!known_data.use_case;
+  const hasBudget = !!known_data.budget;
+  const hasProductInterest = !!known_data.product_interest;
+
+  // ================================
+  // SERVICE
+  // ================================
+  if (intent === "SERVICE") {
+    if (!hasProblem) return "ASK_DIAGNOSIS";
+    return "EXPLAIN_CLOSE";
+  }
+
+  // ================================
+  // BUY / CLOSE
+  // ================================
+  if (intent === "CLOSE_INTENT") {
+    return "CLOSE";
+  }
+
+  if (intent === "BUY") {
+    if (stage === "EARLY") {
+      if (!hasUseCase && !hasBudget) return "QUALIFY";
+      if (hasUseCase || hasBudget || hasProductInterest) return "RECOMMEND";
+      return "QUALIFY";
+    }
+
+    if (stage === "QUALIFYING") {
+      if (!hasUseCase || !hasBudget) return "QUALIFY";
+      return "RECOMMEND";
+    }
+
+    if (stage === "MID") {
+      return "RECOMMEND";
+    }
+
+    if (stage === "HOT") {
+      return "CLOSE";
+    }
+
+    return "QUALIFY";
+  }
+
+  // ================================
+  // INFO
+  // ================================
+  if (intent === "INFO") {
+    return "EDUCATE";
+  }
+
+  // ================================
+  // FOLLOWUP
+  // ================================
+  if (intent === "FOLLOWUP") {
+    if (stage === "HOT") return "CLOSE";
+    return "FOLLOWUP";
+  }
+
+  // ================================
+  // GREETING / DEFAULT
+  // ================================
+  if (intent === "GREETING") {
+    return "OPEN";
+  }
+
   return "DEFAULT";
 }
 
