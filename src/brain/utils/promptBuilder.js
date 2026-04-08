@@ -4,15 +4,11 @@ export function buildPrompt({
   history = [],
   promptConfig = {},
 }) {
- const {
-  intent,
-  strategy,
-  stage,
-  organization,
-  sales_radar,
-  known_data = {}, // ✅ NUEVO
-  force_mode = null,
-} = context || {};
+  const {
+    intent,
+    organization,
+    known_data = {},
+  } = context || {};
 
   const agentName = organization?.assistant_name || "Asistente";
   const businessName = organization?.business_name || "el negocio";
@@ -20,188 +16,71 @@ export function buildPrompt({
   const customInstructions = promptConfig?.instructions || "";
 
   // ================================
-  // HISTORY
+  // HISTORIAL
   // ================================
   const historyText = history
     .map((m) => `${m.role === "user" ? "Cliente" : agentName}: ${m.text}`)
     .join("\n");
 
   // ================================
-  // CATALOG
+  // CATÁLOGO
   // ================================
   const catalogText =
     catalogResults && catalogResults.length > 0
       ? catalogResults
           .map(
             (p, i) =>
-              `${i + 1}. ${p.name} - ${p.price ? `₡${p.price}` : ""}`
+              `${i + 1}. ${p.name} ${p.price ? `- ₡${p.price}` : ""}`
           )
           .join("\n")
-      : "No hay productos disponibles.";
+      : "";
 
   // ================================
-  // CONTEXT BLOCK (CRÍTICO)
+  // CONTEXTO BASE
   // ================================
   const contextBlock = `
-CONTEXTO ACTUAL:
-- Intento: ${intent || "UNKNOWN"}
-- Etapa: ${stage || "UNKNOWN"}
+CONTEXTO:
+- Intención detectada: ${intent || "UNKNOWN"}
 - Datos conocidos: ${JSON.stringify(known_data || {})}
 `;
 
   // ================================
-  // STRATEGY BLOCK
-  // ================================
-  let strategyBlock = "";
-
- if (strategy === "OPEN") {
-  strategyBlock = `
-ESTRATEGIA: APERTURA
-- Saluda natural
-- Haz 1 pregunta
-- NO recomendar productos aún
-- Si no hay datos del cliente, guía la conversación proponiendo opciones (ej: compra, reparación, consulta)
-`;
-
-  } else if (strategy === "ASK" || strategy === "ASK_DIAGNOSIS") {
-    strategyBlock = `
-ESTRATEGIA: DIAGNÓSTICO
-- Pregunta claro
-- NO vender
-- NO precios
-`;
-  } else if (strategy === "QUALIFY") {
-    strategyBlock = `
-ESTRATEGIA: CALIFICACIÓN
-- Entender necesidad
-- Preguntar uso/contexto
-- NO recomendar aún
-`;
-  } else if (strategy === "RECOMMEND") {
-    strategyBlock = `
-ESTRATEGIA: RECOMENDACIÓN
-- Sugiere opciones
-- Explica por qué
-- Guía decisión
-`;
-  } else if (strategy === "EXPLAIN") {
-    strategyBlock = `
-ESTRATEGIA: EXPLICACIÓN
-- Claro
-- Sin técnico
-`;
-  } else if (strategy === "EXPLAIN_CLOSE") {
-    strategyBlock = `
-ESTRATEGIA: EXPLICAR Y CERRAR
-- Explica breve
-- Lleva a acción
-`;
-  } else if (strategy === "CLOSE") {
-    strategyBlock = `
-ESTRATEGIA: CIERRE
-- Acción clara
-- Compra / visita / apartado
-`;
-  } else if (strategy === "FOLLOWUP") {
-    strategyBlock = `
-ESTRATEGIA: SEGUIMIENTO
-- Retomar conversación
-- Invitar a continuar
-`;
-  } else {
-    strategyBlock = `
-ESTRATEGIA: GENERAL
-- Responder útil
-- Mantener conversación
-`;
-  }
-
-  // ================================
-  // INTENT BLOCK (EXPANDIDO)
-  // ================================
-  let intentBlock = "";
-
-  if (intent === "SERVICE") {
-    intentBlock = `
-CONTEXTO: SERVICIO
-- Diagnosticar primero
-- NO explicar de una
-- Llevar a revisión
-`;
-  }
-
-  if (intent === "BUY") {
-    intentBlock = `
-CONTEXTO: COMPRA
-- Entender necesidad
-- No vender de inmediato si falta info
-`;
-  }
-
-  if (intent === "INFO") {
-    intentBlock = `
-CONTEXTO: INFORMACIÓN
-- Responder claro
-- Mantener conversación activa
-`;
-  }
-
-  if (intent === "FOLLOWUP") {
-    intentBlock = `
-CONTEXTO: SEGUIMIENTO
-- Retomar interés
-- Empujar siguiente paso
-`;
-  }
-
-  // ================================
-  // FORCE MODE
-  // ================================
-  let forceBlock = "";
-
-  if (force_mode === "QUALIFY_ONLY") {
-    forceBlock = `
-MODO FORZADO:
-- SOLO preguntas
-- NO vender
-- NO precios
-`;
-  }
-
-  // ================================
-  // RESPONSE RULES (CRÍTICO)
+  // REGLAS SIMPLES (CLAVE)
   // ================================
   const rulesBlock = `
-REGLAS DE RESPUESTA:
-- No saturar con información
-- Primero entender, luego explicar
-- Máximo 1 pregunta por mensaje
-- No dar precios sin contexto
-- Adaptarse a la etapa del cliente
-- Siempre guiar hacia una acción
+REGLAS:
+
+- Responder directamente a lo que el cliente dijo
+- NO ignorar el mensaje del cliente
+- NO hacer preguntas genéricas si ya hay intención clara
+- Hacer máximo 1 pregunta por mensaje
+- Mantener respuesta clara, corta y natural
+- Siempre guiar al siguiente paso
 `;
 
   // ================================
-  // ANTI DUMP CONTROL
+  // FLUJO BASE (TIPO EVANGELINA)
   // ================================
-  const antiDumpBlock =
-    stage === "EARLY"
-      ? `
-CONTROL:
-- Respuesta corta
-- Priorizar pregunta
-`
-      : "";
+  const flowBlock = `
+FLUJO DE RESPUESTA:
+
+1. Si el cliente ya dijo lo que quiere → responder directo
+2. Si falta información → hacer 1 pregunta clara
+3. Si hay intención de compra → recomendar o guiar
+4. Si es servicio → diagnosticar primero
+`;
 
   // ================================
-  // SALES RADAR
+  // ESTILO
   // ================================
-  const radarBlock = sales_radar
-    ? `
-SALES RADAR:
-${sales_radar}
-`
-    : "";
+  const styleBlock = `
+ESTILO:
+
+- Tono cercano y profesional
+- Máximo 1 emoji por mensaje
+- No sonar robótico
+- No usar lenguaje técnico complejo
+`;
 
   return `
 Eres ${agentName}, asistente comercial de ${businessName}.
@@ -210,17 +89,11 @@ ${customInstructions}
 
 ${contextBlock}
 
-${intentBlock}
-
-${strategyBlock}
-
-${forceBlock}
-
 ${rulesBlock}
 
-${antiDumpBlock}
+${flowBlock}
 
-${radarBlock}
+${styleBlock}
 
 Historial:
 ${historyText}
@@ -228,6 +101,6 @@ ${historyText}
 Productos disponibles:
 ${catalogText}
 
-Responde natural, claro y directo.
+Responde como si estuvieras atendiendo por WhatsApp.
 `;
 }
