@@ -646,20 +646,40 @@ export async function handleInbound(payload) {
 
       const guarded = applyAIGuards({ aiResponse: aiResult });
 
-      if (guarded?.text) {
-        const cleanedAIText = cleanAIText(
-          guarded.text,
-          orgContext?.assistant_name || "Eva"
-        );
+if (guarded?.text) {
+  const cleanedAIText = cleanAIText(
+    guarded.text,
+    orgContext?.assistant_name || "Eva"
+  );
 
-        if (cleanedAIText) {
-          aiText = formatAIResponse({
-            text: cleanedAIText,
-            agentName: orgContext?.assistant_name || "Eva",
-          });
-        }
+  if (cleanedAIText) {
+    let finalAIText = cleanedAIText;
+
+    // 🔒 VALIDACIÓN POR STRATEGY
+    if (strategy === "QUALIFY") {
+      const hasQuestion = finalAIText.includes("?");
+
+      if (!hasQuestion) {
+        finalAIText =
+          "Con mucho gusto le ayudo 😊 ¿Me podría contar un poco más sobre lo que necesita?";
       }
     }
+
+    if (strategy === "ASK_DIAGNOSIS") {
+      const hasQuestion = finalAIText.includes("?");
+
+      if (!hasQuestion) {
+        finalAIText =
+          "Con mucho gusto le ayudo 😊 ¿Me podría indicar qué problema presenta el equipo?";
+      }
+    }
+
+    aiText = formatAIResponse({
+      text: finalAIText,
+      agentName: orgContext?.assistant_name || "Eva",
+    });
+  }
+}
 
     let fallbackReply = `Hola 😊 con mucho gusto le ayudo. ¿En qué le puedo ayudar?`;
 
