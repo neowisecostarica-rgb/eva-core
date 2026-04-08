@@ -4,15 +4,15 @@ export function buildPrompt({
   history = [],
   promptConfig = {},
 }) {
-  const {
-    intent,
-    strategy,
-    stage,
-    organization,
-    sales_radar,
-    force_mode = null,
-    known_data = {},
-  } = context || {};
+ const {
+  intent,
+  strategy,
+  stage,
+  organization,
+  sales_radar,
+  known_data = {}, // ✅ NUEVO
+  force_mode = null,
+} = context || {};
 
   const agentName = organization?.assistant_name || "Asistente";
   const businessName = organization?.business_name || "el negocio";
