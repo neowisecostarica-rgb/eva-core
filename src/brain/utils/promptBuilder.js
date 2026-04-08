@@ -54,13 +54,15 @@ CONTEXTO ACTUAL:
   // ================================
   let strategyBlock = "";
 
-  if (strategy === "OPEN") {
-    strategyBlock = `
+ if (strategy === "OPEN") {
+  strategyBlock = `
 ESTRATEGIA: APERTURA
 - Saluda natural
 - Haz 1 pregunta
-- NO recomendar productos
+- NO recomendar productos aún
+- Si no hay datos del cliente, guía la conversación proponiendo opciones (ej: compra, reparación, consulta)
 `;
+
   } else if (strategy === "ASK" || strategy === "ASK_DIAGNOSIS") {
     strategyBlock = `
 ESTRATEGIA: DIAGNÓSTICO
