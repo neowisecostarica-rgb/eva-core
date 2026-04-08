@@ -282,7 +282,7 @@ function decideStrategy({ intent, stage = "EARLY", known_data = {} }) {
   if (intent === "CLOSE_INTENT") return "CLOSE";
 
   if (intent === "BUY") {
-    if (stage === "EARLY") return "OPEN";
+    if (stage === "EARLY") return "QUALIFY";
 
     if (stage === "QUALIFYING") {
       if (!hasUseCase || !hasBudget) return "QUALIFY";
@@ -647,32 +647,7 @@ export async function handleInbound(payload) {
       }
     }
 
-    const fallbackGreeting =
-      promptConfig?.greeting ||
-      `Hola 😊 le atiende ${
-        orgContext?.assistant_name || "nuestro equipo"
-      }, ¿en qué le puedo ayudar?`;
-
-    let fallbackReply = fallbackGreeting;
-
-   if (strategy === "OPEN") {
-  fallbackReply = `Hola 😊 buenas tardes, le saluda ${orgContext?.assistant_name || "Eva"} de ${orgContext?.business_name || "nuestro negocio"}. Con mucho gusto le ayudo 🙌 ¿Está buscando algún equipo, servicio o necesita ayuda con algo específico?`;
-
-} else if (strategy === "ASK_DIAGNOSIS") {
-  fallbackReply = `Hola 😊 le saluda ${orgContext?.assistant_name || "Eva"} de ${orgContext?.business_name || "nuestro negocio"}. Con mucho gusto le ayudo 🙌 ¿Me podría indicar la marca, el modelo y qué problema está presentando el equipo?`;
-
-} else if (strategy === "QUALIFY") {
-  fallbackReply = `Con mucho gusto le ayudo 🙌 Para orientarle mejor, ¿la necesita para estudio, trabajo o algún uso específico?`;
-
-} else if (strategy === "CLOSE") {
-  fallbackReply = `Perfecto 🙌 Ya estamos para ayudarle con eso. ¿Desea que coordinemos compra, apartado o entrega?`;
-
-} else if (strategy === "FOLLOWUP") {
-  fallbackReply = `Hola 😊 le saluda ${orgContext?.assistant_name || "Eva"}. Solo le doy seguimiento a su consulta 🙌 ¿Todavía sigue buscando ayuda con eso?`;
-
-} else if (strategy === "EDUCATE") {
-  fallbackReply = `Con mucho gusto le ayudo 🙌 ¿Me podría indicar un poco más sobre lo que desea conocer para orientarle mejor?`;
-}
+    let fallbackReply = `Hola 😊 con mucho gusto le ayudo. ¿En qué le puedo ayudar?`;
 
     const replyText =
       !aiText || aiText.length < 5 || aiText.toLowerCase().includes("no sé")
