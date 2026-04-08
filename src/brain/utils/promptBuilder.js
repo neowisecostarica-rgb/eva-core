@@ -51,7 +51,7 @@ export function buildPrompt({
   // ================================
   // DATOS CONOCIDOS
   // ================================
-  const knownDataText = Object.entries({
+ const knownDataText = Object.entries({
   "Producto de interés": known_data.product_interest,
   "Uso del cliente": known_data.use_case,
   "Presupuesto": known_data.budget,
@@ -60,7 +60,6 @@ export function buildPrompt({
   .filter(([_, v]) => v)
   .map(([k, v]) => `- ${k}: ${v}`)
   .join("\n") || "Sin datos aún.";
-
   // ================================
   // BLOQUE: CONTROL DE STRATEGY
   // ================================
