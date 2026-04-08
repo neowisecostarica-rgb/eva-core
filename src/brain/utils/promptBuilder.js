@@ -46,17 +46,20 @@ export function buildPrompt({
               `${i + 1}. ${p.name} - ₡${p.price} - ${p.description || ""}`
           )
           .join("\n")
-      : "No hay productos relevantes disponibles.";
+     : "";
 
   // ================================
   // DATOS CONOCIDOS
   // ================================
-  const knownDataText = `
-- Producto de interés: ${known_data.product_interest || "No definido"}
-- Uso del cliente: ${known_data.use_case || "No definido"}
-- Presupuesto: ${known_data.budget || "No definido"}
-- Urgencia: ${known_data.urgency || "No definido"}
-`;
+  const knownDataText = Object.entries({
+  "Producto de interés": known_data.product_interest,
+  "Uso del cliente": known_data.use_case,
+  "Presupuesto": known_data.budget,
+  "Urgencia": known_data.urgency,
+})
+  .filter(([_, v]) => v)
+  .map(([k, v]) => `- ${k}: ${v}`)
+  .join("\n") || "Sin datos aún.";
 
   // ================================
   // BLOQUE: CONTROL DE STRATEGY
