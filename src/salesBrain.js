@@ -598,14 +598,15 @@ export async function handleInbound(payload) {
 
     if (strategy && strategy !== "DEFAULT") {
       const prompt = buildPrompt({
-        context: {
-          intent: refinedIntent,
-          stage,
-          strategy,
-          organization: orgContext,
-          sales_radar: salesRadar,
-          force_mode: isQualificationPhase ? "QUALIFY_ONLY" : null,
-        },
+  context: {
+    intent: refinedIntent,
+    stage,
+    strategy,
+    organization: orgContext,
+    sales_radar: salesRadar,
+    known_data: knownData, // ✅ INYECCIÓN CRÍTICA
+    force_mode: isQualificationPhase ? "QUALIFY_ONLY" : null,
+  },
         catalogResults:
           isQualificationPhase ||
           refinedIntent === "SERVICE" ||
