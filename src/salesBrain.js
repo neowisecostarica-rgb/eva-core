@@ -655,19 +655,24 @@ export async function handleInbound(payload) {
 
     let fallbackReply = fallbackGreeting;
 
-    if (strategy === "OPEN") {
-      fallbackReply = `Hola 😊 con mucho gusto le ayudo. ¿Qué está buscando o en qué le puedo ayudar hoy?`;
-    } else if (strategy === "ASK_DIAGNOSIS") {
-      fallbackReply = `Hola 😊 con mucho gusto le ayudo. ¿Me podría indicar la marca, el modelo y qué problema está presentando el equipo?`;
-    } else if (strategy === "QUALIFY") {
-      fallbackReply = `Con mucho gusto le ayudo. ¿La necesita para estudio, trabajo o algún uso específico?`;
-    } else if (strategy === "CLOSE") {
-      fallbackReply = `Perfecto 🙌 Ya estamos cerca de ayudarle con eso. ¿Desea que coordinemos compra, apartado o entrega?`;
-    } else if (strategy === "FOLLOWUP") {
-      fallbackReply = `Hola 😊 solo le doy seguimiento a su consulta. ¿Todavía sigue buscando ayuda con eso?`;
-    } else if (strategy === "EDUCATE") {
-      fallbackReply = `Con mucho gusto le ayudo. ¿Me podría indicar un poco más sobre lo que desea conocer para orientarle mejor?`;
-    }
+   if (strategy === "OPEN") {
+  fallbackReply = `Hola 😊 buenas tardes, le saluda ${orgContext?.assistant_name || "Eva"} de ${orgContext?.business_name || "nuestro negocio"}. Con mucho gusto le ayudo 🙌 ¿Está buscando algún equipo, servicio o necesita ayuda con algo específico?`;
+
+} else if (strategy === "ASK_DIAGNOSIS") {
+  fallbackReply = `Hola 😊 le saluda ${orgContext?.assistant_name || "Eva"} de ${orgContext?.business_name || "nuestro negocio"}. Con mucho gusto le ayudo 🙌 ¿Me podría indicar la marca, el modelo y qué problema está presentando el equipo?`;
+
+} else if (strategy === "QUALIFY") {
+  fallbackReply = `Con mucho gusto le ayudo 🙌 Para orientarle mejor, ¿la necesita para estudio, trabajo o algún uso específico?`;
+
+} else if (strategy === "CLOSE") {
+  fallbackReply = `Perfecto 🙌 Ya estamos para ayudarle con eso. ¿Desea que coordinemos compra, apartado o entrega?`;
+
+} else if (strategy === "FOLLOWUP") {
+  fallbackReply = `Hola 😊 le saluda ${orgContext?.assistant_name || "Eva"}. Solo le doy seguimiento a su consulta 🙌 ¿Todavía sigue buscando ayuda con eso?`;
+
+} else if (strategy === "EDUCATE") {
+  fallbackReply = `Con mucho gusto le ayudo 🙌 ¿Me podría indicar un poco más sobre lo que desea conocer para orientarle mejor?`;
+}
 
     const replyText =
       !aiText || aiText.length < 5 || aiText.toLowerCase().includes("no sé")
