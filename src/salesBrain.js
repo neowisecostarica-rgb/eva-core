@@ -212,11 +212,25 @@ function computeLeadScore({ intent, stage, text = "" }) {
 }
 
 function buildKnownData({ text = "", lead = {} }) {
-  return {
+  const extracted = {
     product_interest: extractProductInterest(text, lead),
     use_case: extractUseCase(text, lead),
     budget: extractBudget(text, lead),
     problem: extractProblem(text),
+  };
+
+  return {
+    product_interest:
+      extracted.product_interest || lead?.product_interest || null,
+
+    use_case:
+      extracted.use_case || lead?.use_case || null,
+
+    budget:
+      extracted.budget || lead?.budget || null,
+
+    problem:
+      extracted.problem || null, // runtime únicamente
   };
 }
 
