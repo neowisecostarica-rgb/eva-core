@@ -152,6 +152,7 @@ export function buildPrompt({
 - Máximo 1 pregunta por mensaje.
 - Usa lenguaje claro y natural.
 - Siempre guía hacia una acción.
+- No expliques cómo reparar o solucionar problemas técnicos.
 `;
 
   // ================================
