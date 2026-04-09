@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — SALES BRAIN (P1.3.2 — ENFORCE STRATEGY FIXED)
+EVA CORE — SALES BRAIN (P1.3.3 — ENFORCE + CONTEXT FIXED)
 ====================================================
 */
 
@@ -24,6 +24,7 @@ import { buildPrompt } from "./brain/utils/promptBuilder.js";
 import { getPromptConfig } from "./brain/utils/getPromptConfig.js";
 import { detectIntent } from "./brain/engines/intentEngine.js";
 import { formatAIResponse } from "./brain/utils/responseFormatter.js";
+import { buildContext } from "./contextBuilder.js";
 
 /*
 ====================================================
@@ -46,7 +47,7 @@ function enforceStrategyRequired(strategy, context = {}) {
 
 /*
 ====================================================
-HELPERS (SIN CAMBIOS)
+HELPERS
 ====================================================
 */
 
@@ -139,16 +140,29 @@ export async function handleInbound(payload) {
 
     let refinedIntent = normalizeIntent(detectIntent(text));
 
-    // ajustes
+    // ================================
+    // AJUSTES INTENT
+    // ================================
     if (refinedIntent === "OTHER" && history.length > 1) {
       refinedIntent = "FOLLOWUP";
     }
+
     if (refinedIntent === "INFO" && t.includes("precio")) {
       refinedIntent = "BUY";
     }
-    if (t.includes("mantenimiento") || t.includes("repar")) {
+
+    if (
+      t.includes("no sirve") ||
+      t.includes("error") ||
+      t.includes("mantenimiento") ||
+      t.includes("repar")
+    ) {
       refinedIntent = "SERVICE";
     }
+
+    // ================================
+    // CORE FLOW (ORDEN CORRECTO)
+    // ================================
 
     const knownData = buildKnownData({ text, lead });
 
@@ -165,13 +179,26 @@ export async function handleInbound(payload) {
       known_data: knownData,
     });
 
-    // 🔴 ENFORCE
+    // 🔴 ENFORCE PRIMERO
     const enforcedStrategy = enforceStrategyRequired(strategy, {
       intent: refinedIntent,
       stage,
       knownData,
     });
 
+    // 🔴 CONTEXT DESPUÉS
+    const fullContext = await buildContext({
+      organization_id,
+      phone,
+      text,
+      intent: refinedIntent,
+      stage,
+      known_data: knownData,
+    });
+
+    // ================================
+    // CATALOGO
+    // ================================
     const shouldSearchCatalog =
       refinedIntent === "BUY" ||
       refinedIntent === "INFO" ||
@@ -183,21 +210,21 @@ export async function handleInbound(payload) {
           organization_id,
           query: text,
         });
+
         safeCatalog = (results || []).slice(0, 3);
       } catch {}
     }
 
+    // ================================
+    // AI
+    // ================================
     let aiText = null;
 
-    // 🔴 SIEMPRE usa enforcedStrategy
     if (enforcedStrategy) {
       const prompt = buildPrompt({
         context: {
-          intent: refinedIntent,
-          stage,
+          ...fullContext,
           strategy: enforcedStrategy,
-          organization: orgContext,
-          known_data: knownData,
         },
         catalogResults: safeCatalog,
         history,
@@ -220,6 +247,9 @@ export async function handleInbound(payload) {
       }
     }
 
+    // ================================
+    // FALLBACK
+    // ================================
     const fallback = `Hola 😊 con mucho gusto le ayudo. ¿En qué le puedo ayudar?`;
 
     const replyText =
