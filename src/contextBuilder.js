@@ -1,12 +1,19 @@
 /*
 ====================================================
-EVA CORE — CONTEXT BUILDER (BLOCK 4.5 FIXED)
+EVA CORE — CONTEXT BUILDER (BLOCK 2 — REAL ENGINE)
 ====================================================
 */
 
 import pool from "./db.js";
 
-export async function buildContext({ organization_id, phone }) {
+export async function buildContext({
+  organization_id,
+  phone,
+  text = "",
+  intent = null,
+  stage = null,
+  known_data = {},
+}) {
   try {
     // ================================
     // BUSINESS PROFILE
@@ -29,7 +36,7 @@ export async function buildContext({ organization_id, phone }) {
     const config = configRes.rows[0] || {};
 
     // ================================
-    // LEAD (si existe)
+    // LEAD
     // ================================
     let lead = {};
     if (phone) {
@@ -41,23 +48,84 @@ export async function buildContext({ organization_id, phone }) {
     }
 
     // ================================
-    // CONTEXT FINAL
+    // HISTORY (últimos mensajes)
+    // ================================
+    let history = [];
+    if (lead?.id) {
+      const historyRes = await pool.query(
+        `
+        SELECT role, content
+        FROM messages
+        WHERE organization_id = $1
+        ORDER BY created_at DESC
+        LIMIT 10
+        `,
+        [organization_id]
+      );
+
+      history = (historyRes.rows || []).reverse();
+    }
+
+    // ================================
+    // BUSINESS RULES (BASE)
+    // ================================
+    const business_rules = {
+      no_technical_explanations: true,
+      max_emojis: 1,
+      close_always: true,
+      ask_before_explain: true,
+    };
+
+    // ================================
+    // SALES CONTEXT (INTELIGENCIA)
+    // ================================
+    const sales_context = {
+      is_returning_customer: !!lead?.id,
+      interest_level: lead?.interest_level || "LOW",
+      last_stage: lead?.stage || "EARLY",
+    };
+
+    // ================================
+    // CONTEXT FINAL (SOT)
     // ================================
     return {
       organization: {
-        business_name: business.business_name,
-        business_type: business.business_type,
-        phone: business.phone,
+        business_name: business.business_name || "el negocio",
+        business_type: business.business_type || "general",
       },
+
       assistant: {
-        name: config.assistant_name,
-        tone: config.tone,
-        objective: config.objective,
+        name: config.assistant_name || "Asistente",
+        tone: config.tone || "profesional",
+        objective: config.objective || "vender",
       },
+
       lead,
+
+      // 🔴 NUEVO CORE
+      intent,
+      stage,
+      known_data,
+
+      business_rules,
+      history,
+      sales_context,
+      user_message: text,
     };
   } catch (error) {
     console.error("❌ CONTEXT BUILDER ERROR", error);
-    return {};
+
+    return {
+      organization: {},
+      assistant: {},
+      lead: {},
+      intent: null,
+      stage: null,
+      known_data: {},
+      business_rules: {},
+      history: [],
+      sales_context: {},
+      user_message: text,
+    };
   }
 }
