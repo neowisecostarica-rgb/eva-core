@@ -617,7 +617,7 @@ const enforcedStrategy = enforceStrategyRequired(strategy, {
 
     let aiText = null;
 
-    if (strategy && strategy !== "DEFAULT") {
+    if (enforcedStrategy) {
       const prompt = buildPrompt({
   context: {
     intent: refinedIntent,
