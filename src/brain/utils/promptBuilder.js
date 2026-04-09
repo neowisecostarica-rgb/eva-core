@@ -1,7 +1,6 @@
 /*
 ====================================================
-EVA CORE — PROMPT BUILDER (SOT ALIGNED v1)
-BLOQUE 1 — PROMPT ENGINE
+EVA CORE — PROMPT BUILDER (SOT ALIGNED v2 — FIXED)
 ====================================================
 */
 
@@ -16,87 +15,113 @@ export function buildPrompt({
     stage,
     strategy,
     organization,
+    assistant,
     known_data = {},
   } = context || {};
 
-  const agentName = organization?.assistant_name || "Asistente";
+  const agentName = assistant?.name || "Asistente";
   const businessName = organization?.business_name || "el negocio";
 
   const customInstructions = promptConfig?.instructions || "";
 
-  // ================================
-  // HISTORIAL (últimos mensajes)
-  // ================================
+  /*
+  ===============================
+  HISTORY
+  ===============================
+  */
+
   const historyText = history
     .slice(-6)
     .map((m) =>
-      `${m.role === "user" ? "Cliente" : agentName}: ${m.text}`
+      `${m.role === "user" ? "Cliente" : agentName}: ${
+        m.content || m.text || ""
+      }`
     )
     .join("\n");
 
-  // ================================
-  // CATÁLOGO (si aplica)
-  // ================================
+  /*
+  ===============================
+  CATÁLOGO
+  ===============================
+  */
+
   const catalogText =
     catalogResults.length > 0
       ? catalogResults
           .slice(0, 5)
           .map(
             (p, i) =>
-              `${i + 1}. ${p.name} - ₡${p.price} - ${p.description || ""}`
+              `${i + 1}. ${p.name} - ₡${p.price} - ${
+                p.description || ""
+              }`
           )
           .join("\n")
-     : "";
+      : "Sin productos relevantes.";
 
-  // ================================
-  // DATOS CONOCIDOS
-  // ================================
- const knownDataText = Object.entries({
-  "Producto de interés": known_data.product_interest,
-  "Uso del cliente": known_data.use_case,
-  "Presupuesto": known_data.budget,
-  "Urgencia": known_data.urgency,
-})
-  .filter(([_, v]) => v)
-  .map(([k, v]) => `- ${k}: ${v}`)
-  .join("\n") || "Sin datos aún.";
-  // ================================
-  // BLOQUE: CONTROL DE STRATEGY
-  // ================================
+  /*
+  ===============================
+  DATOS CONOCIDOS
+  ===============================
+  */
+
+  const knownDataText =
+    Object.entries({
+      "Producto de interés": known_data.product_interest,
+      "Uso del cliente": known_data.use_case,
+      "Presupuesto": known_data.budget,
+      "Urgencia": known_data.urgency,
+    })
+      .filter(([_, v]) => v)
+      .map(([k, v]) => `- ${k}: ${v}`)
+      .join("\n") || "Sin datos aún.";
+
+  /*
+  ===============================
+  STRATEGY RULES (ALINEADO)
+  ===============================
+  */
+
   let strategyRules = "";
+
+  if (strategy === "ASK") {
+    strategyRules = `
+- Tu objetivo es hacer UNA pregunta clara.
+- NO expliques todavía.
+`;
+  }
 
   if (strategy === "QUALIFY") {
     strategyRules = `
 - Tu objetivo es calificar al cliente.
-- NO recomiendes productos todavía.
 - Haz máximo 1 pregunta clara.
-- Enfócate en entender uso o necesidad.
+`;
+  }
+
+  if (strategy === "EXPLAIN") {
+    strategyRules = `
+- Explica de forma simple.
+- No des demasiada información.
+`;
+  }
+
+  if (strategy === "EXPLAIN_CLOSE") {
+    strategyRules = `
+- Explica brevemente.
+- Luego cierra hacia acción.
 `;
   }
 
   if (strategy === "RECOMMEND") {
     strategyRules = `
-- Tu objetivo es recomendar.
-- Usa el catálogo disponible.
-- Sugiere 1 o 2 opciones máximo.
-- Explica de forma simple por qué es buena opción.
+- Recomienda 1 o 2 opciones máximo.
+- Usa el catálogo si aplica.
 `;
   }
 
   if (strategy === "CLOSE") {
     strategyRules = `
-- Tu objetivo es cerrar la venta.
-- Reduce fricción.
-- Sugiere siguiente paso claro (apartado, compra, visita).
-- Genera urgencia suave si aplica.
-`;
-  }
-
-  if (strategy === "ASK_DIAGNOSIS") {
-    strategyRules = `
-- Tu objetivo es diagnosticar.
-- NO expliques soluciones técnicas.
-- Haz preguntas claras para entender el problema.
+- Cierra la conversación.
+- Sugiere siguiente paso claro.
 `;
   }
 
@@ -104,60 +129,69 @@ export function buildPrompt({
     strategyRules = `
 - Retoma la conversación.
 - Sé breve.
-- Invita a continuar o tomar acción.
+- Invita a continuar.
 `;
   }
 
-  if (strategy === "DEFAULT") {
-    strategyRules = `
-- Ayuda al cliente.
-- Lleva la conversación hacia una acción.
-`;
-  }
+  /*
+  ===============================
+  STAGE RULES (ALINEADO)
+  ===============================
+  */
 
-  // ================================
-  // BLOQUE: CONTROL POR STAGE
-  // ================================
   let stageRules = "";
 
-  if (stage === "EARLY") {
+  if (stage === "new") {
     stageRules = `
-- El cliente está en etapa inicial.
-- NO des demasiada información.
-- Prioriza entender antes de vender.
+- Cliente en etapa inicial.
+- Respuesta corta.
+- Prioriza preguntar.
 `;
   }
 
-  if (stage === "MID") {
+  if (stage === "qualifying") {
     stageRules = `
-- El cliente ya mostró interés.
-- Puedes recomendar con más claridad.
+- Estás recopilando información.
+- Mantén interacción.
 `;
   }
 
-  if (stage === "HOT") {
+  if (stage === "consideration") {
     stageRules = `
-- El cliente está listo para comprar.
-- Enfócate en cerrar.
+- Cliente evaluando opciones.
+- Puedes recomendar.
 `;
   }
 
-  // ================================
-  // BLOQUE: REGLAS GLOBALES
-  // ================================
+  if (stage === "hot" || stage === "closing") {
+    stageRules = `
+- Cliente listo para comprar.
+- Prioriza cierre.
+`;
+  }
+
+  /*
+  ===============================
+  GLOBAL RULES
+  ===============================
+  */
+
   const globalRules = `
 - No inventes información.
-- No asumas datos no confirmados.
+- No asumas datos.
 - No des respuestas largas.
-- Máximo 1 pregunta por mensaje.
+- Máximo 1 pregunta.
 - Usa lenguaje claro y natural.
-- Siempre guía hacia una acción.
-- No expliques cómo reparar o solucionar problemas técnicos.
+- Siempre guía hacia acción.
+- No expliques cómo reparar.
 `;
 
-  // ================================
-  // PROMPT FINAL
-  // ================================
+  /*
+  ===============================
+  PROMPT FINAL
+  ===============================
+  */
+
   return `
 Eres ${agentName}, asistente comercial de ${businessName}.
 
@@ -208,6 +242,6 @@ ${customInstructions}
 ====================
 TAREA
 ====================
-Responde al último mensaje del cliente siguiendo todas las reglas.
+Responde el mensaje del cliente siguiendo todas las reglas.
 `;
 }
