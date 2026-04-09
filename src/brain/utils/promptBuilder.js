@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — PROMPT BUILDER (SOT ALIGNED v2 — FIXED)
+EVA CORE — PROMPT BUILDER (SOT ALIGNED v3 — FINAL)
 ====================================================
 */
 
@@ -17,6 +17,7 @@ export function buildPrompt({
     organization,
     assistant,
     known_data = {},
+    user_message = "",
   } = context || {};
 
   const agentName = assistant?.name || "Asistente";
@@ -77,7 +78,7 @@ export function buildPrompt({
 
   /*
   ===============================
-  STRATEGY RULES (ALINEADO)
+  STRATEGY RULES (ALINEADO ENGINE)
   ===============================
   */
 
@@ -94,6 +95,7 @@ export function buildPrompt({
     strategyRules = `
 - Tu objetivo es calificar al cliente.
 - Haz máximo 1 pregunta clara.
+- Enfócate en entender necesidad.
 `;
   }
 
@@ -115,13 +117,15 @@ export function buildPrompt({
     strategyRules = `
 - Recomienda 1 o 2 opciones máximo.
 - Usa el catálogo si aplica.
+- Explica por qué es buena opción.
 `;
   }
 
   if (strategy === "CLOSE") {
     strategyRules = `
 - Cierra la conversación.
-- Sugiere siguiente paso claro.
+- Sugiere siguiente paso claro (compra, visita, envío).
+- Reduce fricción.
 `;
   }
 
@@ -129,13 +133,13 @@ export function buildPrompt({
     strategyRules = `
 - Retoma la conversación.
 - Sé breve.
-- Invita a continuar.
+- Invita a continuar o decidir.
 `;
   }
 
   /*
   ===============================
-  STAGE RULES (ALINEADO)
+  STAGE RULES (ALINEADO ENGINE)
   ===============================
   */
 
@@ -172,18 +176,18 @@ export function buildPrompt({
 
   /*
   ===============================
-  GLOBAL RULES
+  GLOBAL RULES (CORE EVA)
   ===============================
   */
 
   const globalRules = `
 - No inventes información.
-- No asumas datos.
+- No asumas datos no confirmados.
 - No des respuestas largas.
-- Máximo 1 pregunta.
+- Máximo 1 pregunta por mensaje.
 - Usa lenguaje claro y natural.
-- Siempre guía hacia acción.
-- No expliques cómo reparar.
+- Siempre guía hacia una acción.
+- No expliques cómo reparar o solucionar técnicamente.
 `;
 
   /*
@@ -196,6 +200,9 @@ export function buildPrompt({
 Eres ${agentName}, asistente comercial de ${businessName}.
 
 Tu objetivo es ayudar al cliente y llevar la conversación hacia una acción.
+
+No eres un chatbot informativo.
+Eres un asistente de ventas.
 
 ====================
 CONTEXTO
@@ -238,6 +245,11 @@ ${globalRules}
 INSTRUCCIONES DEL NEGOCIO
 ====================
 ${customInstructions}
+
+====================
+MENSAJE DEL CLIENTE
+====================
+${user_message}
 
 ====================
 TAREA
