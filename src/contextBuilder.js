@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — CONTEXT BUILDER (BLOCK 2 — REAL ENGINE)
+EVA CORE — CONTEXT BUILDER (BLOCK 2 — FIXED)
 ====================================================
 */
 
@@ -15,9 +15,12 @@ export async function buildContext({
   known_data = {},
 }) {
   try {
-    // ================================
-    // BUSINESS PROFILE
-    // ================================
+    /*
+    ========================================
+    BUSINESS PROFILE
+    ========================================
+    */
+
     const businessRes = await pool.query(
       `SELECT * FROM business_profile WHERE organization_id = $1 LIMIT 1`,
       [organization_id]
@@ -25,9 +28,12 @@ export async function buildContext({
 
     const business = businessRes.rows[0] || {};
 
-    // ================================
-    // PROMPT CONFIG
-    // ================================
+    /*
+    ========================================
+    PROMPT CONFIG
+    ========================================
+    */
+
     const configRes = await pool.query(
       `SELECT * FROM prompt_config WHERE organization_id = $1 LIMIT 1`,
       [organization_id]
@@ -35,74 +41,129 @@ export async function buildContext({
 
     const config = configRes.rows[0] || {};
 
-    // ================================
-    // LEAD
-    // ================================
+    /*
+    ========================================
+    LEAD
+    ========================================
+    */
+
     let lead = {};
     if (phone) {
       const leadRes = await pool.query(
         `SELECT * FROM leads WHERE organization_id = $1 AND phone = $2 LIMIT 1`,
         [organization_id, phone]
       );
+
       lead = leadRes.rows[0] || {};
     }
 
-    // ================================
-    // HISTORY (últimos mensajes)
-    // ================================
+    /*
+    ========================================
+    CONVERSATION (CRÍTICO)
+    ========================================
+    */
+
+    let conversation = {};
+    if (phone) {
+      const convRes = await pool.query(
+        `
+        SELECT *
+        FROM conversations
+        WHERE organization_id = $1
+        AND external_user_id = $2
+        ORDER BY updated_at DESC
+        LIMIT 1
+        `,
+        [organization_id, phone]
+      );
+
+      conversation = convRes.rows[0] || {};
+    }
+
+    /*
+    ========================================
+    HISTORY (CORREGIDO)
+    ========================================
+    */
+
     let history = [];
-    if (lead?.id) {
+
+    if (conversation?.id) {
       const historyRes = await pool.query(
         `
         SELECT role, content
         FROM messages
-        WHERE organization_id = $1
+        WHERE conversation_id = $1
         ORDER BY created_at DESC
         LIMIT 10
         `,
-        [organization_id]
+        [conversation.id]
       );
 
       history = (historyRes.rows || []).reverse();
     }
 
-    // ================================
-    // BUSINESS RULES (BASE)
-    // ================================
+    /*
+    ========================================
+    BUSINESS RULES (DINÁMICO)
+    ========================================
+    */
+
     const business_rules = {
-      no_technical_explanations: true,
-      max_emojis: 1,
-      close_always: true,
-      ask_before_explain: true,
+      no_technical_explanations:
+        config?.no_technical_explanations ?? true,
+
+      max_emojis: config?.max_emojis ?? 1,
+
+      close_always: config?.close_always ?? true,
+
+      ask_before_explain: config?.ask_before_explain ?? true,
     };
 
-    // ================================
-    // SALES CONTEXT (INTELIGENCIA)
-    // ================================
+    /*
+    ========================================
+    SALES CONTEXT
+    ========================================
+    */
+
     const sales_context = {
       is_returning_customer: !!lead?.id,
       interest_level: lead?.interest_level || "LOW",
-      last_stage: lead?.stage || "EARLY",
+      last_stage: lead?.stage || "new",
     };
 
-    // ================================
-    // CONTEXT FINAL (SOT)
-    // ================================
+    /*
+    ========================================
+    CONTEXT FINAL
+    ========================================
+    */
+
     return {
       organization: {
-        business_name: business.business_name || "el negocio",
-        business_type: business.business_type || "general",
+        id: organization_id,
+        business_name: business?.business_name || "el negocio",
+        business_type: business?.business_type || "general",
       },
 
       assistant: {
-        name: config.assistant_name || "Asistente",
-        tone: config.tone || "profesional",
-        objective: config.objective || "vender",
+        name:
+          config?.assistant_name ||
+          config?.agent_name ||
+          "Asistente",
+
+        tone: config?.tone || "profesional",
+
+        objective: config?.objective || "vender",
       },
 
       lead,
 
-      // 🔴 NUEVO CORE
+      conversation: {
+        id: conversation?.id || null,
+        last_message: conversation?.last_message || null,
+      },
+
+      // 🔴 CORE
       intent,
       stage,
       known_data,
@@ -119,6 +180,7 @@ export async function buildContext({
       organization: {},
       assistant: {},
       lead: {},
+      conversation: {},
       intent: null,
       stage: null,
       known_data: {},
