@@ -573,7 +573,14 @@ export async function handleInbound(payload) {
       stage,
       known_data: knownData,
     });
-
+    
+// 🔴 ENFORCE STRATEGY
+const enforcedStrategy = enforceStrategyRequired(strategy, {
+  intent: refinedIntent,
+  stage,
+  knownData,
+});
+    
     await savePipelineEvent({
       organization_id,
       lead_id: lead?.id || null,
