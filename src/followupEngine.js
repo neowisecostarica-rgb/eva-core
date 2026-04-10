@@ -19,9 +19,9 @@ export async function scheduleFollowup({
       throw new Error("Missing required followup fields");
     }
 
-    const scheduledFor = new Date(
-      Date.now() + delay_hours * 60 * 60 * 1000
-    );
+    const dueAt = new Date(
+  Date.now() + delay_hours * 60 * 60 * 1000
+);
 
     await db.query(
       `
