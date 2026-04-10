@@ -819,13 +819,28 @@ export async function handleInbound(payload) {
       known_data: knownData,
     });
 
-    const enforcedStrategy = enforceStrategyRequired(strategyDecision?.strategy, {
-      intent: refinedIntent,
-      stage: normalizedStage,
-      knownData,
-      strategyDecision,
-    });
+   let enforcedStrategy = enforceStrategyRequired(
+  strategyDecision?.strategy,
+  {
+    intent: refinedIntent,
+    stage: normalizedStage,
+    knownData,
+    strategyDecision,
+  }
+);
 
+    // 🔴 FIX 1 — SERVICE FLOW ENFORCEMENT
+if (refinedIntent === "SERVICE" && !knownData.problem) {
+  console.log("🧠 FORCE STRATEGY → SERVICE ASK");
+  enforcedStrategy = "ASK";
+}
+
+// 🔴 FIX 2 — ANTI-RECOMMEND EN EARLY
+if (normalizedStage === "EARLY" && enforcedStrategy === "RECOMMEND") {
+  console.log("🧠 FORCE STRATEGY → QUALIFY (EARLY)");
+  enforcedStrategy = "QUALIFY";
+}
+    
     const inboundContext = {
       ...context,
       intent: refinedIntent,
