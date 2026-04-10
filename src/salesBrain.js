@@ -830,7 +830,8 @@ export async function handleInbound(payload) {
 );
 
     // 🔴 FIX 1 — SERVICE FLOW ENFORCEMENT
-if (refinedIntent === "SERVICE" && !knownData.problem) {
+    
+if (refinedIntent === "SERVICE") {
   console.log("🧠 FORCE STRATEGY → SERVICE ASK");
   enforcedStrategy = "ASK";
 }
