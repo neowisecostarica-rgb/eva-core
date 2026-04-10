@@ -1,25 +1,17 @@
 /*
 ====================================================
-EVA CORE — SALES BRAIN (BLOCK 4.5 — FINAL)
+EVA CORE — SALES BRAIN (BLOCK 4.5 — CLOSED)
 ====================================================
 */
 
 import OpenAI from "openai";
 
-import db, {
-  getOrganizationSettings,
+import {
   findOrCreateLead,
   findOrCreateConversation,
   saveMessage,
-  savePipelineEvent,
-  updateLeadStageAndScore,
-  updateLeadMemory,
 } from "./db.js";
 
-import { matchHotSignals, getHotSignals } from "./brain/utils/intentSignals.js";
-import { searchCatalogSmart } from "./brain/utils/catalogEngine.js";
-import { generateReply } from "./brain/replies/replyEngine.js";
-import { getPromptConfig } from "./brain/utils/getPromptConfig.js";
 import { detectIntent } from "./brain/engines/intentEngine.js";
 import {
   decideStrategy,
@@ -58,11 +50,17 @@ function tryParseJson(text) {
   }
 }
 
-function hasValue(v) {
-  if (v === null || v === undefined) return false;
-  if (typeof v === "string") return v.trim().length > 0;
-  if (Array.isArray(v)) return v.length > 0;
-  return true;
+/*
+====================================================
+STRATEGY ENFORCEMENT
+====================================================
+*/
+
+function enforceStrategyRequired(strategy) {
+  if (!strategy || strategy === "DEFAULT") {
+    throw new Error("Strategy inválida");
+  }
+  return strategy;
 }
 
 /*
@@ -78,8 +76,6 @@ function normalizeAssistantOutput(raw) {
     return {
       reply: safeString(raw.reply),
       confidence: Number(raw.confidence || 0),
-      intent: raw.intent || null,
-      stage: raw.stage || null,
     };
   }
 
@@ -89,16 +85,12 @@ function normalizeAssistantOutput(raw) {
     return {
       reply: safeString(parsed.reply),
       confidence: Number(parsed.confidence || 0),
-      intent: parsed.intent || null,
-      stage: parsed.stage || null,
     };
   }
 
   return {
     reply: safeString(raw),
     confidence: 0.5,
-    intent: null,
-    stage: null,
   };
 }
 
@@ -108,12 +100,9 @@ AI DECISION
 ====================================================
 */
 
-function shouldUseConversationalAI({ controlMode = "HYBRID", intent }) {
+function shouldUseConversationalAI({ intent }) {
   if (!openai) return false;
-  if (controlMode === "SAFE") return false;
-
   if (intent === "GREETING") return false;
-
   return true;
 }
 
@@ -126,8 +115,6 @@ PROMPT (BLINDADO)
 function buildConversationalPrompt({
   organization,
   context,
-  history,
-  catalogResults,
   userText,
 }) {
   return `
@@ -183,17 +170,76 @@ async function runConversationalAI(params) {
 
 /*
 ====================================================
-GUARD
+🔥 RESPONSE CONTROL (CIERRE DE BLOQUE)
 ====================================================
 */
 
-function guardAI({ aiResult, stage }) {
-  const reply = clampText(aiResult.reply, stage === "EARLY" ? 260 : 420);
+function guardConversationalReply({
+  aiResult,
+  stage,
+  strategy,
+  intent,
+}) {
+  const maxLen = stage === "EARLY" ? 260 : 420;
 
-  if (!reply) return { ok: false };
-  if (aiResult.confidence < 0.4) return { ok: false };
+  let reply = clampText(aiResult?.reply || "", maxLen);
+  const confidence = Number(aiResult?.confidence || 0);
 
-  return { ok: true, reply };
+  if (!reply || confidence < 0.45) {
+    return { ok: false };
+  }
+
+  const lower = reply.toLowerCase();
+
+  // 🔴 SERVICE → SIEMPRE DIAGNÓSTICO
+  if (intent === "SERVICE") {
+    return {
+      ok: true,
+      reply: clampText(
+        "Con mucho gusto le ayudo 😊 ¿Me podría indicar la marca, el modelo y qué problema está presentando el equipo?",
+        maxLen
+      ),
+    };
+  }
+
+  // 🔴 EARLY → SIEMPRE CALIFICAR
+  if (stage === "EARLY") {
+    return {
+      ok: true,
+      reply: clampText(
+        "Con mucho gusto le ayudo 😊 ¿La necesita para estudio, trabajo o algún uso específico?",
+        maxLen
+      ),
+    };
+  }
+
+  // 🔴 FORZAR PREGUNTA
+  const hasQuestion =
+    lower.includes("¿") ||
+    lower.includes("?") ||
+    lower.includes("prefiere") ||
+    lower.includes("le gustaría");
+
+  if (!hasQuestion && (strategy === "ASK" || strategy === "QUALIFY")) {
+    reply += " ¿Me podría confirmar un poco más sobre lo que necesita?";
+  }
+
+  // 🔴 CIERRE
+  if (strategy === "CLOSE") {
+    const hasClose =
+      lower.includes("envio") ||
+      lower.includes("entrega") ||
+      lower.includes("retiro");
+
+    if (!hasClose) {
+      reply += " ¿Prefiere entrega, envío o retiro?";
+    }
+  }
+
+  return {
+    ok: true,
+    reply: clampText(reply, maxLen),
+  };
 }
 
 /*
@@ -207,6 +253,7 @@ export async function handleInbound(payload) {
     const { organization_id, phone, text, channel } = payload;
 
     const lead = await findOrCreateLead({ organization_id, phone });
+
     const conversation = await findOrCreateConversation({
       organization_id,
       phone,
@@ -220,9 +267,7 @@ export async function handleInbound(payload) {
       text,
     });
 
-    const intent = normalizeStrategyIntent(detectIntent(text));
-
-    const knownData = {};
+    let intent = normalizeStrategyIntent(detectIntent(text));
 
     let stage = "EARLY";
     let normalizedStage = normalizeStrategyStage(stage);
@@ -230,29 +275,16 @@ export async function handleInbound(payload) {
     const strategyDecision = decideStrategy({
       intent,
       stage: normalizedStage,
-      known_data: knownData,
+      known_data: {},
     });
 
     let enforcedStrategy = enforceStrategyRequired(
-      strategyDecision?.strategy,
-      { intent, stage: normalizedStage }
+      strategyDecision?.strategy
     );
 
-    /*
-    ========================================
-    🔴 ENFORCEMENT CRÍTICO
-    ========================================
-    */
-
-    // SERVICE → SIEMPRE diagnóstico
-    if (intent === "SERVICE") {
-      enforcedStrategy = "ASK";
-    }
-
-    // EARLY → SIEMPRE calificar
-    if (normalizedStage === "EARLY") {
-      enforcedStrategy = "QUALIFY";
-    }
+    // 🔴 ENFORCEMENT FINAL
+    if (intent === "SERVICE") enforcedStrategy = "ASK";
+    if (normalizedStage === "EARLY") enforcedStrategy = "QUALIFY";
 
     console.log("🧠 FINAL STRATEGY:", {
       intent,
@@ -279,14 +311,14 @@ export async function handleInbound(payload) {
           stage: normalizedStage,
           strategy: enforcedStrategy,
         },
-        history: [],
-        catalogResults: [],
         userText: text,
       });
 
-      const guarded = guardAI({
+      const guarded = guardConversationalReply({
         aiResult,
         stage: normalizedStage,
+        strategy: enforcedStrategy,
+        intent,
       });
 
       if (guarded.ok) {
@@ -303,7 +335,7 @@ export async function handleInbound(payload) {
     let finalText = aiReply;
 
     if (!finalText) {
-      finalText = "Hola 😊 ¿En qué le puedo ayudar?";
+      finalText = "Con mucho gusto le ayudo 😊 ¿En qué le puedo ayudar?";
     }
 
     finalText = clampText(finalText);
