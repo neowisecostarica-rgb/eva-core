@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA FOLLOWUP WORKER (SMART v3 — AI + SAFE)
+EVA FOLLOWUP WORKER (SMART v4 — AI CLOSE MODE)
 ====================================================
 */
 
@@ -19,7 +19,7 @@ const openai = process.env.OPENAI_API_KEY
 
 /*
 ====================================================
-MESSAGE BUILDER (V2 — FALLBACK SEGURO)
+MESSAGE BUILDER (FALLBACK V2)
 ====================================================
 */
 
@@ -27,7 +27,10 @@ function buildFollowupMessage({ followup, memory = {}, lastMessage = null }) {
   const { reason } = followup;
 
   const useCase = memory?.use_case || null;
-  const product = memory?.product_interest || "los equipos que consultaste";
+  const product =
+    memory?.product_interest ||
+    memory?.use_case ||
+    "la opción que estabas viendo";
 
   const lastUserText = lastMessage?.content?.toLowerCase?.() || "";
 
@@ -45,7 +48,7 @@ function buildFollowupMessage({ followup, memory = {}, lastMessage = null }) {
 
 Ayer me consultaste sobre el precio.
 
-Si quieres, puedo ayudarte a encontrar la mejor opción según tu presupuesto 👌
+Si quieres, puedo ayudarte a encontrar una opción que se ajuste a tu presupuesto 👌
 
 ¿En qué rango estás buscando?`;
     }
@@ -55,14 +58,14 @@ Si quieres, puedo ayudarte a encontrar la mejor opción según tu presupuesto �
 
 Ayer mostraste interés en ${product}.
 
-Si todavía estás buscando, puedo ayudarte a elegir una buena opción disponible ahora 👇
+Si todavía estás buscando, puedo recomendarte una opción disponible ahora 👇
 
-¿Te gustaría que te recomiende una?`;
+¿Quieres que te pase una?`;
     }
 
     return `Hola 😊
 
-Quedé atento a tu mensaje anterior.
+Quedé atento a tu mensaje.
 
 Si aún estás buscando ${product}, con gusto te ayudo a encontrar una buena opción 👌
 
@@ -94,20 +97,20 @@ Quedo atento 👍`;
 
 /*
 ====================================================
-AI FOLLOWUP (V3)
+AI FOLLOWUP (V4 — CLOSE MODE)
 ====================================================
 */
 
 function buildAIFollowupPrompt({ memory, lastMessage }) {
-  const product = memory?.product_interest || "el producto que consultó";
-  const useCase = memory?.use_case || "su necesidad";
+  const product = memory?.product_interest || "el equipo que consultaste";
+  const useCase = memory?.use_case || "lo que necesitas";
   const lastUserText = lastMessage?.content || "";
 
   return `
 Eres una asesora de ventas por WhatsApp.
 
 OBJETIVO:
-Reactivar la conversación de forma natural y lograr que el cliente responda.
+Reactivar la conversación y llevar al cliente a un siguiente paso concreto.
 
 CONTEXTO:
 - Producto: ${product}
@@ -117,11 +120,18 @@ CONTEXTO:
 REGLAS:
 - Máximo 3 líneas
 - Máximo 1 emoji
-- Sonar humano (no robótico)
-- No insistente
-- Invitar a responder
+- Sonar natural y humano
+- No sonar insistente
+- Sugerir una opción concreta
+- Reducir fricción
+- Terminar con una pregunta de acción
 
-Escribe SOLO el mensaje.
+EJEMPLOS:
+- "Te puedo recomendar una opción que te funcione bien sin subirte mucho el presupuesto"
+- "Si quieres te paso una opción disponible ahora"
+- "Te puedo dejar una opción lista para entrega"
+
+Responde SOLO el mensaje.
 `;
 }
 
@@ -141,7 +151,6 @@ async function generateAIFollowup({ memory, lastMessage }) {
 
     if (!text || text.length < 10) return null;
 
-    // HARD GUARD (WhatsApp safe)
     if (text.length > 320) {
       return text.slice(0, 300) + "…";
     }
@@ -161,27 +170,19 @@ PROCESS FOLLOWUPS
 
 export async function processFollowups(sendMessage) {
   try {
-    const { rows: followups } = await pool.query(
-      `
+    const { rows: followups } = await pool.query(`
       SELECT *
       FROM followups
       WHERE status = 'PENDING'
         AND scheduled_for <= NOW()
       ORDER BY scheduled_for ASC
       LIMIT 20
-      `
-    );
+    `);
 
     if (!followups.length) return;
 
     for (const f of followups) {
       try {
-        /*
-        ------------------------------------------------
-        LOCK
-        ------------------------------------------------
-        */
-
         const lock = await pool.query(
           `
           UPDATE followups
@@ -198,135 +199,114 @@ export async function processFollowups(sendMessage) {
 
         const followup = lock.rows[0];
 
-        /*
-        ------------------------------------------------
-        VALIDATION
-        ------------------------------------------------
-        */
-
         if (!followup.lead_phone) {
           await pool.query(
-            `UPDATE followups SET status = 'FAILED', updated_at = NOW() WHERE id = $1`,
+            `UPDATE followups SET status = 'FAILED' WHERE id = $1`,
             [followup.id]
           );
           continue;
         }
 
         /*
-        ------------------------------------------------
+        -------------------------------
         ANTI-SPAM
-        ------------------------------------------------
+        -------------------------------
         */
 
-        try {
-          const newer = await pool.query(
-            `
-            SELECT id
-            FROM followups
-            WHERE organization_id = $1
-              AND lead_phone = $2
-              AND status = 'PENDING'
-              AND scheduled_for > $3
-            LIMIT 1
-            `,
-            [
-              followup.organization_id,
-              followup.lead_phone,
-              followup.scheduled_for,
-            ]
-          );
+        const newer = await pool.query(
+          `
+          SELECT id FROM followups
+          WHERE organization_id = $1
+            AND lead_phone = $2
+            AND status = 'PENDING'
+            AND scheduled_for > $3
+          LIMIT 1
+          `,
+          [
+            followup.organization_id,
+            followup.lead_phone,
+            followup.scheduled_for,
+          ]
+        );
 
-          if (newer.rowCount) {
-            await pool.query(
-              `UPDATE followups SET status = 'CANCELLED', updated_at = NOW() WHERE id = $1`,
-              [followup.id]
-            );
-            continue;
-          }
-        } catch {}
+        if (newer.rowCount) {
+          await pool.query(
+            `UPDATE followups SET status = 'CANCELLED' WHERE id = $1`,
+            [followup.id]
+          );
+          continue;
+        }
 
         /*
-        ------------------------------------------------
-        LOAD MEMORY
-        ------------------------------------------------
+        -------------------------------
+        MEMORY
+        -------------------------------
         */
 
         let memory = {};
         let lastMessage = null;
 
-        try {
-          const memResult = await pool.query(
-            `
-            SELECT use_case, budget, product_interest, interest_level
-            FROM leads
-            WHERE phone = $1
-              AND organization_id = $2
-            LIMIT 1
-            `,
-            [followup.lead_phone, followup.organization_id]
-          );
+        const memResult = await pool.query(
+          `
+          SELECT use_case, budget, product_interest, interest_level
+          FROM leads
+          WHERE phone = $1 AND organization_id = $2
+          LIMIT 1
+          `,
+          [followup.lead_phone, followup.organization_id]
+        );
 
-          memory = memResult.rows[0] || {};
-        } catch {}
-
-        /*
-        ------------------------------------------------
-        CANCEL HOT LEAD
-        ------------------------------------------------
-        */
+        memory = memResult.rows[0] || {};
 
         if (memory?.interest_level === "HIGH") {
           await pool.query(
-            `UPDATE followups SET status = 'CANCELLED', updated_at = NOW() WHERE id = $1`,
+            `UPDATE followups SET status = 'CANCELLED' WHERE id = $1`,
             [followup.id]
           );
           continue;
         }
 
         /*
-        ------------------------------------------------
-        LOAD LAST MESSAGE
-        ------------------------------------------------
+        -------------------------------
+        LAST MESSAGE
+        -------------------------------
         */
 
-        try {
-          if (followup.conversation_id) {
-            const res = await pool.query(
-              `
-              SELECT role, content, created_at
-              FROM messages
-              WHERE conversation_id = $1
-              ORDER BY created_at DESC
-              LIMIT 1
-              `,
-              [followup.conversation_id]
+        if (followup.conversation_id) {
+          const res = await pool.query(
+            `
+            SELECT role, content, created_at
+            FROM messages
+            WHERE conversation_id = $1
+            ORDER BY created_at DESC
+            LIMIT 1
+            `,
+            [followup.conversation_id]
+          );
+
+          lastMessage = res.rows[0] || null;
+
+          if (
+            lastMessage &&
+            lastMessage.role === "user" &&
+            new Date(lastMessage.created_at) > new Date(followup.created_at)
+          ) {
+            await pool.query(
+              `UPDATE followups SET status = 'CANCELLED' WHERE id = $1`,
+              [followup.id]
             );
-
-            lastMessage = res.rows[0] || null;
-
-            if (
-              lastMessage &&
-              lastMessage.role === "user" &&
-              new Date(lastMessage.created_at) > new Date(followup.created_at)
-            ) {
-              await pool.query(
-                `UPDATE followups SET status = 'CANCELLED', updated_at = NOW() WHERE id = $1`,
-                [followup.id]
-              );
-              continue;
-            }
+            continue;
           }
-        } catch {}
+        }
 
         /*
-        ------------------------------------------------
-        🔥 BUILD MESSAGE (AI + FALLBACK)
-        ------------------------------------------------
+        -------------------------------
+        MESSAGE (AI + FALLBACK)
+        -------------------------------
         */
 
         let message = null;
 
-        // SOLO PRIMER FOLLOWUP USA IA
         if (followup.reason === "sales_followup") {
           const aiMessage = await generateAIFollowup({
             memory,
@@ -338,7 +318,6 @@ export async function processFollowups(sendMessage) {
           }
         }
 
-        // fallback seguro
         if (!message) {
           message = buildFollowupMessage({
             followup,
@@ -347,18 +326,12 @@ export async function processFollowups(sendMessage) {
           });
         }
 
-        if (!message || typeof message !== "string") {
-          await pool.query(
-            `UPDATE followups SET status = 'FAILED', updated_at = NOW() WHERE id = $1`,
-            [followup.id]
-          );
-          continue;
-        }
+        if (!message) continue;
 
         /*
-        ------------------------------------------------
+        -------------------------------
         SEND
-        ------------------------------------------------
+        -------------------------------
         */
 
         await sendMessage({
@@ -366,28 +339,21 @@ export async function processFollowups(sendMessage) {
           message,
         });
 
-        /*
-        ------------------------------------------------
-        SUCCESS
-        ------------------------------------------------
-        */
-
         await pool.query(
           `
           UPDATE followups
           SET status = 'SENT',
               sent = true,
-              sent_at = NOW(),
-              updated_at = NOW()
+              sent_at = NOW()
           WHERE id = $1
           `,
           [followup.id]
         );
 
         /*
-        ------------------------------------------------
+        -------------------------------
         SEQUENCE
-        ------------------------------------------------
+        -------------------------------
         */
 
         let nextDelay = null;
