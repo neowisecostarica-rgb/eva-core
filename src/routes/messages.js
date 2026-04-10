@@ -199,6 +199,7 @@ const contextStart = Date.now();
 const context = await buildContext({
   organization_id,
   phone: validated.phone,
+  channel: validated.channel || "whatsapp",
 });
 
 // ================================
