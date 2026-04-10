@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA FOLLOWUP WORKER (SMART v4 — AI CLOSE MODE)
+EVA FOLLOWUP WORKER (SMART v4 — AI CLOSE MODE FIXED)
 ====================================================
 */
 
@@ -174,8 +174,8 @@ export async function processFollowups(sendMessage) {
       SELECT *
       FROM followups
       WHERE status = 'PENDING'
-        AND scheduled_for <= NOW()
-      ORDER BY scheduled_for ASC
+        AND due_at <= NOW()
+      ORDER BY due_at ASC
       LIMIT 20
     `);
 
@@ -219,13 +219,13 @@ export async function processFollowups(sendMessage) {
           WHERE organization_id = $1
             AND lead_phone = $2
             AND status = 'PENDING'
-            AND scheduled_for > $3
+            AND due_at > $3
           LIMIT 1
           `,
           [
             followup.organization_id,
             followup.lead_phone,
-            followup.scheduled_for,
+            followup.due_at,
           ]
         );
 
@@ -368,7 +368,7 @@ export async function processFollowups(sendMessage) {
         }
 
         if (nextDelay && nextReason) {
-          const scheduledFor = new Date(Date.now() + nextDelay);
+          const dueAt = new Date(Date.now() + nextDelay);
 
           await pool.query(
             `
@@ -377,7 +377,7 @@ export async function processFollowups(sendMessage) {
               lead_phone,
               conversation_id,
               reason,
-              scheduled_for,
+              due_at,
               status,
               attempt,
               sent,
@@ -391,7 +391,7 @@ export async function processFollowups(sendMessage) {
               followup.lead_phone,
               followup.conversation_id,
               nextReason,
-              scheduledFor,
+              dueAt,
             ]
           );
         }
