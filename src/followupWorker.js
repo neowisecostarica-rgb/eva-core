@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA FOLLOWUP WORKER (SMART + HARDENED FINAL)
+EVA FOLLOWUP WORKER (SMART v2 — FIXED)
 ====================================================
 */
 
@@ -8,42 +8,74 @@ import pool from "./db.js";
 
 /*
 ====================================================
-MESSAGE BUILDER (CONTEXTUAL)
+MESSAGE BUILDER (INTELIGENTE)
 ====================================================
 */
 
-function buildFollowupMessage(followup, memory = {}) {
+function buildFollowupMessage({ followup, memory = {}, lastMessage = null }) {
   const { reason } = followup;
 
-  const useCaseText = {
-    ESTUDIO: "para estudio",
-    TRABAJO: "para trabajo",
-    GAMING: "para gaming",
-    estudio: "para estudio",
-    trabajo: "para trabajo",
-    gaming: "para gaming",
-  };
+  const useCase = memory?.use_case || null;
+  const product = memory?.product_interest || "los equipos que consultaste";
 
-  const useCase = memory?.use_case
-    ? useCaseText[memory.use_case] || ""
-    : "";
+  const lastUserText = lastMessage?.content?.toLowerCase?.() || "";
+
+  /*
+  ====================================================
+  DETECT CONTEXT SIGNALS
+  ====================================================
+  */
+
+  const askedPrice =
+    lastUserText.includes("precio") ||
+    lastUserText.includes("cuánto");
+
+  const highIntent =
+    lastUserText.includes("quiero") ||
+    lastUserText.includes("me interesa");
+
+  /*
+  ====================================================
+  FOLLOWUP LOGIC
+  ====================================================
+  */
 
   if (reason === "sales_followup") {
-    return `Hola 🙌
+    if (askedPrice) {
+      return `Hola 😊
 
-Ayer estuviste consultando ${useCase ? useCase : "sobre laptops"}.
+Ayer me consultaste sobre el precio.
 
-Si todavía estás buscando, puedo ayudarte a encontrar una buena opción según lo que necesitas 👇
+Si quieres, puedo ayudarte a encontrar la mejor opción según tu presupuesto 👌
 
-¿Quieres que te recomiende una opción disponible ahora?`;
+¿En qué rango estás buscando?`;
+    }
+
+    if (highIntent) {
+      return `Hola 🙌
+
+Ayer mostraste interés en ${product}.
+
+Si todavía estás buscando, puedo ayudarte a elegir una buena opción disponible ahora 👇
+
+¿Te gustaría que te recomiende una?`;
+    }
+
+    return `Hola 😊
+
+Quedé atento a tu mensaje anterior.
+
+Si aún estás buscando ${product}, con gusto te ayudo a encontrar una buena opción 👌
+
+¿Para qué uso la necesitas?`;
   }
 
   if (reason === "sales_followup_2") {
     return `Hola 👋
 
-Todavía tenemos unidades disponibles ${useCase ? useCase : ""}.
+Todavía tenemos opciones disponibles ${useCase ? "para " + useCase : ""}.
 
-Son equipos línea corporativa y se van rápido 🙌
+Son equipos línea corporativa y se están moviendo rápido 🙌
 
 Si quieres te ayudo a elegir el ideal para ti.`;
   }
@@ -51,14 +83,14 @@ Si quieres te ayudo a elegir el ideal para ti.`;
   if (reason === "sales_followup_3") {
     return `Hola 🙌
 
-Te escribo por última vez sobre ${useCase ? useCase : "los equipos que consultaste"}.
+Te escribo por última vez sobre ${product}.
 
-Si todavía estás interesado puedo ayudarte a reservar uno antes de que se acaben.
+Si todavía estás interesado puedo ayudarte a reservar uno antes de que se agoten.
 
 Quedo atento 👍`;
   }
 
-  return `Hola 🙌 ¿Aún necesitas ayuda?`;
+  return `Hola 😊 ¿Aún necesitas ayuda?`;
 }
 
 /*
@@ -86,7 +118,7 @@ export async function processFollowups(sendMessage) {
       try {
         /*
         ------------------------------------------------
-        LOCK (CRÍTICO)
+        LOCK
         ------------------------------------------------
         */
 
@@ -122,18 +154,17 @@ export async function processFollowups(sendMessage) {
             `,
             [followup.id]
           );
-
           continue;
         }
 
         /*
         ------------------------------------------------
-        🔥 ANTI-SPAM / CONTROL INTELIGENTE
+        🔥 ANTI-SPAM / CONTROL
         ------------------------------------------------
         */
 
         try {
-          // Existe uno más reciente → cancelar este
+          // cancelar si hay uno más nuevo
           const newer = await pool.query(
             `
             SELECT id
@@ -163,13 +194,66 @@ export async function processFollowups(sendMessage) {
             );
             continue;
           }
+        } catch (err) {
+          console.warn("⚠️ anti-spam error", err.message);
+        }
 
-          // Si el cliente ya escribió después de que se programó este followup,
-          // cancelar para no perseguir una conversación ya reactivada.
+        /*
+        ------------------------------------------------
+        LOAD MEMORY
+        ------------------------------------------------
+        */
+
+        let memory = {};
+        let lastMessage = null;
+
+        try {
+          const memResult = await pool.query(
+            `
+            SELECT use_case, budget, product_interest, interest_level
+            FROM leads
+            WHERE phone = $1
+              AND organization_id = $2
+            LIMIT 1
+            `,
+            [followup.lead_phone, followup.organization_id]
+          );
+
+          memory = memResult.rows[0] || {};
+        } catch (err) {
+          console.warn("⚠️ memory error", err.message);
+        }
+
+        /*
+        ------------------------------------------------
+        🔥 CANCEL IF HOT LEAD
+        ------------------------------------------------
+        */
+
+        if (memory?.interest_level === "HIGH") {
+          await pool.query(
+            `
+            UPDATE followups
+            SET status = 'CANCELLED',
+                updated_at = NOW()
+            WHERE id = $1
+            `,
+            [followup.id]
+          );
+          continue;
+        }
+
+        /*
+        ------------------------------------------------
+        LOAD LAST MESSAGE
+        ------------------------------------------------
+        */
+
+        try {
           if (followup.conversation_id) {
             const lastMessageRes = await pool.query(
               `
-              SELECT role, created_at
+              SELECT role, content, created_at
               FROM messages
               WHERE conversation_id = $1
               ORDER BY created_at DESC
@@ -178,8 +262,9 @@ export async function processFollowups(sendMessage) {
               [followup.conversation_id]
             );
 
-            const lastMessage = lastMessageRes.rows[0] || null;
+            lastMessage = lastMessageRes.rows[0] || null;
 
+            // cancelar si el cliente ya respondió
             if (
               lastMessage &&
               lastMessage.role === "user" &&
@@ -198,32 +283,7 @@ export async function processFollowups(sendMessage) {
             }
           }
         } catch (err) {
-          console.warn("⚠️ anti-spam error", err.message);
-        }
-
-        /*
-        ------------------------------------------------
-        LOAD MEMORY
-        ------------------------------------------------
-        */
-
-        let memory = {};
-
-        try {
-          const memResult = await pool.query(
-            `
-            SELECT use_case, budget, product_interest
-            FROM leads
-            WHERE phone = $1
-              AND organization_id = $2
-            LIMIT 1
-            `,
-            [followup.lead_phone, followup.organization_id]
-          );
-
-          memory = memResult.rows[0] || {};
-        } catch (err) {
-          console.warn("⚠️ memory error", err.message);
+          console.warn("⚠️ last message error", err.message);
         }
 
         /*
@@ -232,7 +292,11 @@ export async function processFollowups(sendMessage) {
         ------------------------------------------------
         */
 
-        const message = buildFollowupMessage(followup, memory);
+        const message = buildFollowupMessage({
+          followup,
+          memory,
+          lastMessage,
+        });
 
         if (!message || typeof message !== "string" || !message.trim()) {
           await pool.query(
