@@ -19,6 +19,9 @@ function buildFollowupMessage(followup, memory = {}) {
     ESTUDIO: "para estudio",
     TRABAJO: "para trabajo",
     GAMING: "para gaming",
+    estudio: "para estudio",
+    trabajo: "para trabajo",
+    gaming: "para gaming",
   };
 
   const useCase = memory?.use_case
@@ -66,19 +69,18 @@ PROCESS FOLLOWUPS
 
 export async function processFollowups(sendMessage) {
   try {
-  const { rows: followups } = await pool.query(
-  `
-  SELECT *
-  FROM followups
-WHERE status = 'PENDING'
-    AND scheduled_for <= NOW()
-  ORDER BY scheduled_for ASC
-  LIMIT 20
-`
-);
+    const { rows: followups } = await pool.query(
+      `
+      SELECT *
+      FROM followups
+      WHERE status = 'PENDING'
+        AND scheduled_for <= NOW()
+      ORDER BY scheduled_for ASC
+      LIMIT 20
+      `
+    );
 
-if (!followups.length) return;
-    
+    if (!followups.length) return;
 
     for (const f of followups) {
       try {
@@ -94,70 +96,15 @@ if (!followups.length) return;
           SET status = 'RUNNING',
               updated_at = NOW()
           WHERE id = $1
-          AND status = 'PENDING'
+            AND status = 'PENDING'
           RETURNING *
-        `,
+          `,
           [f.id]
         );
 
         if (!lock.rowCount) continue;
 
         const followup = lock.rows[0];
-
-        /*
-        ------------------------------------------------
-        🔥 ANTI-SPAM / CONTROL INTELIGENTE
-        ------------------------------------------------
-        */
-
-        try {
-          // ya fue enviado antes
-          if (followup.status === "SENT") {
-            await pool.query(
-              `
-              UPDATE followups
-              SET status = 'CANCELLED',
-                  updated_at = NOW()
-              WHERE id = $1
-            `,
-              [followup.id]
-            );
-            continue;
-          }
-
-          // existe uno más reciente → cancelar este
-          const newer = await pool.query(
-            `
-            SELECT id
-            FROM followups
-            WHERE organization_id = $1
-            AND lead_phone = $2
-            AND status = 'PENDING'
-            AND scheduled_for > $3
-            LIMIT 1
-          `,
-            [
-              followup.organization_id,
-              followup.lead_phone,
-              followup.scheduled_for,
-            ]
-          );
-
-          if (newer.rowCount) {
-            await pool.query(
-              `
-              UPDATE followups
-              SET status = 'CANCELLED',
-                  updated_at = NOW()
-              WHERE id = $1
-            `,
-              [followup.id]
-            );
-            continue;
-          }
-        } catch (err) {
-          console.warn("⚠️ anti-spam error", err.message);
-        }
 
         /*
         ------------------------------------------------
@@ -172,11 +119,86 @@ if (!followups.length) return;
             SET status = 'FAILED',
                 updated_at = NOW()
             WHERE id = $1
-          `,
+            `,
             [followup.id]
           );
 
           continue;
+        }
+
+        /*
+        ------------------------------------------------
+        🔥 ANTI-SPAM / CONTROL INTELIGENTE
+        ------------------------------------------------
+        */
+
+        try {
+          // Existe uno más reciente → cancelar este
+          const newer = await pool.query(
+            `
+            SELECT id
+            FROM followups
+            WHERE organization_id = $1
+              AND lead_phone = $2
+              AND status = 'PENDING'
+              AND scheduled_for > $3
+            LIMIT 1
+            `,
+            [
+              followup.organization_id,
+              followup.lead_phone,
+              followup.scheduled_for,
+            ]
+          );
+
+          if (newer.rowCount) {
+            await pool.query(
+              `
+              UPDATE followups
+              SET status = 'CANCELLED',
+                  updated_at = NOW()
+              WHERE id = $1
+              `,
+              [followup.id]
+            );
+            continue;
+          }
+
+          // Si el cliente ya escribió después de que se programó este followup,
+          // cancelar para no perseguir una conversación ya reactivada.
+          if (followup.conversation_id) {
+            const lastMessageRes = await pool.query(
+              `
+              SELECT role, created_at
+              FROM messages
+              WHERE conversation_id = $1
+              ORDER BY created_at DESC
+              LIMIT 1
+              `,
+              [followup.conversation_id]
+            );
+
+            const lastMessage = lastMessageRes.rows[0] || null;
+
+            if (
+              lastMessage &&
+              lastMessage.role === "user" &&
+              new Date(lastMessage.created_at) > new Date(followup.created_at)
+            ) {
+              await pool.query(
+                `
+                UPDATE followups
+                SET status = 'CANCELLED',
+                    updated_at = NOW()
+                WHERE id = $1
+                `,
+                [followup.id]
+              );
+              continue;
+            }
+          }
+        } catch (err) {
+          console.warn("⚠️ anti-spam error", err.message);
         }
 
         /*
@@ -190,12 +212,12 @@ if (!followups.length) return;
         try {
           const memResult = await pool.query(
             `
-            SELECT use_case, budget_crc, product_interest
+            SELECT use_case, budget, product_interest
             FROM leads
             WHERE phone = $1
-            AND organization_id = $2
+              AND organization_id = $2
             LIMIT 1
-          `,
+            `,
             [followup.lead_phone, followup.organization_id]
           );
 
@@ -211,6 +233,20 @@ if (!followups.length) return;
         */
 
         const message = buildFollowupMessage(followup, memory);
+
+        if (!message || typeof message !== "string" || !message.trim()) {
+          await pool.query(
+            `
+            UPDATE followups
+            SET status = 'FAILED',
+                attempt = COALESCE(attempt, 0) + 1,
+                updated_at = NOW()
+            WHERE id = $1
+            `,
+            [followup.id]
+          );
+          continue;
+        }
 
         /*
         ------------------------------------------------
@@ -232,12 +268,12 @@ if (!followups.length) return;
         await pool.query(
           `
           UPDATE followups
-         SET status = 'SENT',
+          SET status = 'SENT',
               sent = true,
               sent_at = NOW(),
               updated_at = NOW()
           WHERE id = $1
-        `,
+          `,
           [followup.id]
         );
 
@@ -277,7 +313,7 @@ if (!followups.length) return;
                 updated_at
               )
               VALUES ($1, $2, $3, $4, $5, 'PENDING', 0, false, NOW(), NOW())
-            `,
+              `,
               [
                 followup.organization_id,
                 followup.lead_phone,
@@ -300,7 +336,7 @@ if (!followups.length) return;
               attempt = COALESCE(attempt, 0) + 1,
               updated_at = NOW()
           WHERE id = $1
-        `,
+          `,
           [f.id]
         );
       }
