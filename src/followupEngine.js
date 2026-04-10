@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA FOLLOWUP ENGINE (SOT ALIGNED)
+EVA FOLLOWUP ENGINE (FIXED — DUE_AT)
 ====================================================
 */
 
@@ -20,8 +20,8 @@ export async function scheduleFollowup({
     }
 
     const dueAt = new Date(
-  Date.now() + delay_hours * 60 * 60 * 1000
-);
+      Date.now() + delay_hours * 60 * 60 * 1000
+    );
 
     await db.query(
       `
@@ -30,7 +30,7 @@ export async function scheduleFollowup({
         lead_phone,
         conversation_id,
         reason,
-        scheduled_for,
+        due_at,
         status,
         attempt,
         sent,
@@ -55,7 +55,7 @@ export async function scheduleFollowup({
         phone,
         conversation_id,
         reason,
-        scheduledFor,
+        dueAt,
       ]
     );
   } catch (err) {
