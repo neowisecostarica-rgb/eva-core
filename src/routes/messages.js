@@ -185,8 +185,14 @@ if (payload.message_id) {
 
     return res.json({
   success: true,
-  duplicate: true,
-  message: "duplicate ignored",
+  data: {
+    reply: {
+      text: "",
+    },
+    meta: {
+      duplicate: true,
+    },
+  },
 });
   }
 }
