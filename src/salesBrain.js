@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — SALES BRAIN (BLOCK 4.5 — CLOSED)
+EVA CORE — SALES BRAIN (BLOCK 5 — FOLLOWUP READY)
 ====================================================
 */
 
@@ -11,6 +11,8 @@ import {
   findOrCreateConversation,
   saveMessage,
 } from "./db.js";
+
+import { scheduleFollowup } from "./followupEngine.js"; // 🔥 IMPORT CLAVE
 
 import { detectIntent } from "./brain/engines/intentEngine.js";
 import {
@@ -52,7 +54,7 @@ function tryParseJson(text) {
 
 /*
 ====================================================
-STRATEGY ENFORCEMENT
+STRATEGY
 ====================================================
 */
 
@@ -65,7 +67,7 @@ function enforceStrategyRequired(strategy) {
 
 /*
 ====================================================
-AI NORMALIZATION
+AI
 ====================================================
 */
 
@@ -94,42 +96,25 @@ function normalizeAssistantOutput(raw) {
   };
 }
 
-/*
-====================================================
-AI DECISION
-====================================================
-*/
-
 function shouldUseConversationalAI({ intent }) {
   if (!openai) return false;
   if (intent === "GREETING") return false;
   return true;
 }
 
-/*
-====================================================
-PROMPT (BLINDADO)
-====================================================
-*/
-
-function buildConversationalPrompt({
-  organization,
-  context,
-  userText,
-}) {
+function buildPrompt({ organization, context, userText }) {
   return `
 Eres ${organization.assistant_name} de ${organization.business_name}.
 
 OBJETIVO:
 Vender ayudando al cliente.
 
-REGLAS CRÍTICAS:
-- Si el intent es SERVICE → HACER DIAGNÓSTICO
+REGLAS:
+- SERVICE → diagnóstico
 - NO redirigir a productos si pidió reparación
 - No inventar servicios
-- No saturar
 - Máximo 1 emoji
-- Siempre avanzar la conversación
+- Siempre avanzar
 
 Contexto:
 Intent: ${context.intent}
@@ -147,14 +132,8 @@ Responde JSON:
 `;
 }
 
-/*
-====================================================
-AI EXEC
-====================================================
-*/
-
-async function runConversationalAI(params) {
-  const prompt = buildConversationalPrompt(params);
+async function runAI(params) {
+  const prompt = buildPrompt(params);
 
   const completion = await openai.chat.completions.create({
     model: OPENAI_MODEL,
@@ -164,82 +143,57 @@ async function runConversationalAI(params) {
   });
 
   const raw = completion?.choices?.[0]?.message?.content || "";
-
   return normalizeAssistantOutput(raw);
 }
 
 /*
 ====================================================
-🔥 RESPONSE CONTROL (CIERRE DE BLOQUE)
+🔥 RESPONSE CONTROL
 ====================================================
 */
 
-function guardConversationalReply({
-  aiResult,
-  stage,
-  strategy,
-  intent,
-}) {
+function guardReply({ aiResult, stage, strategy, intent }) {
   const maxLen = stage === "EARLY" ? 260 : 420;
 
   let reply = clampText(aiResult?.reply || "", maxLen);
   const confidence = Number(aiResult?.confidence || 0);
 
-  if (!reply || confidence < 0.45) {
-    return { ok: false };
-  }
+  if (!reply || confidence < 0.45) return { ok: false };
 
   const lower = reply.toLowerCase();
 
-  // 🔴 SERVICE → SIEMPRE DIAGNÓSTICO
+  // SERVICE
   if (intent === "SERVICE") {
     return {
       ok: true,
-      reply: clampText(
+      reply:
         "Con mucho gusto le ayudo 😊 ¿Me podría indicar la marca, el modelo y qué problema está presentando el equipo?",
-        maxLen
-      ),
     };
   }
 
-  // 🔴 EARLY → SIEMPRE CALIFICAR
+  // EARLY
   if (stage === "EARLY") {
     return {
       ok: true,
-      reply: clampText(
+      reply:
         "Con mucho gusto le ayudo 😊 ¿La necesita para estudio, trabajo o algún uso específico?",
-        maxLen
-      ),
     };
   }
 
-  // 🔴 FORZAR PREGUNTA
-  const hasQuestion =
-    lower.includes("¿") ||
-    lower.includes("?") ||
-    lower.includes("prefiere") ||
-    lower.includes("le gustaría");
-
-  if (!hasQuestion && (strategy === "ASK" || strategy === "QUALIFY")) {
+  // FORZAR PREGUNTA
+  if (
+    (strategy === "ASK" || strategy === "QUALIFY") &&
+    !lower.includes("¿")
+  ) {
     reply += " ¿Me podría confirmar un poco más sobre lo que necesita?";
   }
 
-  // 🔴 CIERRE
-  if (strategy === "CLOSE") {
-    const hasClose =
-      lower.includes("envio") ||
-      lower.includes("entrega") ||
-      lower.includes("retiro");
-
-    if (!hasClose) {
-      reply += " ¿Prefiere entrega, envío o retiro?";
-    }
+  // CLOSE
+  if (strategy === "CLOSE" && !lower.includes("envio")) {
+    reply += " ¿Prefiere entrega, envío o retiro?";
   }
 
-  return {
-    ok: true,
-    reply: clampText(reply, maxLen),
-  };
+  return { ok: true, reply: clampText(reply, maxLen) };
 }
 
 /*
@@ -278,58 +232,45 @@ export async function handleInbound(payload) {
       known_data: {},
     });
 
-    let enforcedStrategy = enforceStrategyRequired(
-      strategyDecision?.strategy
-    );
+    let strategy = enforceStrategyRequired(strategyDecision?.strategy);
 
-    // 🔴 ENFORCEMENT FINAL
-    if (intent === "SERVICE") enforcedStrategy = "ASK";
-    if (normalizedStage === "EARLY") enforcedStrategy = "QUALIFY";
+    if (intent === "SERVICE") strategy = "ASK";
+    if (normalizedStage === "EARLY") strategy = "QUALIFY";
 
-    console.log("🧠 FINAL STRATEGY:", {
-      intent,
-      stage: normalizedStage,
-      strategy: enforcedStrategy,
-    });
+    console.log("🧠 FINAL STRATEGY:", { intent, stage, strategy });
 
     /*
-    ========================================
+    =====================
     AI
-    ========================================
+    =====================
     */
 
     let aiReply = null;
 
     if (shouldUseConversationalAI({ intent })) {
-      const aiResult = await runConversationalAI({
+      const aiResult = await runAI({
         organization: {
           business_name: "Compu Store",
           assistant_name: "Eva",
         },
-        context: {
-          intent,
-          stage: normalizedStage,
-          strategy: enforcedStrategy,
-        },
+        context: { intent, stage: normalizedStage, strategy },
         userText: text,
       });
 
-      const guarded = guardConversationalReply({
+      const guarded = guardReply({
         aiResult,
         stage: normalizedStage,
-        strategy: enforcedStrategy,
+        strategy,
         intent,
       });
 
-      if (guarded.ok) {
-        aiReply = guarded.reply;
-      }
+      if (guarded.ok) aiReply = guarded.reply;
     }
 
     /*
-    ========================================
+    =====================
     FINAL
-    ========================================
+    =====================
     */
 
     let finalText = aiReply;
@@ -346,6 +287,31 @@ export async function handleInbound(payload) {
       role: "assistant",
       text: finalText,
     });
+
+    /*
+    =====================
+    🔥 FOLLOWUP
+    =====================
+    */
+
+    const shouldFollowUp =
+      intent === "BUY" ||
+      intent === "INFO" ||
+      intent === "SERVICE";
+
+    if (shouldFollowUp) {
+      try {
+        await scheduleFollowup({
+          organization_id,
+          lead_id: lead.id,
+          phone,
+          delay_hours: 24,
+          reason: "no_response",
+        });
+      } catch (e) {
+        console.error("❌ FOLLOWUP ERROR:", e);
+      }
+    }
 
     return {
       reply: { text: finalText },
