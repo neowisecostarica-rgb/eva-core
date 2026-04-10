@@ -301,13 +301,14 @@ export async function handleInbound(payload) {
 
     if (shouldFollowUp) {
       try {
-        await scheduleFollowup({
-          organization_id,
-          lead_id: lead.id,
-          phone,
-          delay_hours: 24,
-          reason: "no_response",
-        });
+       await scheduleFollowup({
+  organization_id,
+  lead_id: lead.id,
+  phone,
+  conversation_id: conversation.id,
+  delay_hours: 24,
+  reason: "sales_followup",
+});
       } catch (e) {
         console.error("❌ FOLLOWUP ERROR:", e);
       }
