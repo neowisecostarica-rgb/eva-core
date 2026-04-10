@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — SALES BRAIN (P1.3.3 — ENFORCE + CONTEXT FIXED)
+EVA CORE — SALES BRAIN (P1.3.4 — BLOCK 1 FIXED)
 ====================================================
 */
 
@@ -24,7 +24,6 @@ import { buildPrompt } from "./brain/utils/promptBuilder.js";
 import { getPromptConfig } from "./brain/utils/getPromptConfig.js";
 import { detectIntent } from "./brain/engines/intentEngine.js";
 import { formatAIResponse } from "./brain/utils/responseFormatter.js";
-import { buildContext } from "./contextBuilder.js";
 import {
   decideStrategy,
   normalizeIntent as normalizeStrategyIntent,
@@ -478,15 +477,14 @@ export async function handleInbound(payload) {
       strategyDecision,
     });
 
-    // 🔴 CONTEXT DESPUÉS
-    const fullContext = await buildContext({
-      organization_id,
-      phone,
-      text,
+    // 🔴 USAR CONTEXTO YA CONSTRUIDO DESDE AFUERA
+    const inboundContext = {
+      ...context,
       intent: refinedIntent,
       stage: normalizedStage,
       known_data: knownData,
-    });
+      channel,
+    };
 
     // ================================
     // CATALOGO
@@ -515,7 +513,7 @@ export async function handleInbound(payload) {
     if (enforcedStrategy) {
       const prompt = buildPrompt({
         context: {
-          ...fullContext,
+          ...inboundContext,
           intent: refinedIntent,
           stage: normalizedStage.toUpperCase(),
           known_data: knownData,
