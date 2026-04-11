@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — SALES BRAIN (BLOCK 3 — ORCHESTRATED)
+EVA CORE — SALES BRAIN (BLOCK 4 — EXECUTION ENABLED)
 ====================================================
 */
 
@@ -18,16 +18,16 @@ import { detectIntent } from "./brain/engines/intentEngine.js";
 import {
   decideStrategy,
   normalizeIntent,
-  normalizeStage,
 } from "./brain/engines/strategyEngine.js";
 
 import { buildContext } from "./contextBuilder.js";
 
+import { searchCatalogSmart } from "./brain/commerce/catalogEngine.js";
+import { enhanceProductReply } from "./brain/commerce/productAdvisorEngine.js";
+
 const openai = process.env.OPENAI_API_KEY
   ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
   : null;
-
-const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 
 /*
 ====================================================
@@ -35,23 +35,8 @@ UTILS
 ====================================================
 */
 
-function safeString(v) {
+function safe(v) {
   return String(v || "").trim();
-}
-
-function clampText(text, max = 420) {
-  const t = safeString(text).replace(/\s+/g, " ");
-  if (!t) return "";
-  if (t.length <= max) return t;
-  return t.slice(0, max - 1).trim() + "…";
-}
-
-function tryParseJson(text) {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return null;
-  }
 }
 
 /*
@@ -60,117 +45,118 @@ AI
 ====================================================
 */
 
-function normalizeAssistantOutput(raw) {
-  if (!raw) return { reply: "", confidence: 0 };
+async function runAI(context) {
+  if (!openai) return null;
 
-  if (typeof raw === "object") {
-    return {
-      reply: safeString(raw.reply),
-      confidence: Number(raw.confidence || 0),
-    };
-  }
+  try {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      temperature: 0.3,
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "user",
+          content: `
+Eres ${context.assistant.name}.
 
-  const parsed = tryParseJson(raw);
-
-  if (parsed) {
-    return {
-      reply: safeString(parsed.reply),
-      confidence: Number(parsed.confidence || 0),
-    };
-  }
-
-  return {
-    reply: safeString(raw),
-    confidence: 0.5,
-  };
-}
-
-function shouldUseAI({ intent }) {
-  if (!openai) return false;
-  if (intent === "GREETING") return false;
-  return true;
-}
-
-function buildPrompt({ context }) {
-  return `
-Eres ${context.assistant.name} de ${context.organization.business_name}.
-
-OBJETIVO:
-Guiar la conversación hacia una acción comercial.
-
-REGLAS:
-- No inventar
-- Máximo 1 emoji
-- No lenguaje técnico
-- Siempre avanzar conversación
-
-Contexto:
 Intent: ${context.intent}
 Stage: ${context.stage}
 Strategy: ${context.strategy}
 
-Known Data:
-${JSON.stringify(context.known_data, null, 2)}
+Data:
+${JSON.stringify(context.known_data)}
 
 Mensaje:
 ${context.user_message}
 
 Responde JSON:
-{
-  "reply": "mensaje",
-  "confidence": 0.8
-}
-`;
-}
+{ "reply": "mensaje", "confidence": 0.8 }
+`,
+        },
+      ],
+    });
 
-async function runAI(context) {
-  const prompt = buildPrompt({ context });
+    const raw = completion?.choices?.[0]?.message?.content;
 
-  const completion = await openai.chat.completions.create({
-    model: OPENAI_MODEL,
-    temperature: 0.3,
-    response_format: { type: "json_object" },
-    messages: [{ role: "user", content: prompt }],
-  });
+    if (!raw) return null;
 
-  const raw = completion?.choices?.[0]?.message?.content || "";
-  return normalizeAssistantOutput(raw);
+    const parsed = JSON.parse(raw);
+
+    return parsed.reply || null;
+  } catch (e) {
+    console.error("AI ERROR", e);
+    return null;
+  }
 }
 
 /*
 ====================================================
-FALLBACK (CRÍTICO)
+EXECUTION ENGINE 🔥
 ====================================================
 */
 
-function fallbackByStrategy(context) {
-  const { intent, strategy, known_data } = context;
+async function executeStrategy(context) {
+  const { strategy, intent, known_data } = context;
 
-  if (intent === "SERVICE" || strategy === "ASK") {
-    return "Con mucho gusto le ayudo 😊 ¿Me podría indicar la marca, el modelo y qué problema presenta el equipo?";
+  let products = [];
+
+  /*
+  ============================
+  PRODUCT SEARCH
+  ============================
+  */
+
+  if (strategy === "RECOMMEND" || strategy === "CLOSE") {
+    try {
+      products = await searchCatalogSmart({
+        organization_id: context.organization.id,
+        query: context.user_message,
+      });
+    } catch (e) {
+      console.error("catalog error", e);
+    }
   }
 
-  if (strategy === "QUALIFY") {
-    if (!known_data.use_case) {
-      return "Con mucho gusto le ayudo 😊 ¿La necesita para estudio, trabajo o algún uso específico?";
+  /*
+  ============================
+  AI BASE
+  ============================
+  */
+
+  let reply = await runAI(context);
+
+  /*
+  ============================
+  PRODUCT ENHANCEMENT
+  ============================
+  */
+
+  reply = enhanceProductReply({
+    reply,
+    intent,
+    catalogMatches: products,
+    data: context.sales_context,
+  });
+
+  /*
+  ============================
+  FALLBACK
+  ============================
+  */
+
+  if (!reply) {
+    if (strategy === "QUALIFY") {
+      return "¿La necesita para estudio o trabajo?";
     }
 
-    if (!known_data.budget) {
-      return "Perfecto 😊 ¿Qué presupuesto aproximado tiene pensado?";
+    if (strategy === "CLOSE") {
+      return "¿Prefiere envío o retiro?";
     }
 
-    return "Perfecto 😊 ¿Hay alguna característica importante para usted?";
+    return "¿En qué le puedo ayudar?";
   }
 
-  if (strategy === "RECOMMEND") {
-    return "Perfecto 😊 Con esa información le puedo recomendar opciones. ¿Qué presupuesto maneja?";
-  }
-
-  if (strategy === "CLOSE") {
-    return "Perfecto 😊 ¿Prefiere envío, entrega o retiro?";
-  }
-
-  return "Con mucho gusto le ayudo 😊 ¿En qué le puedo ayudar?";
+  return reply;
 }
 
 /*
@@ -181,20 +167,10 @@ MAIN
 
 export async function handleInbound(payload) {
   try {
-    const organization_id = safeString(payload?.organization_id);
-    const phone = safeString(payload?.phone);
-    const text = safeString(payload?.text);
-    const channel = safeString(payload?.channel || "whatsapp");
-
-    if (!organization_id || !phone || !text) {
-      throw new Error("Missing inbound data");
-    }
-
-    /*
-    ======================
-    DB BASE
-    ======================
-    */
+    const organization_id = safe(payload.organization_id);
+    const phone = safe(payload.phone);
+    const text = safe(payload.text);
+    const channel = safe(payload.channel || "whatsapp");
 
     const lead = await findOrCreateLead({ organization_id, phone });
 
@@ -212,18 +188,18 @@ export async function handleInbound(payload) {
     });
 
     /*
-    ======================
+    =====================
     INTENT
-    ======================
+    =====================
     */
 
     const rawIntent = detectIntent(text);
     const intent = normalizeIntent(rawIntent);
 
     /*
-    ======================
-    CONTEXT BUILDER 🔥
-    ======================
+    =====================
+    CONTEXT
+    =====================
     */
 
     const context = await buildContext({
@@ -231,68 +207,36 @@ export async function handleInbound(payload) {
       phone,
       text,
       intent,
-      known_data: {}, // se mergea adentro
     });
 
     /*
-    ======================
-    STRATEGY 🔥
-    ======================
+    =====================
+    STRATEGY
+    =====================
     */
 
-    const strategyDecision = decideStrategy({
+    const decision = decideStrategy({
       intent: context.intent,
       stage: context.stage,
       known_data: context.known_data,
     });
 
-    const strategy = strategyDecision.strategy;
+    context.strategy = decision.strategy;
 
-    context.strategy = strategy;
-
-    console.log("🧠 STRATEGY FINAL:", {
-      intent: context.intent,
-      stage: context.stage,
-      strategy,
-      known_data: context.known_data,
-    });
+    console.log("🧠 EXECUTION:", context);
 
     /*
-    ======================
-    AI
-    ======================
+    =====================
+    EXECUTION 🔥
+    =====================
     */
 
-    let reply = null;
-
-    if (shouldUseAI({ intent })) {
-      try {
-        const aiResult = await runAI(context);
-
-        if (aiResult?.reply && aiResult.confidence > 0.4) {
-          reply = aiResult.reply;
-        }
-      } catch (e) {
-        console.error("AI ERROR", e);
-      }
-    }
+    const reply = await executeStrategy(context);
 
     /*
-    ======================
-    FALLBACK
-    ======================
-    */
-
-    if (!reply) {
-      reply = fallbackByStrategy(context);
-    }
-
-    reply = clampText(reply);
-
-    /*
-    ======================
+    =====================
     SAVE
-    ======================
+    =====================
     */
 
     await saveMessage({
@@ -303,9 +247,9 @@ export async function handleInbound(payload) {
     });
 
     /*
-    ======================
+    =====================
     FOLLOWUP
-    ======================
+    =====================
     */
 
     if (
@@ -313,27 +257,23 @@ export async function handleInbound(payload) {
       intent === "INFO" ||
       intent === "SERVICE"
     ) {
-      try {
-        await scheduleFollowup({
-          organization_id,
-          lead_id: lead?.id,
-          phone,
-          conversation_id: conversation.id,
-        });
-      } catch (e) {
-        console.error("FOLLOWUP ERROR", e);
-      }
+      await scheduleFollowup({
+        organization_id,
+        lead_id: lead?.id,
+        phone,
+        conversation_id: conversation.id,
+      });
     }
 
     return {
       reply: { text: reply },
     };
   } catch (err) {
-    console.error("HANDLE ERROR", err);
+    console.error("ERROR", err);
 
     return {
       reply: {
-        text: "Con mucho gusto le ayudo 😊 ¿Me puede repetir la consulta?",
+        text: "¿Me puede repetir la consulta?",
       },
     };
   }
