@@ -254,23 +254,29 @@ function detectStage({ intent, text, known_data = {} }) {
   const hasUseCase = !!known_data.use_case;
   const hasProblem = !!known_data.problem;
 
+  // 🔥 SERVICE
   if (intent === "SERVICE") {
     return hasProblem ? "QUALIFYING" : "EARLY";
   }
 
+  // 🔥 GREETING nunca HOT
+  if (intent === "GREETING") {
+    return "EARLY";
+  }
+
+  // 🔥 mensajes cortos nunca HOT
+  if (t.length < 12) {
+    return "EARLY";
+  }
+
+  // 🔥 interés medio
   if (
     hasAny(t, [
       "me interesa",
       "precio",
       "cuánto cuesta",
-      "cuanto cuesta",
       "disponible",
-      "garantia",
-      "garantía",
-      "fotos",
-      "especificaciones",
       "info",
-      "informacion",
       "información",
     ])
   ) {
@@ -278,32 +284,22 @@ function detectStage({ intent, text, known_data = {} }) {
     return "QUALIFYING";
   }
 
+  // 🔥 cierre SOLO con evidencia fuerte
   if (
     hasAny(t, [
-      "me la deja",
-      "me lo deja",
+      "quiero comprar",
       "la compro",
       "lo compro",
-      "quiero comprar",
       "apartar",
       "reservar",
-      "envio",
-      "envío",
-      "retiro",
-      "donde estan",
-      "dónde están",
-      "ubicacion",
-      "ubicación",
-      "pago",
+      "cómo pago",
       "sinpe",
       "transferencia",
-      "tarjeta",
     ])
   ) {
     return "HOT";
   }
 
-  if (intent === "GREETING") return "EARLY";
   if (hasUseCase || hasBudget) return "QUALIFYING";
 
   return "EARLY";
@@ -465,8 +461,9 @@ AI CONTROL
 ====================================================
 */
 
-function shouldSearchCatalog(strategy) {
-  return strategy === "RECOMMEND" || strategy === "CLOSE";
+function shouldSearchCatalog(context) {
+  // 🔥 catálogo SIEMPRE disponible
+  return true;
 }
 
 function shouldUseAI(context) {
@@ -730,7 +727,7 @@ EXECUTION
 async function executeStrategy(context) {
   let catalogResults = [];
 
-  if (shouldSearchCatalog(context.strategy)) {
+ if (shouldSearchCatalog(context)) {
     try {
       const products = await searchCatalog({
         organization_id: context.organization.id,
