@@ -828,12 +828,14 @@ async function executeStrategy(context) {
   ========================================
   */
 
+  if (context.strategy === "RECOMMEND" || context.strategy === "CLOSE") {
   reply = enhanceProductReply({
     reply,
     intent: context.intent,
     catalogMatches: catalogResults,
     data: context.sales_context,
   });
+}
 
   const finalAiEnvelope = {
     ...aiEnvelope,
