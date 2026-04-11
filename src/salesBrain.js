@@ -427,11 +427,11 @@ async function executeStrategy(context) {
 
   if (shouldSearchCatalog(context.strategy)) {
     try {
-      const products = await searchCatalog({...});
-        organization_id: context.organization.id,
-        query: context.user_message,
-      });
-
+      const products = await searchCatalog({
+  organization_id: context.organization.id,
+  text: context.user_message,
+});
+      
       catalogResults = (products || []).map((p) => ({
         ...p,
         price: normalizePrice(p),
