@@ -1,22 +1,6 @@
 /*
 ====================================================
-EVA BRAIN — STRATEGY ENGINE
-====================================================
-
-Responsabilidad:
-Decidir la estrategia comercial ANTES de responder.
-
-Este módulo:
-- normaliza intent
-- normaliza stage
-- decide estrategia
-- devuelve una razón trazable
-
-No genera texto.
-No llama IA.
-No toca DB.
-Solo decide.
-
+EVA BRAIN — STRATEGY ENGINE (FIXED v2)
 ====================================================
 */
 
@@ -29,28 +13,28 @@ NORMALIZERS
 */
 
 export function normalizeStage(stage = "") {
-  const safeStage = normalizeText(stage);
+  const safe = normalizeText(stage);
 
-  if (safeStage === "new" || safeStage === "early") return "new";
-  if (safeStage === "qualifying") return "qualifying";
-  if (safeStage === "consideration" || safeStage === "mid") return "consideration";
-  if (safeStage === "hot" || safeStage === "ready_to_buy") return "hot";
-  if (safeStage === "closing") return "closing";
-  if (safeStage === "post") return "post";
+  if (safe === "new" || safe === "early") return "EARLY";
+  if (safe === "qualifying") return "QUALIFYING";
+  if (safe === "mid" || safe === "consideration") return "MID";
+  if (safe === "hot" || safe === "ready_to_buy") return "HOT";
+  if (safe === "closing") return "HOT";
+  if (safe === "post") return "POST";
 
-  return "new";
+  return "EARLY";
 }
 
 export function normalizeIntent(intent = "") {
-  const safeIntent = String(intent || "").toUpperCase().trim();
+  const safe = String(intent || "").toUpperCase().trim();
 
-  if (safeIntent === "SUPPORT") return "SERVICE";
-  if (safeIntent === "BUY") return "BUY";
-  if (safeIntent === "INFO") return "INFO";
-  if (safeIntent === "GREETING") return "GREETING";
-  if (safeIntent === "FOLLOWUP") return "FOLLOWUP";
-  if (safeIntent === "CLOSE_INTENT") return "CLOSE_INTENT";
-  if (safeIntent === "SERVICE") return "SERVICE";
+  if (safe === "SUPPORT") return "SERVICE";
+  if (safe === "SERVICE") return "SERVICE";
+  if (safe === "BUY") return "BUY";
+  if (safe === "INFO") return "INFO";
+  if (safe === "GREETING") return "GREETING";
+  if (safe === "FOLLOWUP") return "FOLLOWUP";
+  if (safe === "CLOSE_INTENT") return "CLOSE_INTENT";
 
   return "OTHER";
 }
@@ -61,182 +45,219 @@ HELPERS
 ====================================================
 */
 
-function hasValue(value) {
-  if (value === null || value === undefined) return false;
-  if (typeof value === "string") return value.trim().length > 0;
-  if (Array.isArray(value)) return value.length > 0;
+function hasValue(v) {
+  if (v === null || v === undefined) return false;
+  if (typeof v === "string") return v.trim().length > 0;
+  if (Array.isArray(v)) return v.length > 0;
   return true;
 }
 
-function hasServiceDiagnosis(known_data = {}) {
+function hasDiagnosis(data = {}) {
   return (
-    hasValue(known_data.problem) ||
-    hasValue(known_data.issue) ||
-    hasValue(known_data.model) ||
-    hasValue(known_data.brand) ||
-    hasValue(known_data.diagnosis)
+    hasValue(data.problem) ||
+    hasValue(data.issue) ||
+    hasValue(data.model) ||
+    hasValue(data.brand)
   );
 }
 
-function hasCommercialQualification(known_data = {}) {
+function hasQualification(data = {}) {
   return (
-    hasValue(known_data.use_case) ||
-    hasValue(known_data.budget) ||
-    hasValue(known_data.product_interest) ||
-    hasValue(known_data.product_type)
+    hasValue(data.use_case) ||
+    hasValue(data.budget) ||
+    hasValue(data.product_interest)
+  );
+}
+
+function hasStrongQualification(data = {}) {
+  return (
+    hasValue(data.use_case) &&
+    hasValue(data.budget)
   );
 }
 
 /*
 ====================================================
-DECISION
+DECISION ENGINE
 ====================================================
 */
 
 export function decideStrategy({ intent, stage, known_data = {} }) {
-  const normalizedIntent = normalizeIntent(intent);
-  const normalizedStage = normalizeStage(stage);
+  const i = normalizeIntent(intent);
+  const s = normalizeStage(stage);
+  const d = known_data || {};
 
   /*
+  ============================
   SERVICE FLOW
+  ============================
   */
 
-  if (normalizedIntent === "SERVICE") {
-    if (!hasServiceDiagnosis(known_data)) {
+  if (i === "SERVICE") {
+    if (!hasDiagnosis(d)) {
       return {
-        intent: normalizedIntent,
-        stage: normalizedStage,
+        intent: i,
+        stage: s,
         strategy: "ASK",
         reason: "service_missing_diagnosis",
       };
     }
 
     return {
-      intent: normalizedIntent,
-      stage: normalizedStage,
+      intent: i,
+      stage: s,
       strategy: "EXPLAIN_CLOSE",
       reason: "service_with_diagnosis",
     };
   }
 
   /*
-  FOLLOWUP FLOW
+  ============================
+  FOLLOWUP
+  ============================
   */
 
-  if (normalizedIntent === "FOLLOWUP") {
+  if (i === "FOLLOWUP") {
     return {
-      intent: normalizedIntent,
-      stage: normalizedStage,
+      intent: i,
+      stage: s,
       strategy: "FOLLOWUP",
-      reason: "followup_detected",
+      reason: "followup",
     };
   }
 
   /*
-  CLOSING FLOW
+  ============================
+  CLOSE INTENT
+  ============================
   */
 
-  if (normalizedIntent === "CLOSE_INTENT") {
+  if (i === "CLOSE_INTENT") {
     return {
-      intent: normalizedIntent,
-      stage: normalizedStage,
+      intent: i,
+      stage: s,
       strategy: "CLOSE",
-      reason: "explicit_close_intent",
+      reason: "explicit_close",
     };
   }
 
   /*
+  ============================
   BUY FLOW
+  ============================
   */
 
-  if (normalizedIntent === "BUY") {
-    if (normalizedStage === "closing" || normalizedStage === "hot") {
+  if (i === "BUY") {
+    // 🔥 HOT → CIERRE
+    if (s === "HOT") {
       return {
-        intent: normalizedIntent,
-        stage: normalizedStage,
+        intent: i,
+        stage: s,
         strategy: "CLOSE",
-        reason: "buy_hot_or_closing",
+        reason: "buy_hot",
       };
     }
 
-    if (normalizedStage === "consideration") {
+    // 🔥 MID → RECOMENDAR
+    if (s === "MID") {
       return {
-        intent: normalizedIntent,
-        stage: normalizedStage,
+        intent: i,
+        stage: s,
         strategy: "RECOMMEND",
-        reason: "buy_consideration_stage",
+        reason: "buy_mid",
       };
     }
 
-    if (normalizedStage === "qualifying" && hasCommercialQualification(known_data)) {
+    // 🔥 QUALIFIED → RECOMENDAR
+    if (s === "QUALIFYING" && hasStrongQualification(d)) {
       return {
-        intent: normalizedIntent,
-        stage: normalizedStage,
+        intent: i,
+        stage: s,
         strategy: "RECOMMEND",
-        reason: "buy_qualified_enough_for_recommendation",
+        reason: "qualified_ready_for_recommend",
       };
     }
 
+    // 🔥 SI TIENE ALGO DE DATA → SEGUIR CALIFICANDO
+    if (hasQualification(d)) {
+      return {
+        intent: i,
+        stage: s,
+        strategy: "QUALIFY",
+        reason: "partial_qualification",
+      };
+    }
+
+    // 🔥 DEFAULT BUY → QUALIFY
     return {
-      intent: normalizedIntent,
-      stage: normalizedStage,
+      intent: i,
+      stage: s,
       strategy: "QUALIFY",
       reason: "buy_needs_qualification",
     };
   }
 
   /*
+  ============================
   INFO FLOW
+  ============================
   */
 
-  if (normalizedIntent === "INFO") {
-    if (normalizedStage === "hot" || normalizedStage === "closing") {
+  if (i === "INFO") {
+    // 🔥 SI ESTÁ CERCA DE CIERRE → CERRAR
+    if (s === "HOT") {
       return {
-        intent: normalizedIntent,
-        stage: normalizedStage,
+        intent: i,
+        stage: s,
         strategy: "CLOSE",
-        reason: "info_request_near_close",
+        reason: "info_hot",
       };
     }
 
+    // 🔥 SI NO TIENE CONTEXTO → CALIFICAR
+    if (!hasQualification(d)) {
+      return {
+        intent: i,
+        stage: s,
+        strategy: "QUALIFY",
+        reason: "info_needs_context",
+      };
+    }
+
+    // 🔥 YA TIENE CONTEXTO → EXPLICAR
     return {
-      intent: normalizedIntent,
-      stage: normalizedStage,
+      intent: i,
+      stage: s,
       strategy: "EXPLAIN",
-      reason: "info_request",
+      reason: "info_with_context",
     };
   }
 
   /*
-  GREETING FLOW
+  ============================
+  GREETING
+  ============================
   */
 
-  if (normalizedIntent === "GREETING") {
-    if (normalizedStage === "new") {
-      return {
-        intent: normalizedIntent,
-        stage: normalizedStage,
-        strategy: "ASK",
-        reason: "greeting_new_conversation",
-      };
-    }
-
+  if (i === "GREETING") {
     return {
-      intent: normalizedIntent,
-      stage: normalizedStage,
+      intent: i,
+      stage: s,
       strategy: "QUALIFY",
-      reason: "greeting_existing_context",
+      reason: "greeting_start_conversation",
     };
   }
 
   /*
+  ============================
   FALLBACK
+  ============================
   */
 
   return {
-    intent: normalizedIntent,
-    stage: normalizedStage,
+    intent: i,
+    stage: s,
     strategy: "ASK",
-    reason: "fallback_default",
+    reason: "fallback",
   };
 }
