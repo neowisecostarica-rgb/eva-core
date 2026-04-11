@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — SALES BRAIN (BLOCK 5 — AI CONTROLLED)
+EVA CORE — SALES BRAIN (BLOCK 5.1 — ENFORCED)
 ====================================================
 */
 import {
@@ -63,6 +63,14 @@ function normalizePrice(product = {}) {
   }
 
   return 0;
+}
+
+function isObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function normalizeTextForMemory(text) {
+  return clampText(safe(text), 220);
 }
 
 /*
@@ -217,6 +225,28 @@ function buildKnownData(text) {
   };
 }
 
+function mergeKnownData(...sources) {
+  const merged = {
+    budget: null,
+    use_case: null,
+    problem: null,
+    product_interest: null,
+  };
+
+  for (const source of sources) {
+    if (!isObject(source)) continue;
+
+    if (!merged.budget && source.budget) merged.budget = source.budget;
+    if (!merged.use_case && source.use_case) merged.use_case = source.use_case;
+    if (!merged.problem && source.problem) merged.problem = source.problem;
+    if (!merged.product_interest && source.product_interest) {
+      merged.product_interest = source.product_interest;
+    }
+  }
+
+  return merged;
+}
+
 function detectStage({ intent, text, known_data = {} }) {
   const t = lower(text);
 
@@ -281,6 +311,156 @@ function detectStage({ intent, text, known_data = {} }) {
 
 /*
 ====================================================
+STRATEGY / CONTEXT ENFORCEMENT
+====================================================
+*/
+
+function normalizeStage(stage, fallback = "EARLY") {
+  const normalized = safe(stage).toUpperCase();
+  const allowed = ["EARLY", "QUALIFYING", "MID", "HOT", "POST"];
+  return allowed.includes(normalized) ? normalized : fallback;
+}
+
+function normalizeStrategyName(value) {
+  const v = safe(value).toUpperCase();
+
+  const allowed = [
+    "ASK",
+    "QUALIFY",
+    "EXPLAIN",
+    "EXPLAIN_CLOSE",
+    "RECOMMEND",
+    "CLOSE",
+    "FOLLOWUP",
+    "HYBRID",
+    "DEFAULT",
+  ];
+
+  if (allowed.includes(v)) return v;
+  return "";
+}
+
+function normalizeStrategyDecision(strategyDecision, fallbackContext = {}) {
+  if (typeof strategyDecision === "string") {
+    const direct = normalizeStrategyName(strategyDecision);
+    if (direct) {
+      return {
+        strategy: direct,
+        source: "direct_string",
+      };
+    }
+  }
+
+  if (isObject(strategyDecision)) {
+    const fromObject = normalizeStrategyName(
+      strategyDecision.strategy || strategyDecision.type || strategyDecision.name
+    );
+
+    if (fromObject) {
+      return {
+        ...strategyDecision,
+        strategy: fromObject,
+      };
+    }
+  }
+
+  const fallbackIntent = safe(fallbackContext.intent).toUpperCase();
+  const fallbackStage = normalizeStage(fallbackContext.stage, "EARLY");
+  const fallbackKnownData = fallbackContext.known_data || {};
+
+  if (fallbackIntent === "SERVICE") {
+    return {
+      strategy: fallbackKnownData.problem ? "EXPLAIN_CLOSE" : "ASK",
+      source: "fallback_service",
+    };
+  }
+
+  if (fallbackIntent === "BUY") {
+    if (fallbackStage === "HOT") {
+      return { strategy: "CLOSE", source: "fallback_buy_hot" };
+    }
+    if (fallbackStage === "MID") {
+      return { strategy: "RECOMMEND", source: "fallback_buy_mid" };
+    }
+    return { strategy: "QUALIFY", source: "fallback_buy_default" };
+  }
+
+  if (fallbackIntent === "FOLLOWUP") {
+    return { strategy: "FOLLOWUP", source: "fallback_followup" };
+  }
+
+  if (fallbackIntent === "GREETING") {
+    return { strategy: "ASK", source: "fallback_greeting" };
+  }
+
+  return { strategy: "ASK", source: "fallback_default" };
+}
+
+function ensureContextShape(rawContext, fallback = {}) {
+  const mergedKnownData = mergeKnownData(
+    fallback.known_data,
+    rawContext?.known_data,
+    rawContext?.sales_context,
+    rawContext?.knownData
+  );
+
+  const intent = normalizeIntent(rawContext?.intent || fallback.intent || "OTHER");
+  const stage = normalizeStage(rawContext?.stage || fallback.stage || "EARLY");
+
+  const assistantName =
+    rawContext?.assistant?.name ||
+    rawContext?.assistant_name ||
+    "Eva";
+
+  const businessName =
+    rawContext?.organization?.business_name ||
+    rawContext?.organization?.name ||
+    rawContext?.business_name ||
+    "el negocio";
+
+  return {
+    ...rawContext,
+    intent,
+    stage,
+    known_data: mergedKnownData,
+    history: Array.isArray(rawContext?.history) ? rawContext.history : [],
+    user_message: safe(rawContext?.user_message || fallback.user_message || ""),
+    assistant: {
+      ...(rawContext?.assistant || {}),
+      name: assistantName,
+    },
+    organization: {
+      ...(rawContext?.organization || {}),
+      id: safe(rawContext?.organization?.id || fallback.organization_id || ""),
+      business_name: businessName,
+      name: rawContext?.organization?.name || businessName,
+    },
+    sales_context: isObject(rawContext?.sales_context)
+      ? rawContext.sales_context
+      : {},
+  };
+}
+
+function assertContextReady(context) {
+  if (!context?.organization?.id) {
+    throw new Error("Missing context.organization.id");
+  }
+
+  if (!context?.intent) {
+    throw new Error("Missing context.intent");
+  }
+
+  if (!context?.stage) {
+    throw new Error("Missing context.stage");
+  }
+
+  if (!safe(context?.user_message)) {
+    throw new Error("Missing context.user_message");
+  }
+}
+
+/*
+====================================================
 AI CONTROL
 ====================================================
 */
@@ -320,6 +500,75 @@ function buildAIMessages(prompt) {
       content: prompt,
     },
   ];
+}
+
+function normalizeAIResult(aiResult, context, catalogResults = []) {
+  const rawText =
+    safe(aiResult?.text) ||
+    safe(aiResult?.reply) ||
+    safe(aiResult?.content) ||
+    "";
+
+  const explicitIntent = normalizeIntent(aiResult?.intent || context?.intent || "OTHER");
+  const explicitStage = normalizeStage(aiResult?.stage || context?.stage || "EARLY");
+
+  const explicitConfidenceNumber = Number(aiResult?.confidence);
+  const hasExplicitConfidence = !Number.isNaN(explicitConfidenceNumber);
+
+  let derivedConfidence = 0.62;
+
+  if (rawText) derivedConfidence = 0.72;
+  if (context?.strategy === "RECOMMEND" && catalogResults.length > 0) {
+    derivedConfidence = 0.78;
+  }
+  if (context?.strategy === "CLOSE" && catalogResults.length > 0) {
+    derivedConfidence = 0.8;
+  }
+
+  const confidence = hasExplicitConfidence
+    ? explicitConfidenceNumber
+    : derivedConfidence;
+
+  return {
+    reply: rawText,
+    intent: explicitIntent,
+    stage: explicitStage,
+    confidence,
+    escalate_to_human: !!aiResult?.escalate_to_human,
+    raw: aiResult || null,
+  };
+}
+
+function getConfidenceThreshold(context) {
+  const configured = Number(
+    context?.organization?.ai_confidence_threshold ||
+      context?.prompt_config?.ai_confidence_threshold ||
+      context?.sales_context?.ai_confidence_threshold
+  );
+
+  if (!Number.isNaN(configured) && configured > 0 && configured < 1) {
+    return configured;
+  }
+
+  return 0.65;
+}
+
+function shouldAcceptAIReply(aiEnvelope, context, catalogResults = []) {
+  if (!aiEnvelope?.reply) return false;
+  if (aiEnvelope?.escalate_to_human) return false;
+
+  const threshold = getConfidenceThreshold(context);
+
+  if (aiEnvelope.confidence < threshold) return false;
+
+  if (
+    (context?.strategy === "RECOMMEND" || context?.strategy === "CLOSE") &&
+    catalogResults.length === 0
+  ) {
+    return false;
+  }
+
+  return true;
 }
 
 /*
@@ -371,7 +620,11 @@ function buildFallbackReply(context, products = []) {
       return `Le podría recomendar ${first.name} 😊 ¿Desea que le comparta más detalles o fotos reales?`;
     }
 
-    return "Perfecto 😊 Ya con esa información le puedo recomendar opciones. ¿Qué presupuesto aproximado tiene pensado?";
+    if (!known_data.budget) {
+      return "Perfecto 😊 Ya con esa información le puedo recomendar opciones. ¿Qué presupuesto aproximado tiene pensado?";
+    }
+
+    return "Perfecto 😊 Ya tengo una idea más clara. ¿Desea que le comparta una opción recomendada y sus detalles?";
   }
 
   if (strategy === "CLOSE") {
@@ -385,6 +638,71 @@ function buildFallbackReply(context, products = []) {
   return "Con mucho gusto le ayudo 😊 ¿En qué le puedo ayudar hoy?";
 }
 
+function enforceQuestionIfNeeded(text, context) {
+  const clean = safe(text);
+
+  if (!clean) return clean;
+
+  const needsQuestion =
+    context?.strategy === "ASK" ||
+    context?.strategy === "QUALIFY" ||
+    context?.stage === "EARLY" ||
+    context?.stage === "QUALIFYING";
+
+  if (!needsQuestion) return clean;
+  if (clean.includes("¿")) return clean;
+
+  if (context?.strategy === "ASK") {
+    return `${clean} ¿Me podría indicar un poco más sobre su caso?`;
+  }
+
+  if (context?.known_data?.use_case && !context?.known_data?.budget) {
+    return `${clean} ¿Qué presupuesto aproximado tiene pensado?`;
+  }
+
+  return `${clean} ¿Me podría confirmar un poco más sobre lo que necesita?`;
+}
+
+function enforceCloseActionIfNeeded(text, context) {
+  const clean = safe(text);
+
+  if (!clean) return clean;
+  if (context?.strategy !== "CLOSE") return clean;
+
+  if (
+    hasAny(clean, [
+      "envio",
+      "envío",
+      "retiro",
+      "entrega",
+      "apartar",
+      "apartado",
+      "compra",
+      "coordinar",
+    ])
+  ) {
+    return clean;
+  }
+
+  return `${clean} ¿Prefiere envío, entrega o retiro?`;
+}
+
+function applyAntiDump(text, context) {
+  const clean = clampText(text, 340);
+
+  if (!clean) return clean;
+
+  if (context?.stage === "EARLY") {
+    return clampText(clean, 220);
+  }
+
+  if (context?.stage === "QUALIFYING") {
+    return clampText(clean, 260);
+  }
+
+  return clean;
+}
+
 function finalizeReply(rawReply, context, products = []) {
   const formatted = formatAIResponse({
     text: rawReply,
@@ -396,22 +714,9 @@ function finalizeReply(rawReply, context, products = []) {
   }
 
   let clean = clampText(formatted, 320);
-
-  // Si es cierre y no empuja acción, empujarlo
-  if (
-    context?.strategy === "CLOSE" &&
-    !hasAny(clean, ["envio", "envío", "retiro", "entrega", "apartar", "compra"])
-  ) {
-    clean += " ¿Prefiere envío, entrega o retiro?";
-  }
-
-  // Si es qualify y no pregunta nada, forzar pregunta
-  if (
-    (context?.strategy === "QUALIFY" || context?.strategy === "ASK") &&
-    !clean.includes("¿")
-  ) {
-    clean += " ¿Me podría confirmar un poco más sobre lo que necesita?";
-  }
+  clean = enforceCloseActionIfNeeded(clean, context);
+  clean = enforceQuestionIfNeeded(clean, context);
+  clean = applyAntiDump(clean, context);
 
   return clampText(clean, 340);
 }
@@ -428,10 +733,10 @@ async function executeStrategy(context) {
   if (shouldSearchCatalog(context.strategy)) {
     try {
       const products = await searchCatalog({
-  organization_id: context.organization.id,
-  text: context.user_message,
-});
-      
+        organization_id: context.organization.id,
+        text: context.user_message,
+      });
+
       catalogResults = (products || []).map((p) => ({
         ...p,
         price: normalizePrice(p),
@@ -444,7 +749,7 @@ async function executeStrategy(context) {
 
   /*
   ========================================
-  DETerministic first if AI not needed
+  DETERMINISTIC FIRST IF AI NOT NEEDED
   ========================================
   */
 
@@ -455,6 +760,9 @@ async function executeStrategy(context) {
       reply: fallback,
       catalogResults,
       source: "deterministic_fallback",
+      ai_confidence: null,
+      ai_stage: context.stage,
+      ai_intent: context.intent,
     };
   }
 
@@ -465,6 +773,7 @@ async function executeStrategy(context) {
   */
 
   const promptConfig = await getPromptConfig(context.organization.id);
+  context.prompt_config = isObject(promptConfig) ? promptConfig : {};
 
   /*
   ========================================
@@ -479,7 +788,7 @@ async function executeStrategy(context) {
     },
     catalogResults,
     history: context.history || [],
-    promptConfig,
+    promptConfig: context.prompt_config,
   });
 
   /*
@@ -488,11 +797,19 @@ async function executeStrategy(context) {
   ========================================
   */
 
-  const aiResult = await runAI({
-    prompt: buildAIMessages(prompt),
-  });
+  let aiResult = null;
 
-  let reply = aiResult?.text || null;
+  try {
+    aiResult = await runAI({
+      prompt: buildAIMessages(prompt),
+    });
+  } catch (err) {
+    console.error("❌ AI ENGINE ERROR:", err);
+  }
+
+  const aiEnvelope = normalizeAIResult(aiResult, context, catalogResults);
+
+  let reply = aiEnvelope.reply || null;
 
   /*
   ========================================
@@ -507,6 +824,30 @@ async function executeStrategy(context) {
     data: context.sales_context,
   });
 
+  const finalAiEnvelope = {
+    ...aiEnvelope,
+    reply,
+  };
+
+  /*
+  ========================================
+  FINAL DECISION
+  ========================================
+  */
+
+  if (!shouldAcceptAIReply(finalAiEnvelope, context, catalogResults)) {
+    const fallback = buildFallbackReply(context, catalogResults);
+
+    return {
+      reply: fallback,
+      catalogResults,
+      source: aiResult ? "fallback_after_ai_gate" : "fallback_after_ai_fail",
+      ai_confidence: finalAiEnvelope.confidence,
+      ai_stage: finalAiEnvelope.stage,
+      ai_intent: finalAiEnvelope.intent,
+    };
+  }
+
   /*
   ========================================
   FINAL CLEAN
@@ -518,7 +859,10 @@ async function executeStrategy(context) {
   return {
     reply: finalReply,
     catalogResults,
-    source: aiResult ? "ai" : "fallback_after_ai_fail",
+    source: "ai",
+    ai_confidence: finalAiEnvelope.confidence,
+    ai_stage: finalAiEnvelope.stage,
+    ai_intent: finalAiEnvelope.intent,
   };
 }
 
@@ -588,7 +932,7 @@ export async function handleInbound(payload) {
     ========================================
     */
 
-    const context = await buildContext({
+    const rawContext = await buildContext({
       organization_id,
       phone,
       text,
@@ -597,9 +941,19 @@ export async function handleInbound(payload) {
       known_data: detectedKnownData,
     });
 
+    const context = ensureContextShape(rawContext, {
+      organization_id,
+      user_message: text,
+      intent,
+      stage: detectedStage,
+      known_data: detectedKnownData,
+    });
+
+    assertContextReady(context);
+
     /*
     ========================================
-    STRATEGY
+    STRATEGY ENFORCEMENT
     ========================================
     */
 
@@ -609,9 +963,20 @@ export async function handleInbound(payload) {
       known_data: context.known_data,
     });
 
-    context.strategy = strategyDecision?.strategy || "ASK";
+    const normalizedDecision = normalizeStrategyDecision(strategyDecision, {
+      intent: context.intent,
+      stage: context.stage,
+      known_data: context.known_data,
+    });
 
-    console.log("🧠 BLOCK5 EXECUTION", {
+    if (!normalizedDecision?.strategy) {
+      throw new Error("Strategy required");
+    }
+
+    context.strategy = normalizedDecision.strategy;
+    context.strategy_meta = normalizedDecision;
+
+    console.log("🧠 BLOCK5.1 EXECUTION", {
       intent: context.intent,
       stage: context.stage,
       strategy: context.strategy,
@@ -650,11 +1015,7 @@ export async function handleInbound(payload) {
     ========================================
     */
 
-    if (
-      intent === "BUY" ||
-      intent === "INFO" ||
-      intent === "SERVICE"
-    ) {
+    if (intent === "BUY" || intent === "INFO" || intent === "SERVICE") {
       try {
         await scheduleFollowup({
           organization_id,
@@ -676,6 +1037,16 @@ export async function handleInbound(payload) {
         stage: context.stage,
         strategy: context.strategy,
         source: execution?.source || "unknown",
+        ai_confidence:
+          execution?.ai_confidence !== undefined ? execution.ai_confidence : null,
+        ai_stage: execution?.ai_stage || context.stage,
+        ai_intent: execution?.ai_intent || context.intent,
+        known_data: {
+          budget: context.known_data?.budget || null,
+          use_case: context.known_data?.use_case || null,
+          problem: normalizeTextForMemory(context.known_data?.problem),
+          product_interest: context.known_data?.product_interest || null,
+        },
       },
     };
   } catch (err) {
@@ -684,6 +1055,9 @@ export async function handleInbound(payload) {
     return {
       reply: {
         text: "Con mucho gusto le ayudo 😊 ¿Me podría repetir su consulta, por favor?",
+      },
+      meta: {
+        source: "error_fallback",
       },
     };
   }
