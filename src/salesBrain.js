@@ -917,6 +917,14 @@ export async function handleInbound(payload) {
     const intent = normalizeIntent(rawIntent);
 
     const detectedKnownData = buildKnownData(text);
+    // 🔥 evitar contaminación entre intents
+if (intent === "SERVICE") {
+  detectedKnownData.product_interest = null;
+}
+
+if (intent === "BUY") {
+  detectedKnownData.problem = null;
+}
     const detectedStage = detectStage({
       intent,
       text,
@@ -955,10 +963,12 @@ export async function handleInbound(payload) {
     */
 
     const strategyDecision = decideStrategy({
-      intent: context.intent,
-      stage: context.stage,
-      known_data: context.known_data,
-    });
+  intent: context.intent,
+  stage: context.stage,
+  known_data: context.known_data,
+  sales_context: context.sales_context,
+  signals: context.signals,
+});
 
     const normalizedDecision = normalizeStrategyDecision(strategyDecision, {
       intent: context.intent,
