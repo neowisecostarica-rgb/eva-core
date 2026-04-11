@@ -1,10 +1,46 @@
 /*
 ====================================================
-EVA CORE — CONTEXT BUILDER (BLOCK 2 — FIXED)
+EVA CORE — CONTEXT BUILDER (BLOCK 2 — FINAL FIX)
 ====================================================
 */
 
 import pool from "./db.js";
+
+/*
+====================================================
+UTILS
+====================================================
+*/
+
+function safeString(v) {
+  return String(v || "").trim();
+}
+
+function mergeKnownData(dbData = {}, detectedData = {}) {
+  return {
+    budget: detectedData.budget ?? dbData.budget ?? null,
+    use_case: detectedData.use_case ?? dbData.use_case ?? null,
+    product_interest:
+      detectedData.product_interest ?? dbData.product_interest ?? null,
+    problem: detectedData.problem ?? null,
+  };
+}
+
+function resolveStage({ lead, detectedStage }) {
+  // 🔥 PRIORIDAD: DB
+  if (lead?.stage) {
+    return String(lead.stage).toUpperCase();
+  }
+
+  // 🔥 FALLBACK
+  return String(detectedStage || "EARLY").toUpperCase();
+}
+
+/*
+====================================================
+MAIN
+====================================================
+*/
 
 export async function buildContext({
   organization_id,
@@ -43,11 +79,12 @@ export async function buildContext({
 
     /*
     ========================================
-    LEAD
+    LEAD (CRÍTICO)
     ========================================
     */
 
     let lead = {};
+
     if (phone) {
       const leadRes = await pool.query(
         `SELECT * FROM leads WHERE organization_id = $1 AND phone = $2 LIMIT 1`,
@@ -59,11 +96,12 @@ export async function buildContext({
 
     /*
     ========================================
-    CONVERSATION (CRÍTICO)
+    CONVERSATION
     ========================================
     */
 
     let conversation = {};
+
     if (phone) {
       const convRes = await pool.query(
         `
@@ -82,7 +120,7 @@ export async function buildContext({
 
     /*
     ========================================
-    HISTORY (CORREGIDO)
+    HISTORY
     ========================================
     */
 
@@ -105,7 +143,26 @@ export async function buildContext({
 
     /*
     ========================================
-    BUSINESS RULES (DINÁMICO)
+    🔥 KNOWN DATA (MERGE DB + DETECTED)
+    ========================================
+    */
+
+    const mergedKnownData = mergeKnownData(lead, known_data);
+
+    /*
+    ========================================
+    🔥 STAGE REAL
+    ========================================
+    */
+
+    const finalStage = resolveStage({
+      lead,
+      detectedStage: stage,
+    });
+
+    /*
+    ========================================
+    BUSINESS RULES
     ========================================
     */
 
@@ -129,12 +186,12 @@ export async function buildContext({
     const sales_context = {
       is_returning_customer: !!lead?.id,
       interest_level: lead?.interest_level || "LOW",
-      last_stage: lead?.stage || "new",
+      last_stage: lead?.stage || "NEW",
     };
 
     /*
     ========================================
-    CONTEXT FINAL
+    FINAL CONTEXT
     ========================================
     */
 
@@ -163,15 +220,15 @@ export async function buildContext({
         last_message: conversation?.last_message || null,
       },
 
-      // 🔴 CORE
+      // 🔴 CORE REAL
       intent,
-      stage,
-      known_data,
+      stage: finalStage,
+      known_data: mergedKnownData,
 
       business_rules,
       history,
       sales_context,
-      user_message: text,
+      user_message: safeString(text),
     };
   } catch (error) {
     console.error("❌ CONTEXT BUILDER ERROR", error);
@@ -182,7 +239,7 @@ export async function buildContext({
       lead: {},
       conversation: {},
       intent: null,
-      stage: null,
+      stage: "EARLY",
       known_data: {},
       business_rules: {},
       history: [],
