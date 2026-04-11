@@ -1,23 +1,10 @@
 /*
 ====================================================
-EVA BRAIN — INTENT ENGINE
-====================================================
-
-Responsabilidad:
-Detectar la intención principal del mensaje del cliente.
-
-Salida posible:
-GREETING
-BUY
-INFO
-SUPPORT
-CLOSE_INTENT
-UNKNOWN
+EVA BRAIN — INTENT ENGINE (ENFORCED v2)
 ====================================================
 */
 
 import { normalizeText } from "../utils/textUtils.js";
-
 
 /*
 ====================================================
@@ -26,17 +13,20 @@ INTENT DETECTION
 */
 
 export function detectIntent(text) {
-
   const t = normalizeText(text);
 
   /*
-  CLOSE INTENT
+  ========================================
+  CLOSE INTENT (MÁXIMA PRIORIDAD)
+  ========================================
   */
 
   if (
     t.includes("quiero comprar") ||
     t.includes("la quiero") ||
+    t.includes("lo quiero") ||
     t.includes("como pago") ||
+    t.includes("cómo pago") ||
     t.includes("sinpe") ||
     t.includes("tarjeta") ||
     t.includes("transferencia") ||
@@ -47,12 +37,56 @@ export function detectIntent(text) {
   }
 
   /*
+  ========================================
+  SUPPORT / SERVICE (ANTES DE BUY 🔥)
+  ========================================
+  */
+
+  if (
+    t.includes("mantenimiento") ||
+    t.includes("reparacion") ||
+    t.includes("reparación") ||
+    t.includes("reparar") ||
+    t.includes("no imprime") ||
+    t.includes("no enciende") ||
+    t.includes("no carga") ||
+    t.includes("esta lenta") ||
+    t.includes("está lenta") ||
+    t.includes("falla") ||
+    t.includes("dañado") ||
+    t.includes("dañada") ||
+    t.includes("no funciona") ||
+    t.includes("error")
+  ) {
+    return "SUPPORT";
+  }
+
+  /*
+  ========================================
+  GREETING (ANTES DE BUY 🔥)
+  ========================================
+  */
+
+  if (
+    t === "hola" ||
+    t === "buenas" ||
+    t.includes("buenos dias") ||
+    t.includes("buenas tardes") ||
+    t.includes("buenas noches")
+  ) {
+    return "GREETING";
+  }
+
+  /*
+  ========================================
   BUY INTENT
+  ========================================
   */
 
   if (
     t.includes("precio") ||
     t.includes("cuanto cuesta") ||
+    t.includes("cuánto cuesta") ||
     t.includes("cuanto vale") ||
     t.includes("disponible") ||
     t.includes("me interesa") ||
@@ -71,49 +105,30 @@ export function detectIntent(text) {
   }
 
   /*
+  ========================================
   INFO
+  ========================================
   */
 
   if (
     t.includes("garantia") ||
+    t.includes("garantía") ||
     t.includes("procesador") ||
     t.includes("ram") ||
     t.includes("ssd") ||
     t.includes("caracteristicas") ||
-    t.includes("informacion")
+    t.includes("características") ||
+    t.includes("informacion") ||
+    t.includes("información")
   ) {
     return "INFO";
   }
 
   /*
-  SUPPORT
+  ========================================
+  FALLBACK
+  ========================================
   */
-
-  if (
-    t.includes("mantenimiento") ||
-    t.includes("reparacion") ||
-    t.includes("reparar") ||
-    t.includes("no imprime") ||
-    t.includes("no enciende") ||
-    t.includes("esta lenta") ||
-    t.includes("falla")
-  ) {
-    return "SUPPORT";
-  }
-
-  /*
-  GREETING
-  */
-
-  if (
-    t === "hola" ||
-    t.includes("buenos dias") ||
-    t.includes("buenas tardes") ||
-    t.includes("buenas noches")
-  ) {
-    return "GREETING";
-  }
 
   return "UNKNOWN";
-
 }
