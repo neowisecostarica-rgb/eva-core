@@ -1,105 +1,12 @@
 /*
 ====================================================
-EVA AI ENHANCER
-Conversational Intelligence Layer
+DEPRECATED FILE
 ====================================================
 
-Este módulo mejora las respuestas generadas
-por EVA sin cambiar su intención comercial.
+Este archivo ya no es fuente de verdad.
+Usar exclusivamente:
 
-Responsabilidades:
-
-• mejorar redacción
-• hacer tono más natural
-• mantener intención de venta
-• evitar alterar precios o datos
-
-====================================================
+src/brain/engines/aiEngine.js
 */
 
-import OpenAI from "openai";
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
-
-/*
-====================================================
-PROMPT
-====================================================
-*/
-
-const SYSTEM_PROMPT = `
-Eres una asistente comercial profesional.
-
-Tu tarea es mejorar el mensaje que te entrego
-sin cambiar su significado.
-
-Reglas estrictas:
-
-- No inventes información
-- No cambies precios
-- No cambies productos
-- No cambies números
-- Solo mejora la forma de hablar
-
-Estilo:
-
-- humano
-- claro
-- amable
-- orientado a ventas
-
-Responde únicamente con el mensaje mejorado.
-`;
-
-/*
-====================================================
-ENHANCE REPLY
-====================================================
-*/
-
-export async function enhanceReply(message) {
-
-  try {
-
-    if (!message || message.length < 15) {
-      return message;
-    }
-
-    const completion = await openai.chat.completions.create({
-
-      model: "gpt-4o-mini",
-
-      messages: [
-        {
-          role: "system",
-          content: SYSTEM_PROMPT
-        },
-        {
-          role: "user",
-          content: message
-        }
-      ],
-
-      temperature: 0.4
-
-    });
-
-    const improved = completion.choices?.[0]?.message?.content;
-
-    if (!improved) {
-      return message;
-    }
-
-    return improved.trim();
-
-  } catch (err) {
-
-    console.error("AI ENHANCER ERROR", err);
-
-    return message;
-
-  }
-
-}
+throw new Error("DEPRECATED: use src/brain/engines/aiEngine.js");
