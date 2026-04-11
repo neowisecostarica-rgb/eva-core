@@ -462,8 +462,22 @@ AI CONTROL
 */
 
 function shouldSearchCatalog(context) {
-  // 🔥 catálogo SIEMPRE disponible
-  return true;
+  if (!context) return false;
+
+  const { strategy, intent, known_data = {} } = context;
+
+  // SOLO CUANDO TIENE SENTIDO COMERCIAL
+
+  if (strategy === "RECOMMEND") return true;
+  if (strategy === "CLOSE") return true;
+
+  if (strategy === "EXPLAIN") {
+    // solo si hay intención de producto o servicio
+    if (known_data.product_interest) return true;
+    if (intent === "BUY" || intent === "INFO") return true;
+  }
+
+  return false;
 }
 
 function shouldUseAI(context) {
