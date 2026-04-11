@@ -42,13 +42,26 @@ export function formatAIResponse({ text, agentName = "Eva" }) {
   }
 
   // ================================
-  // ENSURE END WITH ACTION
-  // ================================
-  const endsWithQuestion = clean.trim().endsWith("?");
+// ENSURE END WITH ACTION (SMART)
+// ================================
+const endsWithQuestion = clean.trim().endsWith("?");
 
-  if (!endsWithQuestion) {
+if (!endsWithQuestion) {
+  const lower = clean.toLowerCase();
+
+  const isClosing =
+    lower.includes("envio") ||
+    lower.includes("envío") ||
+    lower.includes("entrega") ||
+    lower.includes("retiro") ||
+    lower.includes("apartar") ||
+    lower.includes("apartado") ||
+    lower.includes("coordinar");
+
+  if (!isClosing) {
     clean += " ¿Qué uso le quiere dar?";
   }
+}
 
   // ================================
   // FINAL CLEAN
