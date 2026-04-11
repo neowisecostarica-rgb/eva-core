@@ -19,7 +19,7 @@ import {
 
 import { buildContext } from "./contextBuilder.js";
 
-import { searchCatalog } from "./brain/commerce/catalogEngine.js";
+import { searchCatalogSmart as searchCatalog } from "./brain/commerce/catalogEngine.js";
 import { enhanceProductReply } from "./brain/commerce/productAdvisorEngine.js";
 
 import { buildPrompt } from "./brain/utils/promptBuilder.js";
