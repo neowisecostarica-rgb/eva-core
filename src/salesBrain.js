@@ -23,7 +23,7 @@ import { buildContext } from "./contextBuilder.js";
 import { searchCatalogSmart } from "./brain/commerce/catalogEngine.js";
 import { enhanceProductReply } from "./brain/commerce/productAdvisorEngine.js";
 
-import { buildPrompt } from "./brain/promptBuilder.js";
+import { buildPrompt } from "./brain/utils/promptBuilder.js";
 import { runAI } from "./brain/engines/aiEngine.js";
 import { getPromptConfig } from "./brain/utils/getPromptConfig.js";
 import { formatAIResponse } from "./brain/utils/responseFormatter.js";
