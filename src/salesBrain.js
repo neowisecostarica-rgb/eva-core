@@ -19,7 +19,7 @@ import {
 
 import { buildContext } from "./contextBuilder.js";
 
-import { searchCatalogSmart } from "./brain/commerce/catalogEngine.js";
+import { searchCatalog } from "./brain/commerce/catalogEngine.js";
 import { enhanceProductReply } from "./brain/commerce/productAdvisorEngine.js";
 
 import { buildPrompt } from "./brain/utils/promptBuilder.js";
@@ -427,7 +427,7 @@ async function executeStrategy(context) {
 
   if (shouldSearchCatalog(context.strategy)) {
     try {
-      const products = await searchCatalogSmart({
+      const products = await searchCatalog({...});
         organization_id: context.organization.id,
         query: context.user_message,
       });
