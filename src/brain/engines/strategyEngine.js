@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA BRAIN — STRATEGY ENGINE (FIXED v2)
+EVA BRAIN — STRATEGY ENGINE (v3 — ENFORCED)
 ====================================================
 */
 
@@ -82,33 +82,33 @@ DECISION ENGINE
 ====================================================
 */
 
-export function decideStrategy({ intent, stage, known_data = {} }) {
+export function decideStrategy({
+  intent,
+  stage,
+  known_data = {},
+  sales_context = {},
+  signals = {},
+}) {
   const i = normalizeIntent(intent);
   const s = normalizeStage(stage);
   const d = known_data || {};
+  const sc = sales_context || {};
+  const sg = signals || {};
+
+  const interest = String(sc.interest_level || "LOW").toUpperCase();
 
   /*
   ============================
-  SERVICE FLOW
+  SERVICE
   ============================
   */
 
   if (i === "SERVICE") {
     if (!hasDiagnosis(d)) {
-      return {
-        intent: i,
-        stage: s,
-        strategy: "ASK",
-        reason: "service_missing_diagnosis",
-      };
+      return { strategy: "ASK", reason: "service_missing_diagnosis" };
     }
 
-    return {
-      intent: i,
-      stage: s,
-      strategy: "EXPLAIN_CLOSE",
-      reason: "service_with_diagnosis",
-    };
+    return { strategy: "EXPLAIN_CLOSE", reason: "service_with_diagnosis" };
   }
 
   /*
@@ -118,12 +118,7 @@ export function decideStrategy({ intent, stage, known_data = {} }) {
   */
 
   if (i === "FOLLOWUP") {
-    return {
-      intent: i,
-      stage: s,
-      strategy: "FOLLOWUP",
-      reason: "followup",
-    };
+    return { strategy: "FOLLOWUP", reason: "followup" };
   }
 
   /*
@@ -133,12 +128,7 @@ export function decideStrategy({ intent, stage, known_data = {} }) {
   */
 
   if (i === "CLOSE_INTENT") {
-    return {
-      intent: i,
-      stage: s,
-      strategy: "CLOSE",
-      reason: "explicit_close",
-    };
+    return { strategy: "CLOSE", reason: "explicit_close" };
   }
 
   /*
@@ -148,53 +138,28 @@ export function decideStrategy({ intent, stage, known_data = {} }) {
   */
 
   if (i === "BUY") {
-    // 🔥 HOT → CIERRE
+    // 🔥 PRIORIDAD: INTERÉS ALTO
+    if (interest === "HIGH" || sg.is_hot) {
+      return { strategy: "CLOSE", reason: "high_intent_close" };
+    }
+
     if (s === "HOT") {
-      return {
-        intent: i,
-        stage: s,
-        strategy: "CLOSE",
-        reason: "buy_hot",
-      };
+      return { strategy: "CLOSE", reason: "buy_hot" };
     }
 
-    // 🔥 MID → RECOMENDAR
     if (s === "MID") {
-      return {
-        intent: i,
-        stage: s,
-        strategy: "RECOMMEND",
-        reason: "buy_mid",
-      };
+      return { strategy: "RECOMMEND", reason: "buy_mid" };
     }
 
-    // 🔥 QUALIFIED → RECOMENDAR
-    if (s === "QUALIFYING" && hasStrongQualification(d)) {
-      return {
-        intent: i,
-        stage: s,
-        strategy: "RECOMMEND",
-        reason: "qualified_ready_for_recommend",
-      };
+    if (hasStrongQualification(d)) {
+      return { strategy: "RECOMMEND", reason: "ready_for_recommend" };
     }
 
-    // 🔥 SI TIENE ALGO DE DATA → SEGUIR CALIFICANDO
     if (hasQualification(d)) {
-      return {
-        intent: i,
-        stage: s,
-        strategy: "QUALIFY",
-        reason: "partial_qualification",
-      };
+      return { strategy: "QUALIFY", reason: "partial_qualification" };
     }
 
-    // 🔥 DEFAULT BUY → QUALIFY
-    return {
-      intent: i,
-      stage: s,
-      strategy: "QUALIFY",
-      reason: "buy_needs_qualification",
-    };
+    return { strategy: "QUALIFY", reason: "needs_qualification" };
   }
 
   /*
@@ -204,33 +169,15 @@ export function decideStrategy({ intent, stage, known_data = {} }) {
   */
 
   if (i === "INFO") {
-    // 🔥 SI ESTÁ CERCA DE CIERRE → CERRAR
-    if (s === "HOT") {
-      return {
-        intent: i,
-        stage: s,
-        strategy: "CLOSE",
-        reason: "info_hot",
-      };
+    if (s === "HOT" || interest === "HIGH") {
+      return { strategy: "CLOSE", reason: "info_hot" };
     }
 
-    // 🔥 SI NO TIENE CONTEXTO → CALIFICAR
     if (!hasQualification(d)) {
-      return {
-        intent: i,
-        stage: s,
-        strategy: "QUALIFY",
-        reason: "info_needs_context",
-      };
+      return { strategy: "QUALIFY", reason: "info_needs_context" };
     }
 
-    // 🔥 YA TIENE CONTEXTO → EXPLICAR
-    return {
-      intent: i,
-      stage: s,
-      strategy: "EXPLAIN",
-      reason: "info_with_context",
-    };
+    return { strategy: "EXPLAIN", reason: "info_with_context" };
   }
 
   /*
@@ -240,12 +187,7 @@ export function decideStrategy({ intent, stage, known_data = {} }) {
   */
 
   if (i === "GREETING") {
-    return {
-      intent: i,
-      stage: s,
-      strategy: "QUALIFY",
-      reason: "greeting_start_conversation",
-    };
+    return { strategy: "QUALIFY", reason: "start_conversation" };
   }
 
   /*
@@ -254,10 +196,5 @@ export function decideStrategy({ intent, stage, known_data = {} }) {
   ============================
   */
 
-  return {
-    intent: i,
-    stage: s,
-    strategy: "ASK",
-    reason: "fallback",
-  };
+  return { strategy: "ASK", reason: "fallback" };
 }
