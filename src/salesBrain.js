@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — SALES BRAIN (BLOCK 1 — STRATEGY ENGINE vNext)
+EVA CORE — SALES BRAIN (vNext — PRODUCTION SAFE)
 ====================================================
 */
 
@@ -10,10 +10,7 @@ import {
   saveMessage,
 } from "./db.js";
 
-import {
-  decideStrategy,
-} from "./brain/engines/strategyEngine.js";
-
+import { decideStrategy } from "./brain/engines/strategyEngine.js";
 import { buildContext } from "./contextBuilder.js";
 
 import { searchCatalogSmart as searchCatalog } from "./brain/commerce/catalogEngine.js";
@@ -39,6 +36,51 @@ function clampText(text, max = 320) {
   if (!clean) return "";
   if (clean.length <= max) return clean;
   return clean.slice(0, max - 1).trim() + "…";
+}
+
+/*
+====================================================
+SAFE CONTEXT (CRÍTICO)
+====================================================
+*/
+
+function ensureContext(context = {}) {
+  return {
+    organization: context.organization || { id: null },
+    assistant: context.assistant || { name: "Asistente" },
+    intent: context.intent || "UNKNOWN",
+    stage: context.stage || "EARLY",
+    known_data: context.known_data || {},
+    current_entities: context.current_entities || {},
+    sales_context: context.sales_context || {},
+    history: context.history || [],
+    signals: context.signals || {},
+    ...context,
+  };
+}
+
+/*
+====================================================
+FALLBACK INTELIGENTE (CRÍTICO)
+====================================================
+*/
+
+function buildFallbackReply(context) {
+  const { strategy } = context;
+
+  if (strategy === "QUALIFY") {
+    return "Con mucho gusto le ayudo 😊 ¿Para qué uso la necesita?";
+  }
+
+  if (strategy === "RECOMMEND") {
+    return "Le puedo recomendar una opción que se ajuste a lo que busca 👍 ¿Qué presupuesto tiene pensado?";
+  }
+
+  if (strategy === "CLOSE") {
+    return "Si gusta se lo puedo dejar apartado de una vez y coordinamos entrega 👍";
+  }
+
+  return "Con mucho gusto le ayudo 😊 ¿Me podría indicar un poco más sobre lo que necesita?";
 }
 
 /*
@@ -79,8 +121,6 @@ async function executeStrategy(context) {
     promptConfig,
   });
 
-  console.log("🤖 PROMPT PREVIEW", prompt.slice(0, 300));
-
   let aiText = null;
 
   try {
@@ -93,13 +133,20 @@ async function executeStrategy(context) {
       aiResult?.reply ||
       aiResult?.content ||
       null;
+
   } catch (err) {
     console.error("❌ AI ERROR:", err);
   }
 
+  /*
+  ========================================
+  🔥 FALLBACK INTELIGENTE
+  ========================================
+  */
+
   if (!aiText) {
     return {
-      reply: "Con mucho gusto le ayudo 😊 ¿Me podría indicar un poco más sobre lo que necesita?",
+      reply: buildFallbackReply(context),
       catalogResults,
     };
   }
@@ -162,32 +209,28 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    CONTEXT
+    CONTEXT (FIX)
     ========================================
     */
 
-    let context =
-      payload?.context ||
-      (await buildContext({
+    let context = payload?.context;
+
+    if (!context) {
+      context = await buildContext({
         organization_id,
         phone,
         text,
-      }));
+      });
+    }
 
-    context = {
+    context = ensureContext({
       ...context,
       user_message: text,
-    };
-
-    console.log("🧠 BASE CONTEXT", {
-      intent: context?.intent,
-      stage: context?.stage,
-      known_data: context?.known_data,
     });
 
     /*
     ========================================
-    STRATEGY ENGINE vNext
+    STRATEGY ENGINE
     ========================================
     */
 
@@ -211,9 +254,6 @@ export async function handleInbound(payload) {
       intent: context.intent,
       stage: context.stage,
       strategy: context.strategy,
-      reason: context.strategy_reason,
-      current_turn_known_data: context.current_turn_known_data,
-      known_data: context.known_data,
     });
 
     /*
@@ -224,16 +264,7 @@ export async function handleInbound(payload) {
 
     const execution = await executeStrategy(context);
 
-    const finalReply = clampText(
-      execution?.reply ||
-        "Con mucho gusto le ayudo 😊 ¿Me podría indicar un poco más sobre lo que necesita?"
-    );
-
-    console.log("🧾 FINAL OUTPUT", {
-      reply: finalReply,
-      strategy: context.strategy,
-      stage: context.stage,
-    });
+    const finalReply = clampText(execution?.reply);
 
     /*
     ========================================
@@ -254,9 +285,9 @@ export async function handleInbound(payload) {
         intent: context.intent,
         stage: context.stage,
         strategy: context.strategy,
-        reason: context.strategy_reason,
       },
     };
+
   } catch (err) {
     console.error("❌ HANDLE INBOUND ERROR:", err);
 
