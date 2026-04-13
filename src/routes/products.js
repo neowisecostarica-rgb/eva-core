@@ -8,6 +8,20 @@ const router = express.Router();
 
 /*
 ====================================================
+ALLOWED FIELDS (CRÍTICO)
+====================================================
+*/
+
+const ALLOWED_FIELDS = [
+  "name",
+  "description",
+  "price",
+  "category",
+  "is_active",
+];
+
+/*
+====================================================
 GET /v1/products
 ====================================================
 */
@@ -53,6 +67,21 @@ router.post("/", authenticate, async (req, res) => {
       is_active = true
     } = req.body;
 
+    // 🔥 VALIDACIÓN MÍNIMA
+    if (!name || typeof name !== "string") {
+      return res.status(400).json({
+        success: false,
+        error: "name is required",
+      });
+    }
+
+    if (price === undefined || price === null || isNaN(Number(price))) {
+      return res.status(400).json({
+        success: false,
+        error: "price must be a valid number",
+      });
+    }
+
     const result = await pool.query(
       `
       INSERT INTO product_catalog
@@ -60,7 +89,14 @@ router.post("/", authenticate, async (req, res) => {
       VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, NOW())
       RETURNING *
       `,
-      [organization_id, name, description, price, category, is_active]
+      [
+        organization_id,
+        name,
+        description || null,
+        Number(price),
+        category || null,
+        is_active,
+      ]
     );
 
     res.json({ success: true, data: result.rows[0] });
@@ -87,10 +123,27 @@ router.patch("/:id", authenticate, async (req, res) => {
     const values = [];
     let index = 1;
 
-    for (const key in req.body) {
+    // 🔥 WHITELIST (CRÍTICO)
+    for (const key of Object.keys(req.body)) {
+      if (!ALLOWED_FIELDS.includes(key)) continue;
+
       fields.push(`${key} = $${index}`);
-      values.push(req.body[key]);
+
+      if (key === "price") {
+        values.push(Number(req.body[key]));
+      } else {
+        values.push(req.body[key]);
+      }
+
       index++;
+    }
+
+    // 🔥 NO PERMITIR PATCH VACÍO
+    if (!fields.length) {
+      return res.status(400).json({
+        success: false,
+        error: "no valid fields to update",
+      });
     }
 
     values.push(id);
@@ -105,6 +158,14 @@ router.patch("/:id", authenticate, async (req, res) => {
       `,
       values
     );
+
+    // 🔥 NOT FOUND
+    if (!result.rowCount) {
+      return res.status(404).json({
+        success: false,
+        error: "product not found",
+      });
+    }
 
     res.json({ success: true, data: result.rows[0] });
 
