@@ -216,38 +216,37 @@ async function executeStrategy(context) {
     promptConfig,
   });
 
-  let aiText = null;
+let aiText = null;
 
-  try {
-    const aiResult = await runAI({
-      prompt: [{ role: "user", content: prompt }],
-    });
+// 🔥 AI GATE (ANTES)
+if (!shouldUseAI(context, catalogResults)) {
+  return {
+    reply: buildSafeFallback(context),
+    catalogResults,
+  };
+}
 
-    aiText =
-      aiResult?.text ||
-      aiResult?.reply ||
-      aiResult?.content ||
-      null;
-  } catch (err) {
-    console.error("❌ AI ERROR:", err);
-  }
+try {
+  const aiResult = await runAI({
+    prompt: [{ role: "user", content: prompt }],
+  });
 
-  if (!aiText) {
-    return {
-      reply: "Con mucho gusto le ayudo 😊 ¿Me podría indicar un poco más sobre lo que necesita?",
-      catalogResults,
-    };
-  }
+  aiText =
+    aiResult?.text ||
+    aiResult?.reply ||
+    aiResult?.content ||
+    null;
+} catch (err) {
+  console.error("❌ AI ERROR:", err);
+}
 
-  if (context.strategy === "RECOMMEND" || context.strategy === "CLOSE") {
-    aiText = enhanceProductReply({
-      reply: aiText,
-      intent: context.intent,
-      catalogMatches: catalogResults,
-      data: context.sales_context,
-    });
-  }
-
+// 🔥 VALIDACIÓN (DESPUÉS)
+if (!aiText || !validateAIReply(aiText, context, catalogResults)) {
+  return {
+    reply: buildSafeFallback(context),
+    catalogResults,
+  };
+}
   const formatted = formatAIResponse({
     text: aiText,
     agentName: context.assistant.name,
