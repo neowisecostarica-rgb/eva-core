@@ -47,9 +47,7 @@ router.post("/outbound", authenticate, async (req, res) => {
     const { phone, text } = req.body || {};
 
     if (!phone || !text) {
-      log.warn("INVALID_INPUT", {
-        reason: "phone or text missing",
-      });
+      log.warn("INVALID_INPUT");
 
       return res.status(400).json({
         error: "phone and text are required",
@@ -68,16 +66,12 @@ router.post("/outbound", authenticate, async (req, res) => {
           messaging_product: "whatsapp",
           to: phone,
           type: "text",
-          text: {
-            body: text,
-          },
+          text: { body: text },
         }),
       }
     );
 
     const data = await response.json();
-
-    log.info("WHATSAPP_RESPONSE", data);
 
     if (!response.ok) {
       log.error("WHATSAPP_SEND_FAILED", data);
@@ -94,7 +88,6 @@ router.post("/outbound", authenticate, async (req, res) => {
   } catch (err) {
     log.error("OUTBOUND_ERROR", {
       message: err.message,
-      stack: err.stack,
     });
 
     return res.status(500).json({
@@ -110,10 +103,8 @@ POST /v1/messages/inbound
 */
 
 router.post("/inbound", authenticate, async (req, res) => {
-  // ================================
-// PERF START
-// ================================
-const startTime = Date.now();
+  const startTime = Date.now();
+
   const request_id = crypto.randomUUID();
   const organization_id = req.organization_id || req.organization?.id || null;
 
@@ -147,18 +138,28 @@ const startTime = Date.now();
       });
     }
 
+    /*
+    ========================================
+    RATE LIMIT
+    ========================================
+    */
+
     const rateKey = `${organization_id}:${validated.phone}`;
     const rate = checkRateLimit(rateKey);
 
     if (rate.blocked) {
-      log.warn("RATE_LIMIT_BLOCKED", {
-        phone: validated.phone,
-      });
+      log.warn("RATE_LIMIT_BLOCKED");
 
       return res.status(429).json({
-        error: "Too many requests, try again later",
+        error: "Too many requests",
       });
     }
+
+    /*
+    ========================================
+    PAYLOAD
+    ========================================
+    */
 
     const payload = {
       organization_id,
@@ -168,117 +169,109 @@ const startTime = Date.now();
       message_id: validated.message_id || null,
     };
 
-    // ================================
-// IDEMPOTENCIA CHECK (P0.2)
-// ================================
+    /*
+    ========================================
+    IDEMPOTENCIA
+    ========================================
+    */
 
-if (payload.message_id) {
-  const existing = await db.query(
-    `SELECT id FROM messages WHERE external_message_id = $1 LIMIT 1`,
-    [payload.message_id]
-  );
+    if (payload.message_id) {
+      const existing = await db.query(
+        `SELECT id FROM messages WHERE external_message_id = $1 LIMIT 1`,
+        [payload.message_id]
+      );
 
-  if (existing.rows.length > 0) {
-    log.warn("DUPLICATE_MESSAGE_IGNORED", {
-      message_id: payload.message_id,
+      if (existing.rows.length > 0) {
+        log.warn("DUPLICATE_MESSAGE");
+
+        return res.json({
+          success: true,
+          data: {
+            reply: { text: "" },
+            meta: { duplicate: true },
+          },
+        });
+      }
+    }
+
+    /*
+    ========================================
+    CONTEXT (FIX CRÍTICO)
+    ========================================
+    */
+
+    const context = await buildContext({
+      organization_id,
+      phone: validated.phone,
+      text: validated.text, // 🔥 FIX IMPORTANTE
     });
 
-    return res.json({
-  success: true,
-  data: {
-    reply: {
-      text: "",
-    },
-    meta: {
-      duplicate: true,
-    },
-  },
-});
-  }
-}
-    
-    // ================================
-// PERF CONTEXT START
-// ================================
-const contextStart = Date.now();
-
-const context = await buildContext({
-  organization_id,
-  phone: validated.phone,
-  channel: validated.channel || "whatsapp",
-});
-
-// ================================
-// PERF CONTEXT END
-// ================================
-const contextTime = Date.now() - contextStart;
-
-log.info("PERF_CONTEXT", {
-  ms: contextTime,
-});
-
-log.info("CONTEXT_BUILT", {
-  context_preview: {
-    business_name: context?.organization?.business_name,
-    assistant_name: context?.assistant?.name,
-  },
-});
-    
-    log.info("PAYLOAD_READY", payload);
-
-    // ================================
-// PERF BRAIN START
-// ================================
-const brainStart = Date.now();
-
-const result = await handleInbound({
-  ...payload,
-  context,
-});
-
-// ================================
-// PERF BRAIN END
-// ================================
-const brainTime = Date.now() - brainStart;
-
-log.info("PERF_BRAIN", {
-  ms: brainTime,
-});
-    
-
-    log.info("BRAIN_RESPONSE", {
-      preview: result?.reply?.text?.slice(0, 120) || null,
-      meta: result?.meta || null,
+    log.info("CONTEXT_BUILT", {
+      business: context?.organization?.business_name,
+      assistant: context?.assistant?.name,
     });
+
+    /*
+    ========================================
+    BRAIN
+    ========================================
+    */
+
+    const result = await handleInbound({
+      ...payload,
+      context,
+    });
+
+    /*
+    ========================================
+    VALIDACIÓN CONTRATO
+    ========================================
+    */
 
     try {
       validateHandleInboundResult(result);
     } catch (contractError) {
-      log.error("CONTRACT_VIOLATION", {
-        message: contractError.message,
-        result,
-      });
+      log.error("CONTRACT_ERROR", contractError.message);
 
       return res.status(500).json({
-        error: "Invalid brain response contract",
+        error: "Invalid brain response",
       });
     }
 
-    const response = buildMessagesRouteResponse(result);
-// ================================
-// PERF TOTAL
-// ================================
-const totalTime = Date.now() - startTime;
+    /*
+    ========================================
+    LOG RESULT
+    ========================================
+    */
 
-log.info("PERF_TOTAL", {
-  ms: totalTime,
-});
-    
-    return res.json(response);
+    log.info("BRAIN_RESULT", {
+      reply: result?.reply?.text?.slice(0, 80),
+      meta: result?.meta,
+    });
+
+    /*
+    ========================================
+    PERF
+    ========================================
+    */
+
+    const totalTime = Date.now() - startTime;
+
+    log.info("PERF_TOTAL", {
+      ms: totalTime,
+    });
+
+    /*
+    ========================================
+    RESPONSE
+    ========================================
+    */
+
+    return res.json(buildMessagesRouteResponse(result));
+
   } catch (err) {
     log.error("INBOUND_ERROR", {
       message: err.message,
-      stack: err.stack,
     });
 
     return res.status(500).json({
