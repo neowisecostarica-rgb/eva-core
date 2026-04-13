@@ -46,6 +46,77 @@ function clampText(text, max = 320) {
 
 /*
 ====================================================
+AI CONTROL (BLOCK 4)
+====================================================
+*/
+
+function shouldUseAI(context, catalogResults = []) {
+  if (!context?.strategy) return false;
+
+  if (context.strategy === "ASK") return false;
+
+  if (
+    context.strategy === "QUALIFY" &&
+    !context.known_data?.use_case &&
+    !context.known_data?.budget
+  ) {
+    return false;
+  }
+
+  if (
+    (context.strategy === "RECOMMEND" ||
+      context.strategy === "CLOSE") &&
+    catalogResults.length === 0
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+function validateAIReply(reply, context, catalogResults = []) {
+  const text = String(reply || "").toLowerCase();
+
+  if (
+    (context.strategy === "RECOMMEND" ||
+      context.strategy === "CLOSE") &&
+    catalogResults.length === 0
+  ) {
+    return false;
+  }
+
+  if (
+    catalogResults.length === 0 &&
+    (text.includes("₡") || text.includes("precio"))
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+function buildSafeFallback(context) {
+  if (context.strategy === "QUALIFY") {
+    return "Con mucho gusto le ayudo 😊 ¿La necesita para estudio, trabajo o algún uso específico?";
+  }
+
+  if (context.strategy === "ASK") {
+    return "Con mucho gusto le ayudo 😊 ¿Me podría indicar un poco más sobre lo que necesita?";
+  }
+
+  if (context.strategy === "RECOMMEND") {
+    return "Perfecto 😊 Para recomendarle mejor, ¿qué uso le piensa dar y qué presupuesto tiene?";
+  }
+
+  if (context.strategy === "CLOSE") {
+    return "Perfecto 😊 Le ayudo a avanzar con la compra. ¿Prefiere envío, entrega o retiro?";
+  }
+
+  return "Con mucho gusto le ayudo 😊 ¿En qué le puedo ayudar?";
+}
+
+/*
+====================================================
 🔥 STRATEGY ENFORCEMENT
 ====================================================
 */
