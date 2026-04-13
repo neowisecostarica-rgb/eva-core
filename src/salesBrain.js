@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — SALES BRAIN (BLOCK 3 — STRATEGY ENFORCED)
+EVA CORE — SALES BRAIN (TRACE MODE — AUDIT FLOW)
 ====================================================
 */
 
@@ -14,7 +14,6 @@ import { scheduleFollowup } from "./followupEngine.js";
 
 import {
   decideStrategy,
-  normalizeIntent,
 } from "./brain/engines/strategyEngine.js";
 
 import { buildContext } from "./contextBuilder.js";
@@ -46,152 +45,18 @@ function clampText(text, max = 320) {
 
 /*
 ====================================================
-AI CONTROL (BLOCK 4)
-====================================================
-*/
-
-function shouldUseAI(context, catalogResults = []) {
-  if (!context?.strategy) return false;
-
-  if (context.strategy === "ASK") return false;
-
-  if (
-    context.strategy === "QUALIFY" &&
-    !context.known_data?.use_case &&
-    !context.known_data?.budget
-  ) {
-    return false;
-  }
-
-  if (
-    (context.strategy === "RECOMMEND" ||
-      context.strategy === "CLOSE") &&
-    catalogResults.length === 0
-  ) {
-    return false;
-  }
-
-  return true;
-}
-
-function validateAIReply(reply, context, catalogResults = []) {
-  const text = String(reply || "").toLowerCase();
-
-  if (
-    (context.strategy === "RECOMMEND" ||
-      context.strategy === "CLOSE") &&
-    catalogResults.length === 0
-  ) {
-    return false;
-  }
-
-  if (
-    catalogResults.length === 0 &&
-    (text.includes("₡") || text.includes("precio"))
-  ) {
-    return false;
-  }
-
-  return true;
-}
-
-function buildSafeFallback(context) {
-  if (context.strategy === "QUALIFY") {
-    return "Con mucho gusto le ayudo 😊 ¿La necesita para estudio, trabajo o algún uso específico?";
-  }
-
-  if (context.strategy === "ASK") {
-    return "Con mucho gusto le ayudo 😊 ¿Me podría indicar un poco más sobre lo que necesita?";
-  }
-
-  if (context.strategy === "RECOMMEND") {
-    return "Perfecto 😊 Para recomendarle mejor, ¿qué uso le piensa dar y qué presupuesto tiene?";
-  }
-
-  if (context.strategy === "CLOSE") {
-    return "Perfecto 😊 Le ayudo a avanzar con la compra. ¿Prefiere envío, entrega o retiro?";
-  }
-
-  return "Con mucho gusto le ayudo 😊 ¿En qué le puedo ayudar?";
-}
-
-/*
-====================================================
-🔥 STRATEGY ENFORCEMENT
-====================================================
-*/
-
-function enforceStrategyPre(context) {
-  if (!context?.strategy) {
-    throw new Error("Strategy is required");
-  }
-
-  // 🔴 Si intenta recomendar sin intención clara → volver a QUALIFY
-  if (
-    (context.strategy === "RECOMMEND" ||
-      context.strategy === "CLOSE") &&
-    !context.known_data?.product_interest
-  ) {
-    context.strategy = "QUALIFY";
-  }
-
-  return context;
-}
-
-function enforceStrategyPost(reply, context) {
-  const text = String(reply || "").toLowerCase();
-
-  /*
-  ========================================
-  QUALIFY / ASK
-  ========================================
-  */
-
-  if (
-    context.strategy === "QUALIFY" ||
-    context.strategy === "ASK"
-  ) {
-    // ❌ evitar venta prematura
-    if (
-      text.includes("₡") ||
-      text.includes("precio") ||
-      text.includes("recomiendo")
-    ) {
-      return "Con mucho gusto le ayudo 😊 ¿Me podría indicar un poco más sobre lo que necesita?";
-    }
-
-    // ✅ asegurar pregunta
-    if (!reply.includes("¿")) {
-      return reply + " ¿Me podría confirmar un poco más sobre lo que necesita?";
-    }
-  }
-
-  /*
-  ========================================
-  CLOSE
-  ========================================
-  */
-
-  if (context.strategy === "CLOSE") {
-    if (
-      !text.includes("envío") &&
-      !text.includes("retiro") &&
-      !text.includes("entrega")
-    ) {
-      return reply + " ¿Prefiere envío, entrega o retiro?";
-    }
-  }
-
-  return reply;
-}
-
-/*
-====================================================
-STRATEGY EXECUTION
+EXECUTION
 ====================================================
 */
 
 async function executeStrategy(context) {
+  console.log("⚙️ EXECUTION INPUT", {
+    intent: context.intent,
+    stage: context.stage,
+    strategy: context.strategy,
+    known_data: context.known_data,
+  });
+
   let catalogResults = [];
 
   if (context.strategy === "RECOMMEND" || context.strategy === "CLOSE") {
@@ -216,37 +81,40 @@ async function executeStrategy(context) {
     promptConfig,
   });
 
-let aiText = null;
+  console.log("🤖 PROMPT PREVIEW", prompt.slice(0, 300));
 
-// 🔥 AI GATE (ANTES)
-if (!shouldUseAI(context, catalogResults)) {
-  return {
-    reply: buildSafeFallback(context),
-    catalogResults,
-  };
-}
+  let aiText = null;
 
-try {
-  const aiResult = await runAI({
-    prompt: [{ role: "user", content: prompt }],
-  });
+  try {
+    const aiResult = await runAI({
+      prompt: [{ role: "user", content: prompt }],
+    });
 
-  aiText =
-    aiResult?.text ||
-    aiResult?.reply ||
-    aiResult?.content ||
-    null;
-} catch (err) {
-  console.error("❌ AI ERROR:", err);
-}
+    aiText =
+      aiResult?.text ||
+      aiResult?.reply ||
+      aiResult?.content ||
+      null;
+  } catch (err) {
+    console.error("❌ AI ERROR:", err);
+  }
 
-// 🔥 VALIDACIÓN (DESPUÉS)
-if (!aiText || !validateAIReply(aiText, context, catalogResults)) {
-  return {
-    reply: buildSafeFallback(context),
-    catalogResults,
-  };
-}
+  if (!aiText) {
+    return {
+      reply: "Con mucho gusto le ayudo 😊 ¿Me podría indicar un poco más sobre lo que necesita?",
+      catalogResults,
+    };
+  }
+
+  if (context.strategy === "RECOMMEND" || context.strategy === "CLOSE") {
+    aiText = enhanceProductReply({
+      reply: aiText,
+      intent: context.intent,
+      catalogMatches: catalogResults,
+      data: context.sales_context,
+    });
+  }
+
   const formatted = formatAIResponse({
     text: aiText,
     agentName: context.assistant.name,
@@ -272,6 +140,8 @@ export async function handleInbound(payload) {
     const channel = safe(payload?.channel || "whatsapp");
     const message_id = safe(payload?.message_id) || null;
 
+    console.log("📥 INBOUND RAW", { phone, text });
+
     if (!organization_id || !phone || !text) {
       throw new Error("Missing inbound data");
     }
@@ -294,17 +164,17 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    CONTEXT (SOT)
+    CONTEXT
     ========================================
     */
 
-    const context =
-  payload.context ||
-  (await buildContext({
-    organization_id,
-    phone,
-    text,
-  }));
+    const context = await buildContext({
+      organization_id,
+      phone,
+      text,
+    });
+
+    console.log("🧠 FULL CONTEXT", JSON.stringify(context, null, 2));
 
     /*
     ========================================
@@ -322,10 +192,7 @@ export async function handleInbound(payload) {
 
     context.strategy = strategyDecision.strategy;
 
-    // 🔥 PRE ENFORCEMENT
-    enforceStrategyPre(context);
-
-    console.log("🧠 STRATEGY", {
+    console.log("🧠 STRATEGY DECISION", {
       intent: context.intent,
       stage: context.stage,
       strategy: context.strategy,
@@ -344,12 +211,14 @@ export async function handleInbound(payload) {
         "Con mucho gusto le ayudo 😊 ¿Me podría indicar un poco más sobre lo que necesita?"
     );
 
-    // 🔥 POST ENFORCEMENT
-    finalReply = enforceStrategyPost(finalReply, context);
+    console.log("🧾 FINAL OUTPUT", {
+      reply: finalReply,
+      strategy: context.strategy,
+    });
 
     /*
     ========================================
-    SAVE ASSISTANT MESSAGE
+    SAVE
     ========================================
     */
 
@@ -359,31 +228,6 @@ export async function handleInbound(payload) {
       role: "assistant",
       text: finalReply,
     });
-
-    /*
-    ========================================
-    FOLLOWUP
-    ========================================
-    */
-
-    if (
-      context.intent === "BUY" ||
-      context.intent === "INFO" ||
-      context.intent === "SERVICE"
-    ) {
-      try {
-        await scheduleFollowup({
-          organization_id,
-          lead_id: lead?.id || null,
-          phone,
-          conversation_id: conversation.id,
-          delay_hours: 24,
-          reason: "sales_followup",
-        });
-      } catch (err) {
-        console.error("❌ followup error:", err);
-      }
-    }
 
     return {
       reply: { text: finalReply },
