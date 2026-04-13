@@ -9,17 +9,13 @@ import { validateEnv } from "./configValidator.js";
 import whatsappWebhook from "./routes/whatsappWebhook.js";
 import messagesRouter from "./routes/messages.js";
 import metricsRouter from "./routes/metrics.js";
-
-// 🔥 NUEVO: PRODUCTS ROUTES
 import productsRoutes from "./routes/products.js";
 
 import pool from "./db.js";
 
-// 🔥 DASHBOARD API
 import { registerConversationRoutes } from "./api/conversations.js";
 import { registerLeadRoutes } from "./api/leads.js";
 
-// 🔐 AUTH
 import { authenticate } from "./lib/auth.js";
 
 dotenv.config();
@@ -46,7 +42,7 @@ HEALTH
 app.get(CONFIG.routes.health, (req, res) => {
   return res.json({
     ok: true,
-    service: "eva-core"
+    service: "eva-core",
   });
 });
 
@@ -66,14 +62,14 @@ app.use("/v1/messages", messagesRouter);
 
 /*
 ====================================================
-METRICS (PROTEGIDO)
+METRICS
 ====================================================
 */
 app.use("/v1/metrics", authenticate, metricsRouter);
 
 /*
 ====================================================
-PRODUCTS (🔥 NUEVO - CRÍTICO SOT)
+PRODUCTS
 ====================================================
 */
 app.use("/v1/products", authenticate, productsRoutes);
@@ -85,7 +81,6 @@ DASHBOARD APIs
 */
 registerConversationRoutes(app, pool);
 
-// ⚠️ FIX IMPORTANTE: esto estaba mal antes
 app.use("/v1/leads", authenticate);
 registerLeadRoutes(app, pool);
 
@@ -98,14 +93,15 @@ app.listen(PORT, () => {
   console.log(`🚀 EVA Core running on port ${PORT}`);
 });
 
-// ================================
-// FOLLOWUP WORKER ADAPTER
-// ================================
-
+/*
+====================================================
+WHATSAPP SEND (PRODUCTION SAFE)
+====================================================
+*/
 
 async function sendWhatsAppMessage({ phone, message }) {
   try {
-    await fetch(
+    const response = await fetch(
       `https://graph.facebook.com/v18.0/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`,
       {
         method: "POST",
@@ -122,13 +118,26 @@ async function sendWhatsAppMessage({ phone, message }) {
       }
     );
 
-    console.log("📤 Followup WhatsApp sent");
+    const data = await response.json();
+
+    if (!response.ok) {
+      console.error("❌ WhatsApp send failed:", data);
+      return { success: false, error: data };
+    }
+
+    console.log("📤 WhatsApp sent:", phone);
+
+    return { success: true, data };
+
   } catch (err) {
-    console.error("❌ WhatsApp send error:", err);
+    console.error("❌ WhatsApp send error:", err.message);
+    return { success: false, error: err.message };
   }
 }
 
-// ================================
-// START FOLLOWUP WORKER
-// ================================
+/*
+====================================================
+START FOLLOWUP WORKER
+====================================================
+*/
 startFollowupWorker(sendWhatsAppMessage);
