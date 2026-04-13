@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — SALES BRAIN (FIXED — RESPONSE INTELLIGENCE)
+EVA CORE — SALES BRAIN (BLOCK 1 — STRATEGY ENGINE vNext)
 ====================================================
 */
 
@@ -9,8 +9,6 @@ import {
   findOrCreateConversation,
   saveMessage,
 } from "./db.js";
-
-import { scheduleFollowup } from "./followupEngine.js";
 
 import {
   decideStrategy,
@@ -41,81 +39,6 @@ function clampText(text, max = 320) {
   if (!clean) return "";
   if (clean.length <= max) return clean;
   return clean.slice(0, max - 1).trim() + "…";
-}
-
-/*
-====================================================
-STAGE GUARD (FIX CRÍTICO)
-====================================================
-*/
-
-function enforceStageFromMessage({ text, intent }) {
-  const t = text.toLowerCase();
-
-  // 🔒 GREETING nunca puede ser HOT
-  if (intent === "GREETING") return "EARLY";
-
-  // 🔒 Mensajes cortos / exploratorios
-  if (t.length < 20) return "EARLY";
-
-  // 🔒 Búsqueda básica
-  if (t.includes("busco") || t.includes("información")) {
-    return "QUALIFYING";
-  }
-
-  // 🔥 Señales reales de cierre
-  if (
-    t.includes("comprar") ||
-    t.includes("apartar") ||
-    t.includes("pagar") ||
-    t.includes("lo quiero")
-  ) {
-    return "HOT";
-  }
-
-  return null; // no forzar
-}
-
-/*
-====================================================
-KNOWN DATA MERGE (FIX CRÍTICO)
-====================================================
-*/
-
-function mergeKnownData(memory = {}, current = {}) {
-  return {
-    ...memory,
-    ...current, // 🔥 el turno actual manda
-  };
-}
-
-/*
-====================================================
-STRATEGY GUARD (FIX CRÍTICO)
-====================================================
-*/
-
-function enforceStrategy({ strategy, intent, stage, text }) {
-  const t = text.toLowerCase();
-
-  // 🔒 Nunca cerrar sin señal fuerte
-  if (strategy === "CLOSE") {
-    const hasCloseSignal =
-      t.includes("comprar") ||
-      t.includes("apartar") ||
-      t.includes("pagar");
-
-    if (!hasCloseSignal) {
-      return "RECOMMEND";
-    }
-  }
-
-  // 🔒 GREETING nunca cierra
-  if (intent === "GREETING") {
-    return "ASK";
-  }
-
-  return strategy;
 }
 
 /*
@@ -243,69 +166,54 @@ export async function handleInbound(payload) {
     ========================================
     */
 
-    const context = await buildContext({
-      organization_id,
-      phone,
-      text,
+    let context =
+      payload?.context ||
+      (await buildContext({
+        organization_id,
+        phone,
+        text,
+      }));
+
+    context = {
+      ...context,
+      user_message: text,
+    };
+
+    console.log("🧠 BASE CONTEXT", {
+      intent: context?.intent,
+      stage: context?.stage,
+      known_data: context?.known_data,
     });
 
     /*
     ========================================
-    🔥 FIX 1 — STAGE PRIORITY
+    STRATEGY ENGINE vNext
     ========================================
     */
 
-    const forcedStage = enforceStageFromMessage({
-      text,
-      intent: context.intent,
-    });
-
-    if (forcedStage) {
-      context.stage = forcedStage;
-    }
-
-    /*
-    ========================================
-    🔥 FIX 2 — KNOWN DATA PRIORITY
-    ========================================
-    */
-
-    context.known_data = mergeKnownData(
-      context.known_data || {},
-      context.current_entities || {}
-    );
-
-    /*
-    ========================================
-    STRATEGY
-    ========================================
-    */
-
-    const strategyDecision = decideStrategy({
+    const decision = decideStrategy({
       intent: context.intent,
       stage: context.stage,
       known_data: context.known_data,
       sales_context: context.sales_context,
       signals: context.signals,
-    });
-
-    /*
-    ========================================
-    🔥 FIX 3 — STRATEGY GUARD
-    ========================================
-    */
-
-    context.strategy = enforceStrategy({
-      strategy: strategyDecision.strategy,
-      intent: context.intent,
-      stage: context.stage,
       text,
     });
+
+    context.intent = decision.intent;
+    context.stage = decision.stage;
+    context.known_data = decision.known_data;
+    context.strategy = decision.strategy;
+    context.strategy_reason = decision.reason;
+    context.current_turn_known_data = decision.current_turn_known_data;
 
     console.log("🧠 FINAL DECISION", {
       intent: context.intent,
       stage: context.stage,
       strategy: context.strategy,
+      reason: context.strategy_reason,
+      current_turn_known_data: context.current_turn_known_data,
+      known_data: context.known_data,
     });
 
     /*
@@ -316,7 +224,7 @@ export async function handleInbound(payload) {
 
     const execution = await executeStrategy(context);
 
-    let finalReply = clampText(
+    const finalReply = clampText(
       execution?.reply ||
         "Con mucho gusto le ayudo 😊 ¿Me podría indicar un poco más sobre lo que necesita?"
     );
@@ -324,6 +232,7 @@ export async function handleInbound(payload) {
     console.log("🧾 FINAL OUTPUT", {
       reply: finalReply,
       strategy: context.strategy,
+      stage: context.stage,
     });
 
     /*
@@ -345,6 +254,7 @@ export async function handleInbound(payload) {
         intent: context.intent,
         stage: context.stage,
         strategy: context.strategy,
+        reason: context.strategy_reason,
       },
     };
   } catch (err) {
