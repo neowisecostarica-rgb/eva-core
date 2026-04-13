@@ -216,8 +216,8 @@ if (conversation?.id) {
   const historyRows = (
     await pool.query(
       `
-      SELECT role, text
-      FROM messages
+      SELECT role, "text" as text
+FROM messages
       WHERE organization_id = $1
       AND conversation_id = $2
       ORDER BY created_at DESC
