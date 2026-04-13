@@ -1,48 +1,58 @@
 /*
 ====================================================
-EVA BRAIN — INTENT ENGINE (FIXED — STABLE NORMALIZATION)
-====================================================
-*/
-
-/*
-====================================================
-UTILS (CONTROL TOTAL)
+EVA BRAIN — INTENT ENGINE (vNext FIXED FOLLOW-UP)
 ====================================================
 */
 
 function safe(text) {
   return String(text || "")
     .toLowerCase()
-    .normalize("NFD") // separa tildes
-    .replace(/[\u0300-\u036f]/g, "") // elimina tildes
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
     .trim();
 }
-
-/*
-====================================================
-INTENT DETECTION
-====================================================
-*/
 
 export function detectIntent(text) {
   const t = safe(text);
 
   /*
   ========================================
-  CLOSE INTENT
+  🔥 FOLLOW-UP CORTO (CRÍTICO FIX)
+  ========================================
+  */
+
+  if (
+    t.length <= 25 &&
+    (
+      t.includes("para") ||
+      t.includes("trabajo") ||
+      t.includes("estudio") ||
+      t.includes("precio") ||
+      t.includes("como") ||
+      t.includes("y la") ||
+      t.includes("y el") ||
+      t.includes("tiene") ||
+      t.includes("dell") ||
+      t.includes("hp") ||
+      t.includes("lenovo")
+    )
+  ) {
+    return "BUY";
+  }
+
+  /*
+  ========================================
+  CLOSE
   ========================================
   */
 
   if (
     t.includes("quiero comprar") ||
     t.includes("la quiero") ||
-    t.includes("lo quiero") ||
     t.includes("como pago") ||
     t.includes("sinpe") ||
     t.includes("tarjeta") ||
-    t.includes("transferencia") ||
-    t.includes("apartar") ||
-    t.includes("reservar")
+    t.includes("apartar")
   ) {
     return "CLOSE_INTENT";
   }
@@ -55,12 +65,8 @@ export function detectIntent(text) {
 
   if (
     t.includes("mantenimiento") ||
-    t.includes("reparacion") ||
     t.includes("reparar") ||
-    t.includes("no imprime") ||
     t.includes("no enciende") ||
-    t.includes("no carga") ||
-    t.includes("lenta") ||
     t.includes("error")
   ) {
     return "SUPPORT";
@@ -74,10 +80,7 @@ export function detectIntent(text) {
 
   if (
     t === "hola" ||
-    t === "buenas" ||
-    t.includes("buenos dias") ||
-    t.includes("buenas tardes") ||
-    t.includes("buenas noches")
+    t === "buenas"
   ) {
     return "GREETING";
   }
@@ -90,44 +93,16 @@ export function detectIntent(text) {
 
   if (
     t.includes("precio") ||
-    t.includes("cuanto cuesta") ||
-    t.includes("cuanto vale") ||
+    t.includes("cuanto") ||
     t.includes("disponible") ||
-    t.includes("me interesa") ||
     t.includes("tienen") ||
-    t.includes("busco") ||
-    t.includes("ocupo") ||
-
     t.includes("laptop") ||
     t.includes("computadora") ||
-    t.includes("pc") ||
     t.includes("impresora") ||
     t.includes("monitor")
   ) {
     return "BUY";
   }
-
-  /*
-  ========================================
-  INFO
-  ========================================
-  */
-
-  if (
-    t.includes("garantia") ||
-    t.includes("procesador") ||
-    t.includes("ram") ||
-    t.includes("ssd") ||
-    t.includes("informacion")
-  ) {
-    return "INFO";
-  }
-
-  /*
-  ========================================
-  FALLBACK
-  ========================================
-  */
 
   return "UNKNOWN";
 }
