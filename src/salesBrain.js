@@ -298,15 +298,13 @@ export async function handleInbound(payload) {
     ========================================
     */
 
-    const context = await buildContext({
-      organization_id,
-      phone,
-      text,
-    });
-
-    if (!context?.organization?.id) {
-      throw new Error("Invalid context");
-    }
+    const context =
+  payload.context ||
+  (await buildContext({
+    organization_id,
+    phone,
+    text,
+  }));
 
     /*
     ========================================
