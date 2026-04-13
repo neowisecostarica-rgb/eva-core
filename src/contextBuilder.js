@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — CONTEXT BUILDER (FINAL — WITH HISTORY)
+EVA CORE — CONTEXT BUILDER (vNext — CLEAN CONTEXT ONLY)
 ====================================================
 */
 
@@ -27,7 +27,7 @@ function hasAny(text, patterns = []) {
 
 /*
 ====================================================
-DETECTION
+DETECTION (TURN ONLY — NO DECISION)
 ====================================================
 */
 
@@ -103,56 +103,6 @@ function detectKnownData(text) {
   };
 }
 
-function mergeKnownData(dbData = {}, detected = {}) {
-  return {
-    budget: detected.budget ?? dbData.budget ?? null,
-    use_case: detected.use_case ?? dbData.use_case ?? null,
-    product_interest:
-      detected.product_interest ?? dbData.product_interest ?? null,
-    problem: detected.problem ?? dbData.problem ?? null,
-  };
-}
-
-/*
-====================================================
-INTENT + STAGE
-====================================================
-*/
-
-function resolveIntentWithContext(detectedIntent, known_data = {}) {
-  if (detectedIntent && detectedIntent !== "UNKNOWN") {
-    return detectedIntent;
-  }
-
-  if (
-    known_data?.budget ||
-    known_data?.use_case ||
-    known_data?.product_interest
-  ) {
-    return "BUY";
-  }
-
-  if (known_data?.problem) {
-    return "SUPPORT";
-  }
-
-  return "UNKNOWN";
-}
-
-function resolveStage(intent, known_data = {}) {
-  if (intent === "CLOSE_INTENT") return "HOT";
-
-  if (intent === "BUY") {
-    if (known_data.budget && known_data.use_case) return "MID";
-    return "EARLY";
-  }
-
-  if (intent === "SUPPORT") return "MID";
-  if (intent === "INFO") return "EARLY";
-
-  return "EARLY";
-}
-
 /*
 ====================================================
 MAIN
@@ -165,6 +115,12 @@ export async function buildContext({
   text = "",
 }) {
   try {
+    /*
+    ========================================
+    CORE DATA
+    ========================================
+    */
+
     const business = (
       await pool.query(
         `SELECT * FROM business_profile WHERE organization_id = $1 LIMIT 1`,
@@ -190,57 +146,64 @@ export async function buildContext({
 
     /*
     ========================================
-    🔥 HISTORY (NUEVO)
+    🔥 HISTORY (FIX CRÍTICO)
     ========================================
     */
 
-    const conversation = phone
-  ? (
-      await pool.query(
-        `
-        SELECT id 
-        FROM conversations
-        WHERE organization_id = $1
-        AND external_user_id = $2
-        ORDER BY created_at DESC
-        LIMIT 1
-        `,
-        [organization_id, phone]
-      )
-    ).rows[0]
-  : null;
+    let history = [];
 
-let history = [];
+    if (phone) {
+      const conversation = (
+        await pool.query(
+          `
+          SELECT id 
+          FROM conversations
+          WHERE organization_id = $1
+          AND external_user_id = $2
+          ORDER BY created_at DESC
+          LIMIT 1
+          `,
+          [organization_id, phone]
+        )
+      ).rows[0];
 
-if (conversation?.id) {
-  const historyRows = (
-    await pool.query(
-      `
-      SELECT role, "text" as text
-FROM messages
-      WHERE organization_id = $1
-      AND conversation_id = $2
-      ORDER BY created_at DESC
-      LIMIT 10
-      `,
-      [organization_id, conversation.id]
-    )
-  ).rows || [];
+      if (conversation?.id) {
+        const historyRows = (
+          await pool.query(
+            `
+            SELECT role, content
+            FROM messages
+            WHERE organization_id = $1
+            AND conversation_id = $2
+            ORDER BY created_at DESC
+            LIMIT 10
+            `,
+            [organization_id, conversation.id]
+          )
+        ).rows || [];
 
-  history = historyRows.reverse();
-}
+        history = historyRows
+          .reverse()
+          .map((m) => ({
+            role: m.role,
+            content: m.content,
+          }));
+      }
+    }
+
     /*
     ========================================
-    DETECTION
+    DETECTION (TURN ONLY)
     ========================================
     */
 
-    const detected = detectKnownData(text);
-    const known_data = mergeKnownData(lead, detected);
+    const current_entities = detectKnownData(text);
 
-    const detectedIntent = detectIntent(text);
-    const intent = resolveIntentWithContext(detectedIntent, known_data);
-    const stage = resolveStage(intent, known_data);
+    /*
+    ========================================
+    OUTPUT (NO DECISION LOGIC)
+    ========================================
+    */
 
     return {
       organization: {
@@ -252,9 +215,17 @@ FROM messages
         name: config?.assistant_name || "Asistente",
       },
 
-      intent,
-      stage,
-      known_data,
+      // ⚠️ SOLO DETECCIÓN BASE
+      intent: detectIntent(text),
+      stage: lead?.stage || "EARLY",
+      known_data: {
+        budget: lead?.budget || null,
+        use_case: lead?.use_case || null,
+        product_interest: lead?.product_interest || null,
+        problem: lead?.problem || null,
+      },
+
+      current_entities, // 🔥 CLAVE PARA STRATEGY ENGINE
 
       user_message: safe(text),
 
@@ -262,7 +233,7 @@ FROM messages
         interest_level: lead?.interest_level || "LOW",
       },
 
-      history, // 🔥 YA NO VACÍO
+      history,
       signals: {},
     };
   } catch (err) {
@@ -273,7 +244,8 @@ FROM messages
       assistant: { name: "Asistente" },
       intent: detectIntent(text),
       stage: "EARLY",
-      known_data: detectKnownData(text),
+      known_data: {},
+      current_entities: detectKnownData(text),
       user_message: text,
       sales_context: {},
       history: [],
