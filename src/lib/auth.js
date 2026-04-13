@@ -1,4 +1,8 @@
-// src/lib/auth.js
+/*
+====================================================
+EVA CORE — AUTH (Production Safe vNext)
+====================================================
+*/
 
 export async function authenticate(req, res, next) {
   try {
@@ -21,7 +25,7 @@ export async function authenticate(req, res, next) {
     const VALID_API_KEY = process.env.EVA_API_KEY;
 
     if (!VALID_API_KEY) {
-      console.error("❌ EVA_API_KEY no configurada en ENV");
+      console.error("❌ EVA_API_KEY no configurada");
       return res.status(500).json({
         success: false,
         error: "Server misconfigured",
@@ -29,6 +33,7 @@ export async function authenticate(req, res, next) {
     }
 
     if (apiKey !== VALID_API_KEY) {
+      console.warn("⚠️ API key inválida");
       return res.status(403).json({
         success: false,
         error: "API key inválida",
@@ -51,8 +56,9 @@ export async function authenticate(req, res, next) {
     console.log("🔐 AUTH OK:", orgId);
 
     next();
+
   } catch (err) {
-    console.error("❌ AUTH ERROR:", err);
+    console.error("❌ AUTH ERROR:", err.message);
     return res.status(500).json({
       success: false,
       error: "Error en autenticación",
