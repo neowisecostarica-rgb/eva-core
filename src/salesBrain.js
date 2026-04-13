@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — SALES BRAIN (Sales Radar + Conversion vNext)
+EVA CORE — SALES BRAIN (Sales Radar + Conversion vNext FIXED)
 ====================================================
 */
 
@@ -55,6 +55,79 @@ function lowerText(value) {
     .replace(/[\u0300-\u036f]/g, "");
 }
 
+/*
+====================================================
+🔥 CONVERSION ENFORCEMENT (NUEVO — CRÍTICO)
+====================================================
+*/
+
+function enforceConversionRules(context, text) {
+  const stage = context.stage;
+  const strategy = context.strategy;
+  const t = lowerText(text);
+
+  /*
+  ========================================
+  EARLY → NO VENDER
+  ========================================
+  */
+  if (stage === "EARLY") {
+    if (
+      t.includes("₡") ||
+      t.includes("precio") ||
+      t.includes("tenemos")
+    ) {
+      return "Con mucho gusto le ayudo 😊 ¿Para qué uso la necesita?";
+    }
+  }
+
+  /*
+  ========================================
+  QUALIFY → SIEMPRE PREGUNTAR
+  ========================================
+  */
+  if (strategy === "QUALIFY") {
+    if (!text.includes("?")) {
+      return text + " ¿Qué presupuesto tiene pensado?";
+    }
+  }
+
+  /*
+  ========================================
+  MID → NO SATURAR
+  ========================================
+  */
+  if (stage === "MID") {
+    const lines = text.split("\n");
+    if (lines.length > 3) {
+      return lines[0];
+    }
+  }
+
+  /*
+  ========================================
+  HOT → FORZAR CIERRE
+  ========================================
+  */
+  if (stage === "HOT") {
+    if (
+      !t.includes("apartar") &&
+      !t.includes("coordinar") &&
+      !t.includes("entrega")
+    ) {
+      return text + " 👍 Si gusta se lo puedo dejar apartado de una vez.";
+    }
+  }
+
+  return text;
+}
+
+/*
+====================================================
+COMMERCIAL SIGNALS
+====================================================
+*/
+
 function detectCommercialSignals(text = "", context = {}) {
   const t = lowerText(text);
   const known = context?.known_data || {};
@@ -65,25 +138,18 @@ function detectCommercialSignals(text = "", context = {}) {
     price_interest:
       t.includes("precio") ||
       t.includes("cuanto") ||
-      t.includes("cuánto") ||
       t.includes("vale"),
 
     availability_check:
       t.includes("disponible") ||
       t.includes("tienen") ||
-      t.includes("hay") ||
-      t.includes("stock"),
+      t.includes("hay"),
 
     buy_signal:
       t.includes("quiero") ||
       t.includes("comprar") ||
       t.includes("apartar") ||
-      t.includes("reservar") ||
-      t.includes("como pago") ||
-      t.includes("cómo pago") ||
-      t.includes("sinpe") ||
-      t.includes("tarjeta") ||
-      t.includes("transferencia"),
+      t.includes("reservar"),
 
     budget_detected:
       hasValue(current?.budget) || hasValue(known?.budget),
@@ -97,9 +163,7 @@ function detectCommercialSignals(text = "", context = {}) {
     high_intent:
       String(salesContext?.interest_level || "LOW").toUpperCase() === "HIGH" ||
       t.includes("quiero") ||
-      t.includes("me interesa") ||
-      t.includes("apartar") ||
-      t.includes("reservar"),
+      t.includes("me interesa"),
   };
 }
 
@@ -107,7 +171,6 @@ function calculateLeadScore(context = {}, signals = {}) {
   let score = 0;
 
   if (context.intent === "BUY") score += 20;
-  if (context.intent === "CLOSE_INTENT") score += 40;
   if (signals.price_interest) score += 10;
   if (signals.availability_check) score += 10;
   if (signals.budget_detected) score += 15;
@@ -115,8 +178,6 @@ function calculateLeadScore(context = {}, signals = {}) {
   if (signals.use_case_detected) score += 10;
   if (signals.buy_signal) score += 20;
   if (signals.high_intent) score += 20;
-  if (context.stage === "HOT") score += 20;
-  if (context.stage === "MID") score += 10;
 
   return Math.min(score, 100);
 }
@@ -135,7 +196,7 @@ SAFE CONTEXT
 
 function ensureContext(context = {}) {
   return {
-    organization: context.organization || { id: null, business_name: "el negocio" },
+    organization: context.organization || { id: null },
     assistant: context.assistant || { name: "Asistente" },
     intent: context.intent || "UNKNOWN",
     stage: context.stage || "EARLY",
@@ -150,153 +211,11 @@ function ensureContext(context = {}) {
 
 /*
 ====================================================
-FALLBACK REPLY
-====================================================
-*/
-
-function buildFallbackReply(context) {
-  const { strategy } = context;
-
-  if (strategy === "QUALIFY") {
-    return "Con mucho gusto le ayudo 😊 ¿Para qué uso la necesita?";
-  }
-
-  if (strategy === "RECOMMEND") {
-    return "Le puedo recomendar una opción que se ajuste a lo que busca 👍 ¿Qué presupuesto tiene pensado?";
-  }
-
-  if (strategy === "CLOSE") {
-    return "Si gusta se lo puedo dejar apartado de una vez y coordinamos entrega 👍";
-  }
-
-  if (strategy === "EXPLAIN_CLOSE") {
-    return "Con mucho gusto le ayudo. Para orientarle bien, ¿me podría indicar la marca, el modelo y qué problema presenta el equipo?";
-  }
-
-  return "Con mucho gusto le ayudo 😊 ¿Me podría indicar un poco más sobre lo que necesita?";
-}
-
-/*
-====================================================
-PIPELINE EVENTS
-====================================================
-*/
-
-async function registerCommercialEvents({
-  organization_id,
-  lead_id,
-  context,
-  text,
-  signals,
-}) {
-  try {
-    await savePipelineEvent({
-      organization_id,
-      lead_id,
-      event_type: "intent_detected",
-      metadata: {
-        intent: context.intent,
-        stage: context.stage,
-        strategy: context.strategy,
-      },
-    });
-
-    await savePipelineEvent({
-      organization_id,
-      lead_id,
-      event_type: "stage_updated",
-      metadata: {
-        stage: context.stage,
-      },
-    });
-
-    if (signals.price_interest) {
-      await savePipelineEvent({
-        organization_id,
-        lead_id,
-        event_type: "price_interest",
-        metadata: { text },
-      });
-    }
-
-    if (signals.high_intent) {
-      await savePipelineEvent({
-        organization_id,
-        lead_id,
-        event_type: "high_intent",
-        metadata: { text },
-      });
-    }
-
-    if (signals.availability_check) {
-      await savePipelineEvent({
-        organization_id,
-        lead_id,
-        event_type: "availability_check",
-        metadata: { text },
-      });
-    }
-
-    if (signals.budget_detected) {
-      await savePipelineEvent({
-        organization_id,
-        lead_id,
-        event_type: "budget_detected",
-        metadata: {
-          budget:
-            context?.current_turn_known_data?.budget ??
-            context?.known_data?.budget ??
-            null,
-        },
-      });
-    }
-
-    if (signals.product_interest_detected) {
-      await savePipelineEvent({
-        organization_id,
-        lead_id,
-        event_type: "product_interest_detected",
-        metadata: {
-          product_interest:
-            context?.current_turn_known_data?.product_interest ??
-            context?.known_data?.product_interest ??
-            null,
-        },
-      });
-    }
-
-    if (signals.use_case_detected) {
-      await savePipelineEvent({
-        organization_id,
-        lead_id,
-        event_type: "use_case_detected",
-        metadata: {
-          use_case:
-            context?.current_turn_known_data?.use_case ??
-            context?.known_data?.use_case ??
-            null,
-        },
-      });
-    }
-  } catch (err) {
-    console.error("❌ PIPELINE EVENT ERROR:", err);
-  }
-}
-
-/*
-====================================================
 EXECUTION
 ====================================================
 */
 
 async function executeStrategy(context) {
-  console.log("⚙️ EXECUTION INPUT", {
-    intent: context.intent,
-    stage: context.stage,
-    strategy: context.strategy,
-    known_data: context.known_data,
-  });
-
   let catalogResults = [];
 
   if (context.strategy === "RECOMMEND" || context.strategy === "CLOSE") {
@@ -328,18 +247,14 @@ async function executeStrategy(context) {
       prompt: [{ role: "user", content: prompt }],
     });
 
-    aiText =
-      aiResult?.text ||
-      aiResult?.reply ||
-      aiResult?.content ||
-      null;
+    aiText = aiResult?.text || aiResult?.reply || null;
   } catch (err) {
     console.error("❌ AI ERROR:", err);
   }
 
   if (!aiText) {
     return {
-      reply: buildFallbackReply(context),
+      reply: "Con mucho gusto le ayudo 😊 ¿Me podría indicar un poco más sobre lo que necesita?",
       catalogResults,
     };
   }
@@ -353,13 +268,21 @@ async function executeStrategy(context) {
     });
   }
 
-  const formatted = formatAIResponse({
+  let reply = formatAIResponse({
     text: aiText,
     agentName: context.assistant.name,
   });
 
+  /*
+  ========================================
+  🔥 CONVERSION ENFORCEMENT (AQUÍ VIVE EL CAMBIO)
+  ========================================
+  */
+
+  reply = enforceConversionRules(context, reply);
+
   return {
-    reply: clampText(formatted),
+    reply: clampText(reply),
     catalogResults,
   };
 }
@@ -377,8 +300,6 @@ export async function handleInbound(payload) {
     const text = safe(payload?.text);
     const channel = safe(payload?.channel || "whatsapp");
     const message_id = safe(payload?.message_id) || null;
-
-    console.log("📥 INBOUND RAW", { phone, text });
 
     if (!organization_id || !phone || !text) {
       throw new Error("Missing inbound data");
@@ -400,12 +321,6 @@ export async function handleInbound(payload) {
       message_id,
     });
 
-    /*
-    ========================================
-    CONTEXT
-    ========================================
-    */
-
     let context = payload?.context;
 
     if (!context) {
@@ -423,12 +338,6 @@ export async function handleInbound(payload) {
       conversation_id: conversation?.id || null,
     });
 
-    /*
-    ========================================
-    STRATEGY ENGINE
-    ========================================
-    */
-
     const decision = decideStrategy({
       intent: context.intent,
       stage: context.stage,
@@ -442,14 +351,7 @@ export async function handleInbound(payload) {
     context.stage = decision.stage;
     context.known_data = decision.known_data;
     context.strategy = decision.strategy;
-    context.strategy_reason = decision.reason;
     context.current_turn_known_data = decision.current_turn_known_data;
-
-    /*
-    ========================================
-    SALES RADAR SIGNALS
-    ========================================
-    */
 
     const signals = detectCommercialSignals(text, context);
     const score = calculateLeadScore(context, signals);
@@ -461,21 +363,6 @@ export async function handleInbound(payload) {
       interest_level,
       lead_score: score,
     };
-
-    console.log("🧠 FINAL DECISION", {
-      intent: context.intent,
-      stage: context.stage,
-      strategy: context.strategy,
-      score,
-      interest_level,
-      signals,
-    });
-
-    /*
-    ========================================
-    PERSIST MEMORY
-    ========================================
-    */
 
     if (lead?.id) {
       await updateLeadStageAndScore({
@@ -489,46 +376,17 @@ export async function handleInbound(payload) {
         organization_id,
         lead_id: lead.id,
         memory: {
-          budget:
-            context?.current_turn_known_data?.budget ??
-            context?.known_data?.budget ??
-            null,
-          use_case:
-            context?.current_turn_known_data?.use_case ??
-            context?.known_data?.use_case ??
-            null,
-          product_interest:
-            context?.current_turn_known_data?.product_interest ??
-            context?.known_data?.product_interest ??
-            null,
+          budget: context.current_turn_known_data?.budget,
+          use_case: context.current_turn_known_data?.use_case,
+          product_interest: context.current_turn_known_data?.product_interest,
           interest_level,
           last_intent: context.intent,
         },
       });
-
-      await registerCommercialEvents({
-        organization_id,
-        lead_id: lead.id,
-        context,
-        text,
-        signals,
-      });
     }
-
-    /*
-    ========================================
-    EXECUTION
-    ========================================
-    */
 
     const execution = await executeStrategy(context);
     const finalReply = clampText(execution?.reply);
-
-    /*
-    ========================================
-    SAVE ASSISTANT MESSAGE
-    ========================================
-    */
 
     await saveMessage({
       organization_id,
@@ -547,12 +405,13 @@ export async function handleInbound(payload) {
         interest_level,
       },
     };
+
   } catch (err) {
     console.error("❌ HANDLE INBOUND ERROR:", err);
 
     return {
       reply: {
-        text: "Con mucho gusto le ayudo 😊 ¿Me podría repetir su consulta, por favor?",
+        text: "Con mucho gusto le ayudo 😊 ¿Me podría repetir su consulta?",
       },
     };
   }
