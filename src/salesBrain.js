@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — SALES BRAIN (TRACE MODE — AUDIT FLOW)
+EVA CORE — SALES BRAIN (FIXED — RESPONSE INTELLIGENCE)
 ====================================================
 */
 
@@ -41,6 +41,81 @@ function clampText(text, max = 320) {
   if (!clean) return "";
   if (clean.length <= max) return clean;
   return clean.slice(0, max - 1).trim() + "…";
+}
+
+/*
+====================================================
+STAGE GUARD (FIX CRÍTICO)
+====================================================
+*/
+
+function enforceStageFromMessage({ text, intent }) {
+  const t = text.toLowerCase();
+
+  // 🔒 GREETING nunca puede ser HOT
+  if (intent === "GREETING") return "EARLY";
+
+  // 🔒 Mensajes cortos / exploratorios
+  if (t.length < 20) return "EARLY";
+
+  // 🔒 Búsqueda básica
+  if (t.includes("busco") || t.includes("información")) {
+    return "QUALIFYING";
+  }
+
+  // 🔥 Señales reales de cierre
+  if (
+    t.includes("comprar") ||
+    t.includes("apartar") ||
+    t.includes("pagar") ||
+    t.includes("lo quiero")
+  ) {
+    return "HOT";
+  }
+
+  return null; // no forzar
+}
+
+/*
+====================================================
+KNOWN DATA MERGE (FIX CRÍTICO)
+====================================================
+*/
+
+function mergeKnownData(memory = {}, current = {}) {
+  return {
+    ...memory,
+    ...current, // 🔥 el turno actual manda
+  };
+}
+
+/*
+====================================================
+STRATEGY GUARD (FIX CRÍTICO)
+====================================================
+*/
+
+function enforceStrategy({ strategy, intent, stage, text }) {
+  const t = text.toLowerCase();
+
+  // 🔒 Nunca cerrar sin señal fuerte
+  if (strategy === "CLOSE") {
+    const hasCloseSignal =
+      t.includes("comprar") ||
+      t.includes("apartar") ||
+      t.includes("pagar");
+
+    if (!hasCloseSignal) {
+      return "RECOMMEND";
+    }
+  }
+
+  // 🔒 GREETING nunca cierra
+  if (intent === "GREETING") {
+    return "ASK";
+  }
+
+  return strategy;
 }
 
 /*
@@ -174,7 +249,31 @@ export async function handleInbound(payload) {
       text,
     });
 
-    console.log("🧠 FULL CONTEXT", JSON.stringify(context, null, 2));
+    /*
+    ========================================
+    🔥 FIX 1 — STAGE PRIORITY
+    ========================================
+    */
+
+    const forcedStage = enforceStageFromMessage({
+      text,
+      intent: context.intent,
+    });
+
+    if (forcedStage) {
+      context.stage = forcedStage;
+    }
+
+    /*
+    ========================================
+    🔥 FIX 2 — KNOWN DATA PRIORITY
+    ========================================
+    */
+
+    context.known_data = mergeKnownData(
+      context.known_data || {},
+      context.current_entities || {}
+    );
 
     /*
     ========================================
@@ -190,9 +289,20 @@ export async function handleInbound(payload) {
       signals: context.signals,
     });
 
-    context.strategy = strategyDecision.strategy;
+    /*
+    ========================================
+    🔥 FIX 3 — STRATEGY GUARD
+    ========================================
+    */
 
-    console.log("🧠 STRATEGY DECISION", {
+    context.strategy = enforceStrategy({
+      strategy: strategyDecision.strategy,
+      intent: context.intent,
+      stage: context.stage,
+      text,
+    });
+
+    console.log("🧠 FINAL DECISION", {
       intent: context.intent,
       stage: context.stage,
       strategy: context.strategy,
