@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA COMMERCE — PRODUCT ADVISOR
+EVA COMMERCE — PRODUCT ADVISOR (SAFE vNext)
 ====================================================
 */
 
@@ -11,48 +11,65 @@ function formatMoney(value, currency = "CRC") {
   return `${value} ${currency}`;
 }
 
-function selectPrimaryProduct(catalogMatches = []) {
-  if (!catalogMatches || catalogMatches.length === 0) {
-    return null;
-  }
-  return catalogMatches[0];
+function safe(text) {
+  return String(text || "").toLowerCase();
 }
 
 export function enhanceProductReply({
   reply,
   intent,
   catalogMatches = [],
-  data = {}
+  data = {},
+  userText = ""
 }) {
   if (!catalogMatches || catalogMatches.length === 0) {
     return reply;
   }
 
-  const first = selectPrimaryProduct(catalogMatches);
+  const first = catalogMatches[0];
   if (!first) return reply;
 
-  const price = formatMoney(first.price, first.currency);
-  const interest = data?.interest_level || "LOW";
+  const user = safe(userText);
+  const name = safe(first.name);
 
-  if (interest === "HIGH") {
-    return `Te recomiendo esta opción:
+  /*
+  ========================================
+  🔥 PROTEGER CATEGORÍA
+  ========================================
+  */
 
-💻 ${first.name}
-${price}
-
-Es una de las más buscadas por nuestros clientes.
-
-¿Quieres que te envíe fotos reales del equipo?`;
+  if (user.includes("laptop") || user.includes("computadora")) {
+    if (!name.includes("laptop") && !name.includes("thinkpad") && !name.includes("latitude")) {
+      return reply;
+    }
   }
 
-  if (interest === "MEDIUM") {
-    return `Una opción que suele funcionar muy bien es esta:
+  if (user.includes("impresora")) {
+    if (!name.includes("impresora")) {
+      return reply;
+    }
+  }
 
-💻 ${first.name}
+  /*
+  ========================================
+  🔥 PROTEGER MARCA
+  ========================================
+  */
+
+  if (user.includes("dell") && !name.includes("dell")) {
+    return "Claro 😊 En este momento no tengo Dell disponible, pero te puedo mostrar otras opciones similares. ¿Te gustaría ver alternativas?";
+  }
+
+  /*
+  ========================================
+  OUTPUT CONTROLADO
+  ========================================
+  */
+
+  const price = formatMoney(first.price, first.currency);
+
+  return `💻 ${first.name}
 ${price}
 
 ¿Quieres ver fotos reales del equipo?`;
-  }
-
-  return reply;
 }
