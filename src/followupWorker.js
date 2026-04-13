@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA FOLLOWUP WORKER (vNext — PRODUCTION SAFE)
+EVA FOLLOWUP WORKER (Sales Radar + Conversion vNext)
 ====================================================
 */
 
@@ -19,12 +19,43 @@ const openai = process.env.OPENAI_API_KEY
 
 /*
 ====================================================
-HELPERS
+UTILS
 ====================================================
 */
 
 function safe(v) {
   return String(v || "").trim();
+}
+
+function clamp(text, max = 320) {
+  if (!text) return "";
+  return text.length > max ? text.slice(0, max - 1) + "…" : text;
+}
+
+/*
+====================================================
+PIPELINE EVENT
+====================================================
+*/
+
+async function saveEvent({ organization_id, lead_phone, event_type, metadata = {} }) {
+  try {
+    await pool.query(
+      `
+      INSERT INTO pipeline_events (
+        organization_id,
+        lead_phone,
+        event_type,
+        metadata,
+        created_at
+      )
+      VALUES ($1, $2, $3, $4::jsonb, NOW())
+      `,
+      [organization_id, lead_phone, event_type, JSON.stringify(metadata)]
+    );
+  } catch (err) {
+    console.error("❌ followup event error:", err);
+  }
 }
 
 /*
@@ -33,7 +64,7 @@ AI FOLLOWUP
 ====================================================
 */
 
-async function generateAIFollowup({ memory, lastMessage }) {
+async function generateAIFollowup({ memory, lastMessage, isHighIntent }) {
   try {
     if (!openai) return null;
 
@@ -43,12 +74,15 @@ async function generateAIFollowup({ memory, lastMessage }) {
 Eres una asesora de ventas por WhatsApp.
 
 OBJETIVO:
-Reactivar la conversación y llevar al cliente a una acción concreta.
+Reactivar conversación y llevar a acción.
 
 CONTEXTO:
 Producto: ${memory?.product_interest || "producto"}
 Uso: ${memory?.use_case || "general"}
 Último mensaje: ${lastUserText}
+
+TIPO CLIENTE:
+${isHighIntent ? "ALTO INTERÉS" : "INTERÉS NORMAL"}
 
 REGLAS:
 - Máximo 3 líneas
@@ -67,9 +101,7 @@ Responde SOLO el mensaje.
 
     const text = completion?.choices?.[0]?.message?.content?.trim();
 
-    if (!text || text.length < 10) return null;
-
-    return text.length > 320 ? text.slice(0, 300) + "…" : text;
+    return clamp(text);
 
   } catch (err) {
     console.warn("⚠️ AI followup error:", err.message);
@@ -83,24 +115,30 @@ FALLBACK MESSAGE
 ====================================================
 */
 
-function buildFollowupMessage({ memory }) {
+function buildFollowupMessage({ memory, isHighIntent }) {
   const product =
     memory?.product_interest ||
     memory?.use_case ||
     "lo que estabas buscando";
 
+  if (isHighIntent) {
+    return `Hola 😊
+
+Quedé pendiente con tu compra.
+
+Si gusta te lo dejo apartado de una vez y coordinamos 👍`;
+  }
+
   return `Hola 😊
 
 Quedé pendiente de tu consulta.
 
-Si aún estás buscando ${product}, con gusto te ayudo 👌
-
-¿Para qué uso la necesitas?`;
+Si aún estás buscando ${product}, con gusto te ayudo 👌`;
 }
 
 /*
 ====================================================
-SEND SAFE (CRÍTICO)
+SEND SAFE
 ====================================================
 */
 
@@ -108,14 +146,13 @@ async function sendMessageSafe(sendMessage, payload) {
   try {
     const result = await sendMessage(payload);
 
-    // 🔥 VALIDACIÓN CRÍTICA
     if (!result || result.error) {
       return { success: false };
     }
 
     return { success: true };
 
-  } catch (err) {
+  } catch {
     return { success: false };
   }
 }
@@ -142,9 +179,9 @@ export async function processFollowups(sendMessage) {
     for (const f of followups) {
       try {
         /*
-        --------------------------------
+        ========================================
         LOCK
-        --------------------------------
+        ========================================
         */
 
         const lock = await pool.query(
@@ -164,9 +201,9 @@ export async function processFollowups(sendMessage) {
         const followup = lock.rows[0];
 
         /*
-        --------------------------------
-        VALIDACIÓN
-        --------------------------------
+        ========================================
+        VALIDATION
+        ========================================
         */
 
         if (!followup.lead_phone) {
@@ -178,9 +215,9 @@ export async function processFollowups(sendMessage) {
         }
 
         /*
-        --------------------------------
+        ========================================
         MEMORY
-        --------------------------------
+        ========================================
         */
 
         const memResult = await pool.query(
@@ -194,15 +231,13 @@ export async function processFollowups(sendMessage) {
         );
 
         const memory = memResult.rows[0] || {};
+        const isHighIntent =
+          String(memory?.interest_level || "LOW").toUpperCase() === "HIGH";
 
         /*
-        🔥 FIX: NO cancelar HIGH intent
-        */
-
-        /*
-        --------------------------------
+        ========================================
         LAST MESSAGE
-        --------------------------------
+        ========================================
         */
 
         let lastMessage = null;
@@ -235,21 +270,25 @@ export async function processFollowups(sendMessage) {
         }
 
         /*
-        --------------------------------
+        ========================================
         MESSAGE
-        --------------------------------
+        ========================================
         */
 
         let message =
-          (await generateAIFollowup({ memory, lastMessage })) ||
-          buildFollowupMessage({ memory });
+          (await generateAIFollowup({
+            memory,
+            lastMessage,
+            isHighIntent,
+          })) ||
+          buildFollowupMessage({ memory, isHighIntent });
 
         if (!message) continue;
 
         /*
-        --------------------------------
-        SEND (SAFE)
-        --------------------------------
+        ========================================
+        SEND
+        ========================================
         */
 
         const sendResult = await sendMessageSafe(sendMessage, {
@@ -258,7 +297,6 @@ export async function processFollowups(sendMessage) {
         });
 
         if (!sendResult.success) {
-          // 🔥 RETRY CONTROL
           await pool.query(
             `
             UPDATE followups
@@ -272,9 +310,35 @@ export async function processFollowups(sendMessage) {
         }
 
         /*
-        --------------------------------
+        ========================================
+        EVENTS (🔥 RADAR)
+        ========================================
+        */
+
+        await saveEvent({
+          organization_id: followup.organization_id,
+          lead_phone: followup.lead_phone,
+          event_type: "followup_sent",
+        });
+
+        await saveEvent({
+          organization_id: followup.organization_id,
+          lead_phone: followup.lead_phone,
+          event_type: "followup_recovery_attempt",
+        });
+
+        if (isHighIntent) {
+          await saveEvent({
+            organization_id: followup.organization_id,
+            lead_phone: followup.lead_phone,
+            event_type: "followup_high_intent_push",
+          });
+        }
+
+        /*
+        ========================================
         SUCCESS
-        --------------------------------
+        ========================================
         */
 
         await pool.query(
