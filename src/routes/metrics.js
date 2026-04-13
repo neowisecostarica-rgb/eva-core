@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA METRICS ROUTES (ALINEADO A AUTH + SOT)
+EVA CORE — METRICS ROUTES (Sales Radar + Conversion vNext)
 ====================================================
 */
 
@@ -11,7 +11,7 @@ const router = express.Router();
 
 /*
 ====================================================
-SUMMARY METRICS
+SUMMARY (CONVERSION + FUNNEL REAL)
 ====================================================
 */
 
@@ -24,6 +24,12 @@ router.get("/summary", async (req, res) => {
         error: "Unauthorized",
       });
     }
+
+    /*
+    ========================================
+    BASE COUNTS
+    ========================================
+    */
 
     const leadsResult = await pool.query(
       `SELECT COUNT(*) FROM leads WHERE organization_id = $1`,
@@ -40,9 +46,12 @@ router.get("/summary", async (req, res) => {
       [organization_id]
     );
 
-    // ================================
-    // PIPELINE EVENTS
-    // ================================
+    /*
+    ========================================
+    PIPELINE EVENTS
+    ========================================
+    */
+
     const eventsResult = await pool.query(
       `
       SELECT event_type, COUNT(*) as count
@@ -58,25 +67,58 @@ router.get("/summary", async (req, res) => {
       eventMap[row.event_type] = Number(row.count);
     }
 
+    /*
+    ========================================
+    FUNNEL (REAL)
+    ========================================
+    */
+
+    const intents = eventMap["intent_detected"] || 0;
+    const highIntent = eventMap["high_intent"] || 0;
+    const priceInterest = eventMap["price_interest"] || 0;
+    const followups = eventMap["followup_created"] || 0;
+
+    /*
+    ========================================
+    CONVERSION RATES
+    ========================================
+    */
+
+    const leadCount = Number(leadsResult.rows[0].count || 0);
+    const conversationCount = Number(conversationsResult.rows[0].count || 0);
+
+    const intentRate = leadCount ? intents / leadCount : 0;
+    const highIntentRate = intents ? highIntent / intents : 0;
+
+    /*
+    ========================================
+    RESPONSE
+    ========================================
+    */
+
     return res.json({
       success: true,
       data: {
-        leads: Number(leadsResult.rows[0].count || 0),
-        conversations: Number(conversationsResult.rows[0].count || 0),
-        messages: Number(messagesResult.rows[0].count || 0),
-
-        funnel: {
-          intents: eventMap["intent_detected"] || 0,
-          price_interest: eventMap["price_interest"] || 0,
-          high_intent: eventMap["high_intent"] || 0,
-          availability_check: eventMap["availability_check"] || 0,
+        counts: {
+          leads: leadCount,
+          conversations: conversationCount,
+          messages: Number(messagesResult.rows[0].count || 0),
         },
 
-        followups: {
-          created: eventMap["followup_created"] || 0,
+        funnel: {
+          intents,
+          high_intent: highIntent,
+          price_interest: priceInterest,
+          followups,
+        },
+
+        conversion: {
+          intent_rate: Number(intentRate.toFixed(2)),
+          high_intent_rate: Number(highIntentRate.toFixed(2)),
         },
       },
     });
+
   } catch (err) {
     console.error("METRICS SUMMARY ERROR", err);
     return res.status(500).json({
@@ -87,7 +129,7 @@ router.get("/summary", async (req, res) => {
 
 /*
 ====================================================
-RADAR
+RADAR (DEMANDA + INTELIGENCIA)
 ====================================================
 */
 
@@ -101,61 +143,73 @@ router.get("/radar", async (req, res) => {
       });
     }
 
-    const signalsResult = await pool.query(
-      `
-      SELECT event_type, COUNT(*) as count
-      FROM sales_intelligence_events
-      WHERE organization_id = $1
-      GROUP BY event_type
-      `,
-      [organization_id]
-    );
+    /*
+    ========================================
+    DEMANDA POR PRODUCTO (REAL)
+    ========================================
+    */
 
-    const signalsMap = {};
-    for (const row of signalsResult.rows) {
-      signalsMap[row.event_type] = Number(row.count);
-    }
-
-    const productDemandResult = await pool.query(
+    const demandResult = await pool.query(
       `
-      SELECT event_value, COUNT(*) as count
-      FROM sales_intelligence_events
+      SELECT product_interest, COUNT(*) as count
+      FROM leads
       WHERE organization_id = $1
-      AND event_type = 'PRODUCT_DEMAND'
-      GROUP BY event_value
+        AND product_interest IS NOT NULL
+      GROUP BY product_interest
       ORDER BY count DESC
       `,
       [organization_id]
     );
 
-    const productInterestResult = await pool.query(
+    /*
+    ========================================
+    USO (USE CASE)
+    ========================================
+    */
+
+    const useCaseResult = await pool.query(
       `
-      SELECT event_value, COUNT(*) as count
-      FROM sales_intelligence_events
+      SELECT use_case, COUNT(*) as count
+      FROM leads
       WHERE organization_id = $1
-      AND event_type = 'PRODUCT_SEARCH'
-      GROUP BY event_value
+        AND use_case IS NOT NULL
+      GROUP BY use_case
       ORDER BY count DESC
       `,
       [organization_id]
     );
+
+    /*
+    ========================================
+    PRESUPUESTO DETECTADO
+    ========================================
+    */
+
+    const budgetResult = await pool.query(
+      `
+      SELECT COUNT(*) 
+      FROM leads
+      WHERE organization_id = $1
+        AND budget IS NOT NULL
+      `,
+      [organization_id]
+    );
+
+    /*
+    ========================================
+    RESPONSE
+    ========================================
+    */
 
     return res.json({
       success: true,
       data: {
-        signals: {
-          use_case_estudio: signalsMap["USE_CASE_ESTUDIO"] || 0,
-          use_case_trabajo: signalsMap["USE_CASE_TRABAJO"] || 0,
-          buy_intent: signalsMap["BUY_INTENT"] || 0,
-          price_objections: signalsMap["PRICE_OBJECTION"] || 0,
-          low_price_search: signalsMap["LOW_PRICE_SEARCH"] || 0,
-          product_search: signalsMap["PRODUCT_SEARCH"] || 0,
-          budget_detected: signalsMap["BUDGET_DETECTED"] || 0,
-        },
-        product_demand: productDemandResult.rows || [],
-        product_interest: productInterestResult.rows || [],
+        demand: demandResult.rows || [],
+        use_cases: useCaseResult.rows || [],
+        budget_detected: Number(budgetResult.rows[0].count || 0),
       },
     });
+
   } catch (err) {
     console.error("RADAR ERROR", err);
     return res.status(500).json({
