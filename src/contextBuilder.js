@@ -1,10 +1,11 @@
 /*
 ====================================================
-EVA CORE — CONTEXT BUILDER (BLOCK 2 — SOT ALIGNED)
+EVA CORE — CONTEXT BUILDER (SOT FINAL — INTENT + STAGE OWNER)
 ====================================================
 */
 
 import pool from "./db.js";
+import { detectIntent } from "./brain/engines/intentEngine.js";
 
 /*
 ====================================================
@@ -26,7 +27,7 @@ function hasAny(text, patterns = []) {
 
 /*
 ====================================================
-DETECTION (🔥 NUEVO OWNER)
+DETECTION
 ====================================================
 */
 
@@ -70,7 +71,6 @@ function detectProblem(text) {
   ) {
     return safe(text);
   }
-
   return null;
 }
 
@@ -93,12 +93,6 @@ function detectKnownData(text) {
   };
 }
 
-/*
-====================================================
-MERGE
-====================================================
-*/
-
 function mergeKnownData(dbData = {}, detected = {}) {
   return {
     budget: detected.budget ?? dbData.budget ?? null,
@@ -111,6 +105,26 @@ function mergeKnownData(dbData = {}, detected = {}) {
 
 /*
 ====================================================
+STAGE (SIMPLE OWNER)
+====================================================
+*/
+
+function resolveStage(intent, known_data = {}) {
+  if (intent === "CLOSE_INTENT") return "HOT";
+
+  if (intent === "BUY") {
+    if (known_data.budget && known_data.use_case) return "MID";
+    return "EARLY";
+  }
+
+  if (intent === "SERVICE") return "MID";
+  if (intent === "INFO") return "EARLY";
+
+  return "EARLY";
+}
+
+/*
+====================================================
 MAIN
 ====================================================
 */
@@ -119,16 +133,8 @@ export async function buildContext({
   organization_id,
   phone,
   text = "",
-  intent = null,
-  stage = null,
 }) {
   try {
-    /*
-    ========================================
-    DB LOAD
-    ========================================
-    */
-
     const business = (
       await pool.query(
         `SELECT * FROM business_profile WHERE organization_id = $1 LIMIT 1`,
@@ -152,34 +158,18 @@ export async function buildContext({
         ).rows[0] || {}
       : {};
 
-    /*
-    ========================================
-    DETECTION (🔥 CENTRALIZADO)
-    ========================================
-    */
-
     const detected = detectKnownData(text);
-
-    /*
-    ========================================
-    MERGE
-    ========================================
-    */
-
     const known_data = mergeKnownData(lead, detected);
 
-    /*
-    ========================================
-    FINAL CONTEXT
-    ========================================
-    */
+    // 🔥 NUEVO
+    const intent = detectIntent(text);
+    const stage = resolveStage(intent, known_data);
 
     return {
       organization: {
         id: organization_id,
         business_name: business?.business_name || "el negocio",
       },
-
       assistant: {
         name: config?.assistant_name || "Asistente",
       },
@@ -203,8 +193,8 @@ export async function buildContext({
     return {
       organization: { id: organization_id },
       assistant: { name: "Asistente" },
-      intent,
-      stage,
+      intent: detectIntent(text),
+      stage: "EARLY",
       known_data: detectKnownData(text),
       user_message: text,
       sales_context: {},
