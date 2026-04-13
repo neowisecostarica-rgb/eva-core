@@ -194,27 +194,41 @@ export async function buildContext({
     ========================================
     */
 
-    const historyRows = (
+    const conversation = phone
+  ? (
       await pool.query(
         `
-        SELECT role, text
-        FROM messages
+        SELECT id 
+        FROM conversations
         WHERE organization_id = $1
-        AND conversation_id IN (
-          SELECT id FROM conversations
-          WHERE organization_id = $1
-          AND external_user_id = $2
-          LIMIT 1
-        )
+        AND external_user_id = $2
         ORDER BY created_at DESC
-        LIMIT 10
+        LIMIT 1
         `,
         [organization_id, phone]
       )
-    ).rows || [];
+    ).rows[0]
+  : null;
 
-    const history = historyRows.reverse();
+let history = [];
 
+if (conversation?.id) {
+  const historyRows = (
+    await pool.query(
+      `
+      SELECT role, text
+      FROM messages
+      WHERE organization_id = $1
+      AND conversation_id = $2
+      ORDER BY created_at DESC
+      LIMIT 10
+      `,
+      [organization_id, conversation.id]
+    )
+  ).rows || [];
+
+  history = historyRows.reverse();
+}
     /*
     ========================================
     DETECTION
