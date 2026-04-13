@@ -1,10 +1,22 @@
 /*
 ====================================================
-EVA BRAIN — INTENT ENGINE (ENFORCED v2)
+EVA BRAIN — INTENT ENGINE (FIXED — STABLE NORMALIZATION)
 ====================================================
 */
 
-import { normalizeText } from "../utils/textUtils.js";
+/*
+====================================================
+UTILS (CONTROL TOTAL)
+====================================================
+*/
+
+function safe(text) {
+  return String(text || "")
+    .toLowerCase()
+    .normalize("NFD") // separa tildes
+    .replace(/[\u0300-\u036f]/g, "") // elimina tildes
+    .trim();
+}
 
 /*
 ====================================================
@@ -13,11 +25,11 @@ INTENT DETECTION
 */
 
 export function detectIntent(text) {
-  const t = normalizeText(text);
+  const t = safe(text);
 
   /*
   ========================================
-  CLOSE INTENT (MÁXIMA PRIORIDAD)
+  CLOSE INTENT
   ========================================
   */
 
@@ -26,7 +38,6 @@ export function detectIntent(text) {
     t.includes("la quiero") ||
     t.includes("lo quiero") ||
     t.includes("como pago") ||
-    t.includes("cómo pago") ||
     t.includes("sinpe") ||
     t.includes("tarjeta") ||
     t.includes("transferencia") ||
@@ -38,24 +49,18 @@ export function detectIntent(text) {
 
   /*
   ========================================
-  SUPPORT / SERVICE (ANTES DE BUY 🔥)
+  SERVICE
   ========================================
   */
 
   if (
     t.includes("mantenimiento") ||
     t.includes("reparacion") ||
-    t.includes("reparación") ||
     t.includes("reparar") ||
     t.includes("no imprime") ||
     t.includes("no enciende") ||
     t.includes("no carga") ||
-    t.includes("esta lenta") ||
-    t.includes("está lenta") ||
-    t.includes("falla") ||
-    t.includes("dañado") ||
-    t.includes("dañada") ||
-    t.includes("no funciona") ||
+    t.includes("lenta") ||
     t.includes("error")
   ) {
     return "SUPPORT";
@@ -63,7 +68,7 @@ export function detectIntent(text) {
 
   /*
   ========================================
-  GREETING (ANTES DE BUY 🔥)
+  GREETING
   ========================================
   */
 
@@ -79,14 +84,13 @@ export function detectIntent(text) {
 
   /*
   ========================================
-  BUY INTENT
+  BUY
   ========================================
   */
 
   if (
     t.includes("precio") ||
     t.includes("cuanto cuesta") ||
-    t.includes("cuánto cuesta") ||
     t.includes("cuanto vale") ||
     t.includes("disponible") ||
     t.includes("me interesa") ||
@@ -94,7 +98,6 @@ export function detectIntent(text) {
     t.includes("busco") ||
     t.includes("ocupo") ||
 
-    /* PRODUCT KEYWORDS */
     t.includes("laptop") ||
     t.includes("computadora") ||
     t.includes("pc") ||
@@ -112,14 +115,10 @@ export function detectIntent(text) {
 
   if (
     t.includes("garantia") ||
-    t.includes("garantía") ||
     t.includes("procesador") ||
     t.includes("ram") ||
     t.includes("ssd") ||
-    t.includes("caracteristicas") ||
-    t.includes("características") ||
-    t.includes("informacion") ||
-    t.includes("información")
+    t.includes("informacion")
   ) {
     return "INFO";
   }
