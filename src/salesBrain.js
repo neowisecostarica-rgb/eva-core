@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — SALES BRAIN (BLOCK 1 — SOT ALIGNED)
+EVA CORE — SALES BRAIN (BLOCK 3 — STRATEGY ENFORCED)
 ====================================================
 */
 
@@ -46,6 +46,76 @@ function clampText(text, max = 320) {
 
 /*
 ====================================================
+🔥 STRATEGY ENFORCEMENT
+====================================================
+*/
+
+function enforceStrategyPre(context) {
+  if (!context?.strategy) {
+    throw new Error("Strategy is required");
+  }
+
+  // 🔴 Si intenta recomendar sin intención clara → volver a QUALIFY
+  if (
+    (context.strategy === "RECOMMEND" ||
+      context.strategy === "CLOSE") &&
+    !context.known_data?.product_interest
+  ) {
+    context.strategy = "QUALIFY";
+  }
+
+  return context;
+}
+
+function enforceStrategyPost(reply, context) {
+  const text = String(reply || "").toLowerCase();
+
+  /*
+  ========================================
+  QUALIFY / ASK
+  ========================================
+  */
+
+  if (
+    context.strategy === "QUALIFY" ||
+    context.strategy === "ASK"
+  ) {
+    // ❌ evitar venta prematura
+    if (
+      text.includes("₡") ||
+      text.includes("precio") ||
+      text.includes("recomiendo")
+    ) {
+      return "Con mucho gusto le ayudo 😊 ¿Me podría indicar un poco más sobre lo que necesita?";
+    }
+
+    // ✅ asegurar pregunta
+    if (!reply.includes("¿")) {
+      return reply + " ¿Me podría confirmar un poco más sobre lo que necesita?";
+    }
+  }
+
+  /*
+  ========================================
+  CLOSE
+  ========================================
+  */
+
+  if (context.strategy === "CLOSE") {
+    if (
+      !text.includes("envío") &&
+      !text.includes("retiro") &&
+      !text.includes("entrega")
+    ) {
+      return reply + " ¿Prefiere envío, entrega o retiro?";
+    }
+  }
+
+  return reply;
+}
+
+/*
+====================================================
 STRATEGY EXECUTION
 ====================================================
 */
@@ -66,12 +136,6 @@ async function executeStrategy(context) {
     }
   }
 
-  /*
-  ========================================
-  PROMPT CONFIG
-  ========================================
-  */
-
   const promptConfig = await getPromptConfig(context.organization.id);
 
   const prompt = buildPrompt({
@@ -80,12 +144,6 @@ async function executeStrategy(context) {
     history: context.history || [],
     promptConfig,
   });
-
-  /*
-  ========================================
-  AI
-  ========================================
-  */
 
   let aiText = null;
 
@@ -103,24 +161,12 @@ async function executeStrategy(context) {
     console.error("❌ AI ERROR:", err);
   }
 
-  /*
-  ========================================
-  FALLBACK
-  ========================================
-  */
-
   if (!aiText) {
     return {
       reply: "Con mucho gusto le ayudo 😊 ¿Me podría indicar un poco más sobre lo que necesita?",
       catalogResults,
     };
   }
-
-  /*
-  ========================================
-  PRODUCT ENHANCEMENT
-  ========================================
-  */
 
   if (context.strategy === "RECOMMEND" || context.strategy === "CLOSE") {
     aiText = enhanceProductReply({
@@ -160,12 +206,6 @@ export async function handleInbound(payload) {
       throw new Error("Missing inbound data");
     }
 
-    /*
-    ========================================
-    BASE ENTITIES
-    ========================================
-    */
-
     const lead = await findOrCreateLead({ organization_id, phone });
 
     const conversation = await findOrCreateConversation({
@@ -184,7 +224,7 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    CONTEXT (SINGLE SOURCE OF TRUTH)
+    CONTEXT (SOT)
     ========================================
     */
 
@@ -214,6 +254,9 @@ export async function handleInbound(payload) {
 
     context.strategy = strategyDecision.strategy;
 
+    // 🔥 PRE ENFORCEMENT
+    enforceStrategyPre(context);
+
     console.log("🧠 STRATEGY", {
       intent: context.intent,
       stage: context.stage,
@@ -228,10 +271,13 @@ export async function handleInbound(payload) {
 
     const execution = await executeStrategy(context);
 
-    const finalReply = clampText(
+    let finalReply = clampText(
       execution?.reply ||
         "Con mucho gusto le ayudo 😊 ¿Me podría indicar un poco más sobre lo que necesita?"
     );
+
+    // 🔥 POST ENFORCEMENT
+    finalReply = enforceStrategyPost(finalReply, context);
 
     /*
     ========================================
