@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — CATALOG ENGINE (SOURCE OF TRUTH)
+EVA CORE — CATALOG ENGINE (SOURCE OF TRUTH vNext FIXED)
 ====================================================
 */
 
@@ -8,7 +8,37 @@ import db from "../../db.js";
 
 /*
 ====================================================
-SEARCH CATALOG (SMART)
+UTILS
+====================================================
+*/
+
+function safe(text) {
+  return String(text || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+}
+
+function extractSignals(text = "") {
+  const t = safe(text);
+
+  return {
+    isLaptop: t.includes("laptop") || t.includes("computadora") || t.includes("pc"),
+    isPrinter: t.includes("impresora"),
+    isMonitor: t.includes("monitor"),
+
+    brand:
+      t.includes("dell") ? "dell" :
+      t.includes("hp") ? "hp" :
+      t.includes("lenovo") ? "lenovo" :
+      null,
+  };
+}
+
+/*
+====================================================
+SEARCH CATALOG (SMART — FIXED)
 ====================================================
 */
 
@@ -19,7 +49,7 @@ export async function searchCatalogSmart({
   try {
     if (!organization_id) return [];
 
-    const query = String(text || "").toLowerCase();
+    const signals = extractSignals(text);
 
     const result = await db.query(
       `
@@ -28,7 +58,7 @@ export async function searchCatalogSmart({
       WHERE organization_id = $1
       AND is_active = true
       ORDER BY created_at DESC
-      LIMIT 20
+      LIMIT 50
       `,
       [organization_id]
     );
@@ -37,40 +67,64 @@ export async function searchCatalogSmart({
 
     /*
     ========================================
-    FILTRO POR TEXTO
+    FILTRO POR CATEGORÍA
     ========================================
     */
 
-    if (query) {
-      products = products.filter((p) => {
-        const name = String(p.name || "").toLowerCase();
-        const desc = String(p.description || "").toLowerCase();
+    if (signals.isLaptop) {
+      products = products.filter(p =>
+        safe(p.name).includes("laptop") ||
+        safe(p.name).includes("thinkpad") ||
+        safe(p.name).includes("latitude")
+      );
+    }
 
-        return name.includes(query) || desc.includes(query);
-      });
+    if (signals.isPrinter) {
+      products = products.filter(p =>
+        safe(p.name).includes("impresora")
+      );
+    }
+
+    if (signals.isMonitor) {
+      products = products.filter(p =>
+        safe(p.name).includes("monitor")
+      );
     }
 
     /*
     ========================================
-    FALLBACK
+    FILTRO POR MARCA
+    ========================================
+    */
+
+    if (signals.brand) {
+      products = products.filter(p =>
+        safe(p.name).includes(signals.brand)
+      );
+    }
+
+    /*
+    ========================================
+    FALLBACK CONTROLADO (NO CROSS-CATEGORY)
     ========================================
     */
 
     if (products.length === 0) {
-      products = result.rows.slice(0, 5);
+      if (signals.isLaptop) {
+        products = result.rows.filter(p =>
+          safe(p.name).includes("laptop") ||
+          safe(p.name).includes("thinkpad") ||
+          safe(p.name).includes("latitude")
+        );
+      }
     }
 
-    return products.slice(0, 5);
+    return products.slice(0, 3);
+
   } catch (error) {
     console.error("❌ searchCatalogSmart error:", error);
     return [];
   }
 }
-
-/*
-====================================================
-COMPATIBILITY EXPORT
-====================================================
-*/
 
 export const searchCatalog = searchCatalogSmart;
