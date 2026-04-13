@@ -1,3 +1,9 @@
+/*
+====================================================
+EVA CORE — SERVER (Production Safe vNext)
+====================================================
+*/
+
 import { startFollowupWorker } from "./followupWorker.js";
 import express from "express";
 import cors from "cors";
@@ -20,7 +26,11 @@ import { authenticate } from "./lib/auth.js";
 
 dotenv.config();
 
-// 🔐 VALIDAR ENV
+/*
+====================================================
+ENV VALIDATION
+====================================================
+*/
 validateEnv();
 
 const app = express();
@@ -86,11 +96,13 @@ registerLeadRoutes(app, pool);
 
 /*
 ====================================================
-START
+START SERVER
 ====================================================
 */
 app.listen(PORT, () => {
-  console.log(`🚀 EVA Core running on port ${PORT}`);
+  console.log("🚀 EVA CORE STARTED");
+  console.log("PORT:", PORT);
+  console.log("ENV:", process.env.NODE_ENV || "development");
 });
 
 /*
@@ -121,7 +133,10 @@ async function sendWhatsAppMessage({ phone, message }) {
     const data = await response.json();
 
     if (!response.ok) {
-      console.error("❌ WhatsApp send failed:", data);
+      console.error("❌ WhatsApp send failed:", {
+        phone,
+        error: data,
+      });
       return { success: false, error: data };
     }
 
@@ -137,7 +152,7 @@ async function sendWhatsAppMessage({ phone, message }) {
 
 /*
 ====================================================
-START FOLLOWUP WORKER
+FOLLOWUP WORKER
 ====================================================
 */
 startFollowupWorker(sendWhatsAppMessage);
