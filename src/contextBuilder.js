@@ -35,13 +35,22 @@ function detectBudget(text) {
   const t = safe(text);
 
   const colon = t.match(/₡\s*([\d.,]+)/i);
-  if (colon?.[1]) return Number(colon[1].replace(/[.,]/g, ""));
+  if (colon?.[1]) {
+    const value = Number(colon[1].replace(/[.,]/g, ""));
+    return Number.isNaN(value) ? null : value;
+  }
 
   const mil = t.match(/(\d{2,3})\s*mil\b/i);
-  if (mil?.[1]) return Number(mil[1]) * 1000;
+  if (mil?.[1]) {
+    const value = Number(mil[1]) * 1000;
+    return Number.isNaN(value) ? null : value;
+  }
 
   const raw = t.match(/\b(\d{5,7})\b/);
-  if (raw?.[1]) return Number(raw[1]);
+  if (raw?.[1]) {
+    const value = Number(raw[1]);
+    return Number.isNaN(value) ? null : value;
+  }
 
   return null;
 }
@@ -49,10 +58,21 @@ function detectBudget(text) {
 function detectUseCase(text) {
   const t = lower(text);
 
-  if (hasAny(t, ["estudio", "colegio", "universidad"])) return "STUDY";
-  if (hasAny(t, ["trabajo", "oficina", "empresa"])) return "WORK";
-  if (hasAny(t, ["diseño", "video", "render"])) return "CREATIVE";
-  if (hasAny(t, ["gaming", "jugar"])) return "GAMING";
+  if (hasAny(t, ["estudio", "colegio", "universidad", "clases", "tareas"])) {
+    return "STUDY";
+  }
+
+  if (hasAny(t, ["trabajo", "oficina", "empresa", "office", "excel"])) {
+    return "WORK";
+  }
+
+  if (hasAny(t, ["diseño", "video", "render", "edicion", "edición"])) {
+    return "CREATIVE";
+  }
+
+  if (hasAny(t, ["gaming", "jugar", "juegos"])) {
+    return "GAMING";
+  }
 
   return null;
 }
@@ -67,19 +87,37 @@ function detectProblem(text) {
       "lenta",
       "reparar",
       "mantenimiento",
+      "no carga",
+      "falla",
+      "danada",
+      "dañada",
+      "no funciona",
     ])
   ) {
     return safe(text);
   }
+
   return null;
 }
 
 function detectProductInterest(text) {
   const t = lower(text);
 
-  if (hasAny(t, ["laptop", "computadora"])) return "LAPTOP";
-  if (hasAny(t, ["impresora"])) return "PRINTER";
-  if (hasAny(t, ["monitor"])) return "MONITOR";
+  if (hasAny(t, ["laptop", "computadora", "compu", "portatil", "portátil"])) {
+    return "LAPTOP";
+  }
+
+  if (hasAny(t, ["impresora", "printer"])) {
+    return "PRINTER";
+  }
+
+  if (hasAny(t, ["monitor"])) {
+    return "MONITOR";
+  }
+
+  if (hasAny(t, ["teclado", "mouse", "cargador", "adaptador", "accesorio"])) {
+    return "ACCESSORY";
+  }
 
   return null;
 }
@@ -105,6 +143,32 @@ function mergeKnownData(dbData = {}, detected = {}) {
 
 /*
 ====================================================
+INTENT RESOLUTION (CONTEXT-AWARE)
+====================================================
+*/
+
+function resolveIntentWithContext(detectedIntent, known_data = {}) {
+  if (detectedIntent && detectedIntent !== "UNKNOWN") {
+    return detectedIntent;
+  }
+
+  if (
+    known_data?.budget ||
+    known_data?.use_case ||
+    known_data?.product_interest
+  ) {
+    return "BUY";
+  }
+
+  if (known_data?.problem) {
+    return "SUPPORT";
+  }
+
+  return "UNKNOWN";
+}
+
+/*
+====================================================
 STAGE (SIMPLE OWNER)
 ====================================================
 */
@@ -114,13 +178,46 @@ function resolveStage(intent, known_data = {}) {
 
   if (intent === "BUY") {
     if (known_data.budget && known_data.use_case) return "MID";
+    if (known_data.budget || known_data.use_case || known_data.product_interest) {
+      return "EARLY";
+    }
     return "EARLY";
   }
 
-  if (intent === "SERVICE") return "MID";
+  if (intent === "SUPPORT" || intent === "SERVICE") {
+    if (known_data.problem) return "MID";
+    return "EARLY";
+  }
+
   if (intent === "INFO") return "EARLY";
+  if (intent === "GREETING") return "EARLY";
 
   return "EARLY";
+}
+
+/*
+====================================================
+SIGNALS
+====================================================
+*/
+
+function buildSignals({ intent, stage, known_data = {} }) {
+  return {
+    is_buy: intent === "BUY",
+    is_service: intent === "SUPPORT" || intent === "SERVICE",
+    is_greeting: intent === "GREETING",
+    is_info: intent === "INFO",
+    is_unknown: intent === "UNKNOWN",
+
+    is_early: stage === "EARLY",
+    is_mid: stage === "MID",
+    is_hot: stage === "HOT",
+
+    has_budget: !!known_data?.budget,
+    has_use_case: !!known_data?.use_case,
+    has_problem: !!known_data?.problem,
+    has_product_interest: !!known_data?.product_interest,
+  };
 }
 
 /*
@@ -161,15 +258,17 @@ export async function buildContext({
     const detected = detectKnownData(text);
     const known_data = mergeKnownData(lead, detected);
 
-    // 🔥 NUEVO
-    const intent = detectIntent(text);
+    const detectedIntent = detectIntent(text);
+    const intent = resolveIntentWithContext(detectedIntent, known_data);
     const stage = resolveStage(intent, known_data);
+    const signals = buildSignals({ intent, stage, known_data });
 
     return {
       organization: {
         id: organization_id,
         business_name: business?.business_name || "el negocio",
       },
+
       assistant: {
         name: config?.assistant_name || "Asistente",
       },
@@ -185,21 +284,33 @@ export async function buildContext({
       },
 
       history: [],
-      signals: {},
+      signals,
     };
   } catch (err) {
     console.error("❌ CONTEXT ERROR", err);
 
+    const fallbackKnownData = detectKnownData(text);
+    const fallbackDetectedIntent = detectIntent(text);
+    const fallbackIntent = resolveIntentWithContext(
+      fallbackDetectedIntent,
+      fallbackKnownData
+    );
+    const fallbackStage = resolveStage(fallbackIntent, fallbackKnownData);
+
     return {
       organization: { id: organization_id },
       assistant: { name: "Asistente" },
-      intent: detectIntent(text),
-      stage: "EARLY",
-      known_data: detectKnownData(text),
+      intent: fallbackIntent,
+      stage: fallbackStage,
+      known_data: fallbackKnownData,
       user_message: text,
       sales_context: {},
       history: [],
-      signals: {},
+      signals: buildSignals({
+        intent: fallbackIntent,
+        stage: fallbackStage,
+        known_data: fallbackKnownData,
+      }),
     };
   }
 }
