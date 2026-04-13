@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — CONTEXT BUILDER (SOT FINAL — INTENT + STAGE OWNER)
+EVA CORE — CONTEXT BUILDER (FINAL — WITH HISTORY)
 ====================================================
 */
 
@@ -58,21 +58,10 @@ function detectBudget(text) {
 function detectUseCase(text) {
   const t = lower(text);
 
-  if (hasAny(t, ["estudio", "colegio", "universidad", "clases", "tareas"])) {
-    return "STUDY";
-  }
-
-  if (hasAny(t, ["trabajo", "oficina", "empresa", "office", "excel"])) {
-    return "WORK";
-  }
-
-  if (hasAny(t, ["diseño", "video", "render", "edicion", "edición"])) {
-    return "CREATIVE";
-  }
-
-  if (hasAny(t, ["gaming", "jugar", "juegos"])) {
-    return "GAMING";
-  }
+  if (hasAny(t, ["estudio", "colegio", "universidad"])) return "STUDY";
+  if (hasAny(t, ["trabajo", "oficina", "empresa"])) return "WORK";
+  if (hasAny(t, ["diseño", "video", "render"])) return "CREATIVE";
+  if (hasAny(t, ["gaming", "jugar"])) return "GAMING";
 
   return null;
 }
@@ -87,11 +76,6 @@ function detectProblem(text) {
       "lenta",
       "reparar",
       "mantenimiento",
-      "no carga",
-      "falla",
-      "danada",
-      "dañada",
-      "no funciona",
     ])
   ) {
     return safe(text);
@@ -103,21 +87,9 @@ function detectProblem(text) {
 function detectProductInterest(text) {
   const t = lower(text);
 
-  if (hasAny(t, ["laptop", "computadora", "compu", "portatil", "portátil"])) {
-    return "LAPTOP";
-  }
-
-  if (hasAny(t, ["impresora", "printer"])) {
-    return "PRINTER";
-  }
-
-  if (hasAny(t, ["monitor"])) {
-    return "MONITOR";
-  }
-
-  if (hasAny(t, ["teclado", "mouse", "cargador", "adaptador", "accesorio"])) {
-    return "ACCESSORY";
-  }
+  if (hasAny(t, ["laptop", "computadora"])) return "LAPTOP";
+  if (hasAny(t, ["impresora"])) return "PRINTER";
+  if (hasAny(t, ["monitor"])) return "MONITOR";
 
   return null;
 }
@@ -143,7 +115,7 @@ function mergeKnownData(dbData = {}, detected = {}) {
 
 /*
 ====================================================
-INTENT RESOLUTION (CONTEXT-AWARE)
+INTENT + STAGE
 ====================================================
 */
 
@@ -167,57 +139,18 @@ function resolveIntentWithContext(detectedIntent, known_data = {}) {
   return "UNKNOWN";
 }
 
-/*
-====================================================
-STAGE (SIMPLE OWNER)
-====================================================
-*/
-
 function resolveStage(intent, known_data = {}) {
   if (intent === "CLOSE_INTENT") return "HOT";
 
   if (intent === "BUY") {
     if (known_data.budget && known_data.use_case) return "MID";
-    if (known_data.budget || known_data.use_case || known_data.product_interest) {
-      return "EARLY";
-    }
     return "EARLY";
   }
 
-  if (intent === "SUPPORT" || intent === "SERVICE") {
-    if (known_data.problem) return "MID";
-    return "EARLY";
-  }
-
+  if (intent === "SUPPORT") return "MID";
   if (intent === "INFO") return "EARLY";
-  if (intent === "GREETING") return "EARLY";
 
   return "EARLY";
-}
-
-/*
-====================================================
-SIGNALS
-====================================================
-*/
-
-function buildSignals({ intent, stage, known_data = {} }) {
-  return {
-    is_buy: intent === "BUY",
-    is_service: intent === "SUPPORT" || intent === "SERVICE",
-    is_greeting: intent === "GREETING",
-    is_info: intent === "INFO",
-    is_unknown: intent === "UNKNOWN",
-
-    is_early: stage === "EARLY",
-    is_mid: stage === "MID",
-    is_hot: stage === "HOT",
-
-    has_budget: !!known_data?.budget,
-    has_use_case: !!known_data?.use_case,
-    has_problem: !!known_data?.problem,
-    has_product_interest: !!known_data?.product_interest,
-  };
 }
 
 /*
@@ -255,13 +188,45 @@ export async function buildContext({
         ).rows[0] || {}
       : {};
 
+    /*
+    ========================================
+    🔥 HISTORY (NUEVO)
+    ========================================
+    */
+
+    const historyRows = (
+      await pool.query(
+        `
+        SELECT role, text
+        FROM messages
+        WHERE organization_id = $1
+        AND conversation_id IN (
+          SELECT id FROM conversations
+          WHERE organization_id = $1
+          AND external_user_id = $2
+          LIMIT 1
+        )
+        ORDER BY created_at DESC
+        LIMIT 10
+        `,
+        [organization_id, phone]
+      )
+    ).rows || [];
+
+    const history = historyRows.reverse();
+
+    /*
+    ========================================
+    DETECTION
+    ========================================
+    */
+
     const detected = detectKnownData(text);
     const known_data = mergeKnownData(lead, detected);
 
     const detectedIntent = detectIntent(text);
     const intent = resolveIntentWithContext(detectedIntent, known_data);
     const stage = resolveStage(intent, known_data);
-    const signals = buildSignals({ intent, stage, known_data });
 
     return {
       organization: {
@@ -283,34 +248,22 @@ export async function buildContext({
         interest_level: lead?.interest_level || "LOW",
       },
 
-      history: [],
-      signals,
+      history, // 🔥 YA NO VACÍO
+      signals: {},
     };
   } catch (err) {
     console.error("❌ CONTEXT ERROR", err);
 
-    const fallbackKnownData = detectKnownData(text);
-    const fallbackDetectedIntent = detectIntent(text);
-    const fallbackIntent = resolveIntentWithContext(
-      fallbackDetectedIntent,
-      fallbackKnownData
-    );
-    const fallbackStage = resolveStage(fallbackIntent, fallbackKnownData);
-
     return {
       organization: { id: organization_id },
       assistant: { name: "Asistente" },
-      intent: fallbackIntent,
-      stage: fallbackStage,
-      known_data: fallbackKnownData,
+      intent: detectIntent(text),
+      stage: "EARLY",
+      known_data: detectKnownData(text),
       user_message: text,
       sales_context: {},
       history: [],
-      signals: buildSignals({
-        intent: fallbackIntent,
-        stage: fallbackStage,
-        known_data: fallbackKnownData,
-      }),
+      signals: {},
     };
   }
 }
