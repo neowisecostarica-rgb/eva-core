@@ -9,9 +9,7 @@ if (!process.env.DATABASE_URL) {
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: false,
-  },
+  ssl: { rejectUnauthorized: false },
   max: 10,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 5000,
@@ -27,7 +25,7 @@ pool.on("error", (err) => {
 
 /*
 ========================================
-UTIL: SOT ENFORCEMENT
+UTILS
 ========================================
 */
 
@@ -37,15 +35,23 @@ function assertOrg(organization_id) {
   }
 }
 
+function safe(v) {
+  return String(v || "").trim();
+}
+
 /*
 ========================================
-FIND OR CREATE LEAD (SOT CRM)
+FIND OR CREATE LEAD
 ========================================
 */
 
 export async function findOrCreateLead({ organization_id, phone }) {
   try {
     assertOrg(organization_id);
+
+    if (!phone) {
+      throw new Error("phone is required");
+    }
 
     const existing = await pool.query(
       `
@@ -104,9 +110,10 @@ export async function findOrCreateLead({ organization_id, phone }) {
     );
 
     return created.rows[0];
+
   } catch (err) {
     console.error("❌ findOrCreateLead error:", err);
-    return null;
+    throw err; // 🔥 FIX: no devolver null
   }
 }
 
@@ -123,6 +130,10 @@ export async function findOrCreateConversation({
 }) {
   try {
     assertOrg(organization_id);
+
+    if (!phone || !channel) {
+      throw new Error("phone and channel required");
+    }
 
     const existing = await pool.query(
       `
@@ -171,9 +182,10 @@ export async function findOrCreateConversation({
     );
 
     return created.rows[0];
+
   } catch (err) {
     console.error("❌ findOrCreateConversation error:", err);
-    return null;
+    throw err;
   }
 }
 
@@ -193,6 +205,14 @@ export async function saveMessage({
   try {
     assertOrg(organization_id);
 
+    if (!conversation_id || !role) {
+      throw new Error("conversation_id and role required");
+    }
+
+    const content = safe(text);
+
+    if (!content) return;
+
     await pool.query(
       `
       INSERT INTO messages (
@@ -205,7 +225,7 @@ export async function saveMessage({
       )
       VALUES ($1, $2, $3, $4, $5, NOW())
       `,
-      [organization_id, conversation_id, role, text, message_id]
+      [organization_id, conversation_id, role, content, message_id]
     );
 
     await pool.query(
@@ -219,9 +239,9 @@ export async function saveMessage({
       [conversation_id, organization_id]
     );
 
-    console.log("💬 Message saved");
   } catch (err) {
     console.error("❌ saveMessage error:", err);
+    throw err;
   }
 }
 
@@ -253,6 +273,7 @@ export async function savePipelineEvent({
       `,
       [organization_id, lead_id, event_type, JSON.stringify(metadata)]
     );
+
   } catch (err) {
     console.error("❌ savePipelineEvent error:", err);
   }
@@ -273,7 +294,6 @@ export async function updateLeadStageAndScore({
   try {
     assertOrg(organization_id);
 
-    // 🔥 no bajar score nunca
     await pool.query(
       `
       UPDATE leads
@@ -290,6 +310,7 @@ export async function updateLeadStageAndScore({
       `,
       [lead_id, organization_id, new_stage, new_score]
     );
+
   } catch (err) {
     console.error("❌ updateLeadStageAndScore error:", err);
   }
@@ -297,7 +318,7 @@ export async function updateLeadStageAndScore({
 
 /*
 ========================================
-UPDATE LEAD MEMORY (UNIVERSAL)
+UPDATE LEAD MEMORY
 ========================================
 */
 
@@ -340,6 +361,7 @@ export async function updateLeadMemory({
         last_intent,
       ]
     );
+
   } catch (err) {
     console.error("❌ updateLeadMemory error:", err);
   }
@@ -347,7 +369,7 @@ export async function updateLeadMemory({
 
 /*
 ========================================
-GET ORGANIZATION SETTINGS (CRÍTICO)
+ORG SETTINGS
 ========================================
 */
 
@@ -366,6 +388,7 @@ export async function getOrganizationSettings(organization_id) {
     );
 
     return result.rows[0] || null;
+
   } catch (err) {
     console.error("❌ getOrganizationSettings error:", err);
     return null;
