@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — SALES BRAIN (TRACE + FACT ROUTER + SETUP GUARD vNEXT.5)
+EVA CORE — SALES BRAIN (TRACE + FACT ROUTER + SETUP MONITOR vNEXT.6)
 ====================================================
 */
 
@@ -27,7 +27,7 @@ import { createFollowupsForConversation } from "./followupEngine.js";
 
 /*
 ====================================================
-FACT ROUTER (NO AI)
+FACT ROUTER
 ====================================================
 */
 
@@ -35,7 +35,6 @@ function resolveBusinessQuery(text = "", context = {}) {
   const t = String(text).toLowerCase();
   const bc = context.business_context || {};
 
-  // ENVÍOS
   if (t.includes("envio")) {
     if (bc?.operations?.delivery === true) {
       return "Sí, realizamos envíos 🚚 El costo varía según la zona, con gusto te cotizo. ¿En qué ubicación te encuentras?";
@@ -45,19 +44,13 @@ function resolveBusinessQuery(text = "", context = {}) {
     }
   }
 
-  // SINPE
   if (t.includes("sinpe")) {
     if (bc?.payments?.sinpe) {
       return `Sí, puedes pagar por SINPE al ${bc.payments.sinpe} 👍`;
     }
   }
 
-  // UBICACIÓN
-  if (
-    t.includes("donde") ||
-    t.includes("ubicacion") ||
-    t.includes("ubicación")
-  ) {
+  if (t.includes("donde") || t.includes("ubicacion")) {
     if (bc?.location?.address) {
       return `Estamos ubicados en ${bc.location.address} 📍`;
     }
@@ -132,24 +125,6 @@ async function executeAI(context) {
 
 /*
 ====================================================
-SETUP BLOCK MESSAGE
-====================================================
-*/
-
-function buildSetupBlockedMessage(missingFields = []) {
-  const lines =
-    missingFields.length > 0
-      ? missingFields.map((m) => `• ${m}`).join("\n")
-      : "• configuración base del negocio";
-
-  return `Antes de continuar necesito que completes la configuración básica de tu negocio para poder ayudarte correctamente 🙌
-
-Te falta:
-${lines}`;
-}
-
-/*
-====================================================
 MAIN
 ====================================================
 */
@@ -197,48 +172,28 @@ export async function handleInbound(payload) {
         delivery: context.business_context?.operations?.delivery,
         address: context.business_context?.location?.address,
       },
-      setup: {
-        is_ready: context.meta?.is_ready,
-        missing_setup_fields: context.meta?.missing_setup_fields,
-      },
     });
 
     /*
     ========================================
-    SETUP GUARD (CRÍTICO)
+    🔥 SETUP MONITOR (NO BLOQUEA)
     ========================================
     */
 
-    /*
-========================================
-🔥 SETUP MONITOR (NO BLOQUEA UX)
-========================================
-*/
+    if (!context?.meta?.is_ready) {
+      console.log("🧠 TRACE — SETUP INCOMPLETE", {
+        missing: context.meta?.missing_setup_fields || [],
+      });
 
-if (!context?.meta?.is_ready) {
-  console.log("🧠 TRACE — SETUP INCOMPLETE", {
-    missing: context.meta?.missing_setup_fields || [],
-  });
-
-  await savePipelineEvent({
-    organization_id,
-    conversation_id: conversation.id,
-    lead_phone: phone,
-    event_type: "SETUP_INCOMPLETE",
-    event_data: {
-      missing_fields: context.meta?.missing_setup_fields || [],
-    },
-  });
-
-  // ⚠️ IMPORTANTE:
-  // NO retornamos aquí
-  // NO bloqueamos flujo
-  // EVA continúa normal
-}
-
-      return {
-        reply: { text: setupMessage },
-      };
+      await savePipelineEvent({
+        organization_id,
+        conversation_id: conversation.id,
+        lead_phone: phone,
+        event_type: "SETUP_INCOMPLETE",
+        event_data: {
+          missing_fields: context.meta?.missing_setup_fields || [],
+        },
+      });
     }
 
     const decision = decideStrategy({
@@ -258,7 +213,7 @@ if (!context?.meta?.is_ready) {
 
     /*
     ========================================
-    FACT ROUTER (ANTES DE AI)
+    FACT ROUTER
     ========================================
     */
 
@@ -325,15 +280,13 @@ if (!context?.meta?.is_ready) {
         intent: context.intent,
         stage: context.stage,
         strategy: context.strategy,
-        setup_ready: context?.meta?.is_ready ?? null,
-        missing_setup_fields:
-          context?.meta?.missing_setup_fields || [],
       },
     });
 
     return {
       reply: { text: execution.reply },
     };
+
   } catch (err) {
     console.error(err);
 
