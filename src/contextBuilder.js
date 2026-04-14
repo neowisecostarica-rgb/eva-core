@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — CONTEXT BUILDER (vNext — CLEAN CONTEXT ONLY)
+EVA CORE — CONTEXT BUILDER (REENTRY AWARE vNext)
 ====================================================
 */
 
@@ -27,79 +27,16 @@ function hasAny(text, patterns = []) {
 
 /*
 ====================================================
-DETECTION (TURN ONLY — NO DECISION)
+DETECTION
 ====================================================
 */
 
-function detectBudget(text) {
-  const t = safe(text);
-
-  const colon = t.match(/₡\s*([\d.,]+)/i);
-  if (colon?.[1]) {
-    const value = Number(colon[1].replace(/[.,]/g, ""));
-    return Number.isNaN(value) ? null : value;
-  }
-
-  const mil = t.match(/(\d{2,3})\s*mil\b/i);
-  if (mil?.[1]) {
-    const value = Number(mil[1]) * 1000;
-    return Number.isNaN(value) ? null : value;
-  }
-
-  const raw = t.match(/\b(\d{5,7})\b/);
-  if (raw?.[1]) {
-    const value = Number(raw[1]);
-    return Number.isNaN(value) ? null : value;
-  }
-
-  return null;
-}
-
-function detectUseCase(text) {
-  const t = lower(text);
-
-  if (hasAny(t, ["estudio", "colegio", "universidad"])) return "STUDY";
-  if (hasAny(t, ["trabajo", "oficina", "empresa"])) return "WORK";
-  if (hasAny(t, ["diseño", "video", "render"])) return "CREATIVE";
-  if (hasAny(t, ["gaming", "jugar"])) return "GAMING";
-
-  return null;
-}
-
-function detectProblem(text) {
-  if (
-    hasAny(text, [
-      "no imprime",
-      "no enciende",
-      "error",
-      "atascada",
-      "lenta",
-      "reparar",
-      "mantenimiento",
-    ])
-  ) {
-    return safe(text);
-  }
-
-  return null;
-}
-
-function detectProductInterest(text) {
-  const t = lower(text);
-
-  if (hasAny(t, ["laptop", "computadora"])) return "LAPTOP";
-  if (hasAny(t, ["impresora"])) return "PRINTER";
-  if (hasAny(t, ["monitor"])) return "MONITOR";
-
-  return null;
-}
-
 function detectKnownData(text) {
   return {
-    budget: detectBudget(text),
-    use_case: detectUseCase(text),
-    problem: detectProblem(text),
-    product_interest: detectProductInterest(text),
+    budget: null,
+    use_case: null,
+    problem: null,
+    product_interest: null,
   };
 }
 
@@ -117,7 +54,7 @@ export async function buildContext({
   try {
     /*
     ========================================
-    CORE DATA
+    CORE
     ========================================
     */
 
@@ -146,11 +83,12 @@ export async function buildContext({
 
     /*
     ========================================
-    🔥 HISTORY (FIX CRÍTICO)
+    HISTORY + TIME
     ========================================
     */
 
     let history = [];
+    let lastMessageTime = null;
 
     if (phone) {
       const conversation = (
@@ -160,7 +98,7 @@ export async function buildContext({
           FROM conversations
           WHERE organization_id = $1
           AND external_user_id = $2
-          ORDER BY created_at DESC
+          ORDER BY updated_at DESC
           LIMIT 1
           `,
           [organization_id, phone]
@@ -171,7 +109,7 @@ export async function buildContext({
         const historyRows = (
           await pool.query(
             `
-            SELECT role, content
+            SELECT role, content, created_at
             FROM messages
             WHERE organization_id = $1
             AND conversation_id = $2
@@ -181,6 +119,10 @@ export async function buildContext({
             [organization_id, conversation.id]
           )
         ).rows || [];
+
+        if (historyRows.length > 0) {
+          lastMessageTime = historyRows[0].created_at;
+        }
 
         history = historyRows
           .reverse()
@@ -193,15 +135,60 @@ export async function buildContext({
 
     /*
     ========================================
-    DETECTION (TURN ONLY)
+    TIME LOGIC
     ========================================
     */
 
-    const current_entities = detectKnownData(text);
+    let hours_since_last_message = null;
+    let is_reentry = false;
+
+    if (lastMessageTime) {
+      const diff =
+        (Date.now() - new Date(lastMessageTime).getTime()) /
+        (1000 * 60 * 60);
+
+      hours_since_last_message = diff;
+
+      if (diff > 2) {
+        is_reentry = true;
+      }
+    }
 
     /*
     ========================================
-    OUTPUT (NO DECISION LOGIC)
+    CONTEXT TYPE
+    ========================================
+    */
+
+    let conversation_type = "new";
+
+    if (history.length > 0 && !is_reentry) {
+      conversation_type = "active";
+    }
+
+    if (is_reentry) {
+      conversation_type = "reentry";
+    }
+
+    /*
+    ========================================
+    MERGE DATA
+    ========================================
+    */
+
+    const detected = detectKnownData(text);
+
+    const known_data = {
+      budget: detected.budget || lead?.budget || null,
+      use_case: detected.use_case || lead?.use_case || null,
+      product_interest:
+        detected.product_interest || lead?.product_interest || null,
+      problem: detected.problem || lead?.problem || null,
+    };
+
+    /*
+    ========================================
+    OUTPUT
     ========================================
     */
 
@@ -215,17 +202,11 @@ export async function buildContext({
         name: config?.assistant_name || "Asistente",
       },
 
-      // ⚠️ SOLO DETECCIÓN BASE
       intent: detectIntent(text),
-      stage: lead?.stage || "EARLY",
-      known_data: {
-        budget: lead?.budget || null,
-        use_case: lead?.use_case || null,
-        product_interest: lead?.product_interest || null,
-        problem: lead?.problem || null,
-      },
 
-      current_entities, // 🔥 CLAVE PARA STRATEGY ENGINE
+      stage: lead?.stage || "EARLY",
+
+      known_data,
 
       user_message: safe(text),
 
@@ -234,7 +215,13 @@ export async function buildContext({
       },
 
       history,
-      signals: {},
+
+      // 🔥 NUEVO
+      meta: {
+        conversation_type,
+        is_reentry,
+        hours_since_last_message,
+      },
     };
   } catch (err) {
     console.error("❌ CONTEXT ERROR", err);
@@ -245,11 +232,14 @@ export async function buildContext({
       intent: detectIntent(text),
       stage: "EARLY",
       known_data: {},
-      current_entities: detectKnownData(text),
       user_message: text,
       sales_context: {},
       history: [],
-      signals: {},
+      meta: {
+        conversation_type: "new",
+        is_reentry: false,
+        hours_since_last_message: null,
+      },
     };
   }
 }
