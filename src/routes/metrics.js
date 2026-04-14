@@ -234,3 +234,93 @@ router.get("/dashboard", async (req, res) => {
 });
 
 export default router;
+/*
+====================================================
+🔥 NEXT BEST ACTIONS — SALES INTELLIGENCE
+====================================================
+*/
+
+router.get("/actions", async (req, res) => {
+  try {
+    const organization_id = req.organization?.id;
+
+    if (!organization_id) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    /*
+    ========================================
+    CLOSE NOW (HOT LEADS)
+    ========================================
+    */
+
+    const closeNow = await pool.query(`
+      SELECT id, phone, score, stage
+      FROM leads
+      WHERE organization_id = $1
+      AND score >= 85
+      ORDER BY score DESC
+      LIMIT 10
+    `, [organization_id]);
+
+    /*
+    ========================================
+    SEND OPTIONS (MID)
+    ========================================
+    */
+
+    const sendOptions = await pool.query(`
+      SELECT id, phone, score, stage
+      FROM leads
+      WHERE organization_id = $1
+      AND score >= 65 AND score < 85
+      ORDER BY score DESC
+      LIMIT 10
+    `, [organization_id]);
+
+    /*
+    ========================================
+    QUALIFY (WARM)
+    ========================================
+    */
+
+    const qualify = await pool.query(`
+      SELECT id, phone, score, stage
+      FROM leads
+      WHERE organization_id = $1
+      AND score >= 40 AND score < 65
+      ORDER BY score DESC
+      LIMIT 10
+    `, [organization_id]);
+
+    /*
+    ========================================
+    FOLLOWUP (INACTIVE)
+    ========================================
+    */
+
+    const followup = await pool.query(`
+      SELECT id, phone, score, stage
+      FROM leads
+      WHERE organization_id = $1
+      AND last_contact_at < NOW() - INTERVAL '48 hours'
+      ORDER BY last_contact_at ASC
+      LIMIT 10
+    `, [organization_id]);
+
+    return res.json({
+      success: true,
+      data: {
+        close_now: closeNow.rows,
+        send_options: sendOptions.rows,
+        qualify: qualify.rows,
+        followup: followup.rows,
+      },
+    });
+
+  } catch (err) {
+    console.error("ACTIONS ERROR", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
