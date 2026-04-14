@@ -159,14 +159,31 @@ async function executeStrategy(context) {
     };
   }
 
-  if (context.strategy === "RECOMMEND" || context.strategy === "CLOSE") {
-    aiText = enhanceProductReply({
-      reply: aiText,
-      intent: context.intent,
-      catalogMatches: catalogResults,
-      data: context.sales_context,
-    });
-  }
+  // 🔥 CONTROL INTELIGENTE DE PRODUCTOS
+
+const isProductQuery =
+  context.intent === "BUY" ||
+  context.intent === "CLOSE_INTENT";
+
+const isInfoQuery =
+  context.intent === "INFO" &&
+  (lowerText(context.user_message).includes("laptop") ||
+    lowerText(context.user_message).includes("computadora") ||
+    lowerText(context.user_message).includes("dell") ||
+    lowerText(context.user_message).includes("lenovo"));
+
+if (
+  (context.strategy === "RECOMMEND" || context.strategy === "CLOSE") &&
+  (isProductQuery || isInfoQuery)
+) {
+  aiText = enhanceProductReply({
+    reply: aiText,
+    intent: context.intent,
+    catalogMatches: catalogResults,
+    data: context.sales_context,
+  });
+}
+  
 
   return {
     reply: formatAIResponse({
