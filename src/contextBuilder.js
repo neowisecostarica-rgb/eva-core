@@ -1,165 +1,352 @@
 /*
 ====================================================
-EVA CORE — PROMPT BUILDER (BUSINESS HARD CONTROL vNEXT.2)
+EVA CORE — CONTEXT BUILDER (SOT DATA ENHANCED)
 ====================================================
 */
 
-export function buildPrompt({
-  context,
-  catalogResults = [],
-  history = [],
-  promptConfig = {},
+import pool from "./db.js";
+import { detectIntent } from "./brain/engines/intentEngine.js";
+
+/*
+====================================================
+UTILS
+====================================================
+*/
+
+function safe(v) {
+  return String(v || "").trim();
+}
+
+function lower(v) {
+  return safe(v).toLowerCase();
+}
+
+/*
+====================================================
+DETECTION
+====================================================
+*/
+
+function detectKnownData(text = "") {
+  const t = lower(text);
+
+  let use_case = null;
+  let product_interest = null;
+  let problem = null;
+  let budget = null;
+
+  if (
+    t.includes("teletrabajo") ||
+    t.includes("oficina") ||
+    t.includes("office") ||
+    t.includes("trabajo")
+  ) {
+    use_case = "trabajo";
+  } else if (
+    t.includes("estudio") ||
+    t.includes("colegio") ||
+    t.includes("universidad") ||
+    t.includes("clases")
+  ) {
+    use_case = "estudio";
+  }
+
+  if (
+    t.includes("laptop") ||
+    t.includes("computadora") ||
+    t.includes("compu")
+  ) {
+    product_interest = "laptop";
+  } else if (t.includes("impresora")) {
+    product_interest = "printer";
+  } else if (t.includes("monitor")) {
+    product_interest = "monitor";
+  }
+
+  if (
+    t.includes("no imprime") ||
+    t.includes("no enciende") ||
+    t.includes("error") ||
+    t.includes("falla") ||
+    t.includes("malo") ||
+    t.includes("dañado")
+  ) {
+    problem = text;
+  }
+
+  const budgetMatch = t.match(/(\d{2,3}(?:[.,]\d{3})+|\d{5,7})/);
+  if (budgetMatch) {
+    budget = budgetMatch[1].replace(/[.,]/g, "");
+  }
+
+  return {
+    budget,
+    use_case,
+    problem,
+    product_interest,
+  };
+}
+
+/*
+====================================================
+MAIN
+====================================================
+*/
+
+export async function buildContext({
+  organization_id,
+  phone,
+  text = "",
 }) {
-  const {
-    intent,
-    stage,
-    strategy,
-    organization,
-    assistant,
-    known_data = {},
-    business_context = {},
-  } = context || {};
+  try {
+    /*
+    ========================================
+    CORE
+    ========================================
+    */
 
-  const agentName =
-    assistant?.name ||
-    promptConfig?.agent_name ||
-    promptConfig?.assistant_name ||
-    "Asistente";
+    const business = (
+      await pool.query(
+        `SELECT * FROM business_profile WHERE organization_id = $1 LIMIT 1`,
+        [organization_id]
+      )
+    ).rows[0] || {};
 
-  const businessName =
-    organization?.business_name ||
-    promptConfig?.business_name ||
-    "el negocio";
+    const config = (
+      await pool.query(
+        `SELECT * FROM prompt_config WHERE organization_id = $1 LIMIT 1`,
+        [organization_id]
+      )
+    ).rows[0] || {};
 
-  const customInstructions = promptConfig?.instructions || "";
-
-  /*
-  ====================================================
-  🔥 BUSINESS CONTEXT — PRIORIDAD MÁXIMA
-  ====================================================
-  */
-
-  const businessBlock = `
-===== DATOS REALES DEL NEGOCIO (FUENTE DE VERDAD) =====
-
-Estos datos SON CORRECTOS y representan la operación real.
-No puedes ignorarlos ni contradecirlos.
-
-PAGOS:
-- SINPE: ${business_context?.payments?.sinpe ?? "NO REGISTRADO"}
-- Banco: ${business_context?.payments?.bank_name ?? "NO REGISTRADO"}
-- Cuenta: ${business_context?.payments?.account_colones ?? "NO REGISTRADA"}
-- IBAN: ${business_context?.payments?.iban_colones ?? "NO REGISTRADO"}
-- Tarjeta: ${
-    business_context?.payments?.accepts_card === true ? "Sí" : "No"
-  }
-
-OPERACIÓN:
-- Envíos: ${
-    business_context?.operations?.delivery === true ? "Sí" : "No"
-  }
-- Retiro: ${
-    business_context?.operations?.pickup === true ? "Sí" : "No"
-  }
-
-UBICACIÓN:
-- Dirección: ${business_context?.location?.address ?? "NO REGISTRADA"}
-
-REGLA CRÍTICA:
-Si el cliente pregunta por pagos, SINPE, envíos o ubicación:
-→ DEBES responder usando estos datos
-→ Está PROHIBIDO inventar otra respuesta
-`;
-
-  /*
-  ====================================================
-  HISTORY
-  ====================================================
-  */
-
-  const historyText = history
-    .slice(-8)
-    .map((m) => {
-      const roleLabel = m.role === "user" ? "Cliente" : agentName;
-      return `${roleLabel}: ${m.content || m.text || ""}`;
-    })
-    .join("\n");
-
-  /*
-  ====================================================
-  CATÁLOGO
-  ====================================================
-  */
-
-  const catalogText =
-    catalogResults.length > 0
-      ? catalogResults
-          .slice(0, 5)
-          .map(
-            (p, i) =>
-              `${i + 1}. ${p?.name || "Producto"} — ₡${
-                p?.price || "N/A"
-              }`
+    const lead = phone
+      ? (
+          await pool.query(
+            `SELECT * FROM leads WHERE organization_id = $1 AND phone = $2 LIMIT 1`,
+            [organization_id, phone]
           )
-          .join("\n")
-      : "Sin productos relevantes.";
+        ).rows[0] || {}
+      : {};
 
-  /*
-  ====================================================
-  MEMORY
-  ====================================================
-  */
+    /*
+    ========================================
+    HISTORY + TIME
+    ========================================
+    */
 
-  const memoryRules = `
-- No repitas preguntas ya respondidas
-- Usa el contexto previo del cliente
-`;
+    let history = [];
+    let lastMessageTime = null;
 
-  /*
-  ====================================================
-  STYLE
-  ====================================================
-  */
+    if (phone) {
+      const conversation = (
+        await pool.query(
+          `
+          SELECT id
+          FROM conversations
+          WHERE organization_id = $1
+          AND external_user_id = $2
+          ORDER BY updated_at DESC
+          LIMIT 1
+          `,
+          [organization_id, phone]
+        )
+      ).rows[0];
 
-  const styleRules = `
-- Máximo 1 emoji
-- Respuestas claras
-- No responder más de lo necesario
-`;
+      if (conversation?.id) {
+        const historyRows = (
+          await pool.query(
+            `
+            SELECT role, content, created_at
+            FROM messages
+            WHERE organization_id = $1
+            AND conversation_id = $2
+            ORDER BY created_at DESC
+            LIMIT 10
+            `,
+            [organization_id, conversation.id]
+          )
+        ).rows || [];
 
-  /*
-  ====================================================
-  FINAL
-  ====================================================
-  */
+        if (historyRows.length > 0) {
+          lastMessageTime = historyRows[0].created_at;
+        }
 
-  return `
-${businessBlock}
+        history = historyRows
+          .reverse()
+          .map((m) => ({
+            role: m.role,
+            content: m.content,
+          }));
+      }
+    }
 
-${memoryRules}
+    /*
+    ========================================
+    TIME LOGIC
+    ========================================
+    */
 
-${styleRules}
+    let hours_since_last_message = null;
+    let is_reentry = false;
 
-${customInstructions}
+    if (lastMessageTime) {
+      const diff =
+        (Date.now() - new Date(lastMessageTime).getTime()) /
+        (1000 * 60 * 60);
 
-Empresa: ${businessName}
-Asistente: ${agentName}
-Intent: ${intent}
-Stage: ${stage}
-Strategy: ${strategy}
+      hours_since_last_message = diff;
 
-Datos cliente:
-${JSON.stringify(known_data, null, 2)}
+      if (diff > 2) {
+        is_reentry = true;
+      }
+    }
 
-Historial:
-${historyText || "Sin historial"}
+    /*
+    ========================================
+    CONTEXT TYPE
+    ========================================
+    */
 
-Productos:
-${catalogText}
+    let conversation_type = "new";
 
-Mensaje:
-"${context.user_message}"
+    if (history.length > 0 && !is_reentry) {
+      conversation_type = "active";
+    }
 
-Responde correctamente usando los datos del negocio cuando aplique.
-`;
+    if (is_reentry) {
+      conversation_type = "reentry";
+    }
+
+    /*
+    ========================================
+    MERGE DATA
+    ========================================
+    */
+
+    const detected = detectKnownData(text);
+
+    const known_data = {
+      budget: detected.budget || lead?.budget || null,
+      use_case: detected.use_case || lead?.use_case || null,
+      product_interest:
+        detected.product_interest || lead?.product_interest || null,
+      problem: detected.problem || lead?.problem || null,
+    };
+
+    /*
+    ========================================
+    BUSINESS CONTEXT
+    ========================================
+    */
+
+    const business_context = {
+      name: business?.business_name || null,
+      type: business?.business_type || null,
+      phone: business?.phone || null,
+
+      location: {
+        address: business?.address || null,
+        city: business?.city || null,
+        country: business?.country || null,
+        maps: business?.google_maps_url || null,
+      },
+
+      payments: {
+        sinpe: business?.sinpe_number ?? null,
+        bank_name: business?.bank_name ?? null,
+        account_colones: business?.account_colones ?? null,
+        iban_colones: business?.iban_colones ?? null,
+        account_usd: business?.account_usd ?? null,
+        iban_usd: business?.iban_usd ?? null,
+        owner: business?.account_owner ?? null,
+        accepts_card: business?.accepts_card ?? null,
+      },
+
+      operations: {
+        delivery: business?.delivery_available ?? null,
+        pickup: business?.pickup_available ?? null,
+        hours: business?.working_hours ?? null,
+      },
+
+      policies: {
+        warranty: business?.warranty_info ?? null,
+        shipping: business?.shipping_info ?? null,
+      },
+
+      commercial: {
+        cta: business?.main_cta ?? null,
+        notes: business?.sales_notes ?? null,
+      },
+    };
+
+    /*
+    ========================================
+    OUTPUT
+    ========================================
+    */
+
+    return {
+      organization: {
+        id: organization_id,
+        business_name: business?.business_name || "el negocio",
+      },
+
+      assistant: {
+        name:
+          config?.agent_name ||
+          config?.assistant_name ||
+          "Asistente",
+      },
+
+      intent: detectIntent(text),
+
+      stage: lead?.stage || "EARLY",
+
+      known_data,
+
+      user_message: safe(text),
+
+      sales_context: {
+        interest_level: lead?.interest_level || "LOW",
+        lead_score: lead?.score || 0,
+      },
+
+      history,
+
+      business_context,
+
+      meta: {
+        conversation_type,
+        is_reentry,
+        hours_since_last_message,
+      },
+    };
+  } catch (err) {
+    console.error("❌ CONTEXT ERROR", err);
+
+    return {
+      organization: { id: organization_id, business_name: "el negocio" },
+      assistant: { name: "Asistente" },
+      intent: detectIntent(text),
+      stage: "EARLY",
+      known_data: {
+        budget: null,
+        use_case: null,
+        product_interest: null,
+        problem: null,
+      },
+      user_message: safe(text),
+      sales_context: {
+        interest_level: "LOW",
+        lead_score: 0,
+      },
+      history: [],
+      business_context: {},
+      meta: {
+        conversation_type: "new",
+        is_reentry: false,
+        hours_since_last_message: null,
+      },
+    };
+  }
 }
