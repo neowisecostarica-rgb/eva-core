@@ -209,21 +209,32 @@ export async function handleInbound(payload) {
     ========================================
     */
 
-    if (!context?.meta?.is_ready) {
-      console.log("🧠 TRACE — SETUP BLOCKED", {
-        missing: context.meta?.missing_setup_fields || [],
-      });
+    /*
+========================================
+🔥 SETUP MONITOR (NO BLOQUEA UX)
+========================================
+*/
 
-      const setupMessage = buildSetupBlockedMessage(
-        context.meta?.missing_setup_fields || []
-      );
+if (!context?.meta?.is_ready) {
+  console.log("🧠 TRACE — SETUP INCOMPLETE", {
+    missing: context.meta?.missing_setup_fields || [],
+  });
 
-      await saveMessage({
-        organization_id,
-        conversation_id: conversation.id,
-        role: "assistant",
-        text: setupMessage,
-      });
+  await savePipelineEvent({
+    organization_id,
+    conversation_id: conversation.id,
+    lead_phone: phone,
+    event_type: "SETUP_INCOMPLETE",
+    event_data: {
+      missing_fields: context.meta?.missing_setup_fields || [],
+    },
+  });
+
+  // ⚠️ IMPORTANTE:
+  // NO retornamos aquí
+  // NO bloqueamos flujo
+  // EVA continúa normal
+}
 
       return {
         reply: { text: setupMessage },
