@@ -23,6 +23,7 @@ import { buildPrompt } from "./brain/utils/promptBuilder.js";
 import { runAI } from "./brain/engines/aiEngine.js";
 import { getPromptConfig } from "./brain/utils/getPromptConfig.js";
 import { formatAIResponse } from "./brain/utils/responseFormatter.js";
+import { createFollowupsForConversation } from "./followupEngine.js";
 
 /*
 ====================================================
@@ -645,7 +646,14 @@ export async function handleInbound(payload) {
       role: "assistant",
       text: execution.reply,
     });
-
+    
+await createFollowupsForConversation({
+  organization_id,
+  conversation_id: conversation.id,
+  phone,
+  context,
+});
+    
     await logExecution({
       organization_id,
       conversation_id: conversation.id,
