@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — CONTEXT BUILDER (REENTRY AWARE vNext)
+EVA CORE — CONTEXT BUILDER (SOT DATA ENHANCED)
 ====================================================
 */
 
@@ -19,10 +19,6 @@ function safe(v) {
 
 function lower(v) {
   return safe(v).toLowerCase();
-}
-
-function hasAny(text, patterns = []) {
-  return patterns.some((p) => lower(text).includes(p));
 }
 
 /*
@@ -188,6 +184,52 @@ export async function buildContext({
 
     /*
     ========================================
+    🔥 BUSINESS CONTEXT (NUEVO SOT)
+    ========================================
+    */
+
+    const business_context = {
+      name: business?.business_name || null,
+      type: business?.business_type || null,
+      phone: business?.phone || null,
+
+      location: {
+        address: business?.address || null,
+        city: business?.city || null,
+        country: business?.country || null,
+        maps: business?.google_maps_url || null,
+      },
+
+      payments: {
+        sinpe: business?.sinpe_number || null,
+        bank_name: business?.bank_name || null,
+        account_colones: business?.account_colones || null,
+        iban_colones: business?.iban_colones || null,
+        account_usd: business?.account_usd || null,
+        iban_usd: business?.iban_usd || null,
+        owner: business?.account_owner || null,
+        accepts_card: business?.accepts_card || false,
+      },
+
+      operations: {
+        delivery: business?.delivery_available || false,
+        pickup: business?.pickup_available || false,
+        hours: business?.working_hours || null,
+      },
+
+      policies: {
+        warranty: business?.warranty_info || null,
+        shipping: business?.shipping_info || null,
+      },
+
+      commercial: {
+        cta: business?.main_cta || null,
+        notes: business?.sales_notes || null,
+      },
+    };
+
+    /*
+    ========================================
     OUTPUT
     ========================================
     */
@@ -216,7 +258,8 @@ export async function buildContext({
 
       history,
 
-      // 🔥 NUEVO
+      business_context, // 🔥 CLAVE
+
       meta: {
         conversation_type,
         is_reentry,
@@ -235,6 +278,7 @@ export async function buildContext({
       user_message: text,
       sales_context: {},
       history: [],
+      business_context: {}, // 🔥 fallback seguro
       meta: {
         conversation_type: "new",
         is_reentry: false,
