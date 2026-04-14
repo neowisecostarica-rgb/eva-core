@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — PROMPT BUILDER (SOT BUSINESS AWARE vNext)
+EVA CORE — PROMPT BUILDER (SOT ENFORCED vFINAL)
 ====================================================
 */
 
@@ -17,7 +17,7 @@ export function buildPrompt({
     organization,
     assistant,
     known_data = {},
-    business_context = {}, // 🔥 NUEVO
+    business_context = {},
   } = context || {};
 
   const agentName =
@@ -68,57 +68,60 @@ export function buildPrompt({
 
   /*
   ====================================================
-  🔥 BUSINESS CONTEXT (SOT)
+  🔥 SOT ENFORCEMENT (CLAVE)
+  ====================================================
+  */
+
+  const sotRules = `
+REGLA CRÍTICA (NO ROMPER):
+- La información del negocio proporcionada es la fuente oficial
+- NUNCA contradigas esos datos
+- NUNCA inventes información diferente
+- SI el cliente pregunta algo relacionado con:
+  pagos, ubicación, envíos, horarios, garantía
+  → RESPONDE usando esos datos EXACTAMENTE
+- NO uses conocimiento general si existe información del negocio
+`;
+
+  /*
+  ====================================================
+  🔥 BUSINESS CONTEXT (FUENTE DE VERDAD)
   ====================================================
   */
 
   const businessBlock = `
-Información del negocio (usar SOLO si es relevante):
+DATOS OFICIALES DEL NEGOCIO:
 
 Ubicación:
-- Dirección: ${business_context?.location?.address || "N/A"}
-- Ciudad: ${business_context?.location?.city || "N/A"}
-- País: ${business_context?.location?.country || "N/A"}
+Dirección: ${business_context?.location?.address || "N/A"}
+Ciudad: ${business_context?.location?.city || "N/A"}
+País: ${business_context?.location?.country || "N/A"}
 
 Pagos:
-- SINPE: ${business_context?.payments?.sinpe || "N/A"}
-- Banco: ${business_context?.payments?.bank_name || "N/A"}
-- Cuenta colones: ${business_context?.payments?.account_colones || "N/A"}
-- IBAN colones: ${business_context?.payments?.iban_colones || "N/A"}
-- Tarjeta: ${business_context?.payments?.accepts_card ? "Sí" : "No"}
+SINPE: ${business_context?.payments?.sinpe || "N/A"}
+Banco: ${business_context?.payments?.bank_name || "N/A"}
+Cuenta colones: ${business_context?.payments?.account_colones || "N/A"}
+IBAN colones: ${business_context?.payments?.iban_colones || "N/A"}
+Tarjeta: ${business_context?.payments?.accepts_card ? "Sí" : "No"}
 
 Operación:
-- Envíos: ${business_context?.operations?.delivery ? "Sí" : "No"}
-- Retiro: ${business_context?.operations?.pickup ? "Sí" : "No"}
-- Horarios: ${JSON.stringify(
+Envíos: ${business_context?.operations?.delivery ? "Sí" : "No"}
+Retiro: ${business_context?.operations?.pickup ? "Sí" : "No"}
+Horarios: ${JSON.stringify(
     business_context?.operations?.hours || {}
   )}
 
 Políticas:
-- Garantía: ${business_context?.policies?.warranty || "N/A"}
-- Envíos: ${business_context?.policies?.shipping || "N/A"}
+Garantía: ${business_context?.policies?.warranty || "N/A"}
+Envíos: ${business_context?.policies?.shipping || "N/A"}
 
-Notas comerciales:
+Notas:
 ${business_context?.commercial?.notes || ""}
 `;
 
   /*
   ====================================================
-  🔥 REGLA CRÍTICA DE USO
-  ====================================================
-  */
-
-  const usageRules = `
-Reglas de uso de información del negocio:
-- NO mencionar todo esto automáticamente
-- SOLO usarlo si el cliente lo pregunta o es necesario para cerrar
-- Priorizar conversación, no saturar
-- Responder directo a la intención del cliente
-`;
-
-  /*
-  ====================================================
-  🔥 IDENTITY INJECTION
+  🔥 IDENTITY
   ====================================================
   */
 
@@ -132,7 +135,7 @@ Reglas de uso de información del negocio:
 
   /*
   ====================================================
-  STRATEGY CONTROL
+  STRATEGY
   ====================================================
   */
 
@@ -140,16 +143,16 @@ Reglas de uso de información del negocio:
 Estrategia actual: ${strategy}
 
 Reglas:
-- ASK / QUALIFY → hacer preguntas, no vender
-- RECOMMEND → sugerir opciones
-- CLOSE → cerrar venta directo
-- FOLLOWUP → reactivar interés
-- EXPLAIN → explicar sin vender
+- ASK / QUALIFY → hacer preguntas
+- RECOMMEND → sugerir
+- CLOSE → cerrar
+- FOLLOWUP → reactivar
+- EXPLAIN → explicar
 `;
 
   /*
   ====================================================
-  STYLE RULES
+  STYLE
   ====================================================
   */
 
@@ -158,45 +161,44 @@ Reglas de comunicación:
 - Máximo 1 emoji
 - Mensajes cortos
 - Lenguaje claro
-- No técnico
 - Siempre cerrar en acción
 `;
 
   /*
   ====================================================
-  FINAL PROMPT
+  FINAL
   ====================================================
   */
 
   return `
 ${identityBlock}
 
+${sotRules}
+
 ${strategyBlock}
 
 ${styleRules}
 
-${usageRules}
-
 ${customInstructions}
 
-Contexto del negocio:
-- Empresa: ${businessName}
-- Asistente: ${agentName}
+Contexto:
+Empresa: ${businessName}
+Asistente: ${agentName}
 
 ${businessBlock}
 
-Datos conocidos del cliente:
+Datos cliente:
 ${JSON.stringify(known_data, null, 2)}
 
 Historial:
 ${historyText || "Sin historial"}
 
-Productos disponibles:
+Productos:
 ${catalogText}
 
-Mensaje del cliente:
+Mensaje:
 "${context.user_message}"
 
-Responde de forma natural, siguiendo la estrategia.
+Responde correctamente usando los datos del negocio cuando aplique.
 `;
 }
