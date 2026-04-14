@@ -41,14 +41,14 @@ function detectKnownData(text = "") {
     t.includes("office") ||
     t.includes("trabajo")
   ) {
-    use_case = "trabajo";
+    use_case = "WORK";
   } else if (
     t.includes("estudio") ||
     t.includes("colegio") ||
     t.includes("universidad") ||
     t.includes("clases")
   ) {
-    use_case = "estudio";
+    use_case = "STUDY";
   }
 
   if (
@@ -56,11 +56,11 @@ function detectKnownData(text = "") {
     t.includes("computadora") ||
     t.includes("compu")
   ) {
-    product_interest = "laptop";
+    product_interest = "LAPTOP";
   } else if (t.includes("impresora")) {
-    product_interest = "printer";
+    product_interest = "PRINTER";
   } else if (t.includes("monitor")) {
-    product_interest = "monitor";
+    product_interest = "MONITOR";
   }
 
   if (
@@ -85,6 +85,33 @@ function detectKnownData(text = "") {
     problem,
     product_interest,
   };
+}
+
+/*
+====================================================
+SETUP VALIDATION
+====================================================
+*/
+
+function getMissingSetupFields(business = {}) {
+  const missing = [];
+
+  if (!business?.business_name) {
+    missing.push("nombre del negocio");
+  }
+
+  if (!business?.sinpe_number && !business?.bank_name) {
+    missing.push("métodos de pago");
+  }
+
+  if (
+    business?.delivery_available === null ||
+    business?.delivery_available === undefined
+  ) {
+    missing.push("configuración de envíos");
+  }
+
+  return missing;
 }
 
 /*
@@ -245,16 +272,25 @@ export async function buildContext({
       phone: business?.phone || null,
 
       location: {
-        address: business?.address || null,
+        address:
+          business?.address ||
+          business?.location_address ||
+          null,
         city: business?.city || null,
         country: business?.country || null,
         maps: business?.google_maps_url || null,
       },
 
       payments: {
-        sinpe: business?.sinpe_number ?? null,
+        sinpe:
+          business?.sinpe_number ||
+          business?.sinpe ||
+          null,
         bank_name: business?.bank_name ?? null,
-        account_colones: business?.account_colones ?? null,
+        account_colones:
+          business?.account_colones ||
+          business?.account_crc ||
+          null,
         iban_colones: business?.iban_colones ?? null,
         account_usd: business?.account_usd ?? null,
         iban_usd: business?.iban_usd ?? null,
@@ -263,8 +299,14 @@ export async function buildContext({
       },
 
       operations: {
-        delivery: business?.delivery_available ?? null,
-        pickup: business?.pickup_available ?? null,
+        delivery:
+          business?.delivery_available ??
+          business?.delivery ??
+          null,
+        pickup:
+          business?.pickup_available ??
+          business?.pickup ??
+          null,
         hours: business?.working_hours ?? null,
       },
 
@@ -278,6 +320,15 @@ export async function buildContext({
         notes: business?.sales_notes ?? null,
       },
     };
+
+    /*
+    ========================================
+    SETUP STATUS
+    ========================================
+    */
+
+    const missing_setup_fields = getMissingSetupFields(business);
+    const is_ready = missing_setup_fields.length === 0;
 
     /*
     ========================================
@@ -319,6 +370,8 @@ export async function buildContext({
         conversation_type,
         is_reentry,
         hours_since_last_message,
+        is_ready,
+        missing_setup_fields,
       },
     };
   } catch (err) {
@@ -346,6 +399,10 @@ export async function buildContext({
         conversation_type: "new",
         is_reentry: false,
         hours_since_last_message: null,
+        is_ready: false,
+        missing_setup_fields: [
+          "configuración base del negocio",
+        ],
       },
     };
   }
