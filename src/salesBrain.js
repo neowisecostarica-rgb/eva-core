@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — SALES BRAIN (TRACE + FACT ROUTER + SETUP MONITOR vNEXT.6)
+EVA CORE — SALES BRAIN (TRACE + FACT ROUTER + SETUP MONITOR vNEXT.7)
 ====================================================
 */
 
@@ -24,6 +24,13 @@ import { getPromptConfig } from "./brain/utils/getPromptConfig.js";
 import { formatAIResponse } from "./brain/utils/responseFormatter.js";
 
 import { createFollowupsForConversation } from "./followupEngine.js";
+
+/*
+====================================================
+🔥 SCORE ENGINE (NEW OWNER)
+====================================================
+*/
+import { calculateScore } from "./brain/engines/scoreEngine.js";
 
 /*
 ====================================================
@@ -249,11 +256,34 @@ export async function handleInbound(payload) {
       text: execution.reply,
     });
 
+    /*
+    ========================================
+    🔥 SCORE ENGINE (NEW SYSTEM)
+    ========================================
+    */
+
+    const lastMessages = []; // dejamos vacío por ahora (bloque futuro)
+
+    const scoreResult = calculateScore({
+      lead: context?.lead || {},
+      context,
+      lastMessages,
+      now: Date.now(),
+    });
+
+    console.log("🧠 TRACE — SCORE", scoreResult);
+
+    /*
+    ========================================
+    UPDATE LEAD (NOW USING SCORE ENGINE)
+    ========================================
+    */
+
     await updateLeadStageAndScore({
       organization_id,
       phone,
-      stage: context.stage,
-      score: context?.sales_context?.lead_score || 0,
+      stage: context.stage || scoreResult.stage_suggested,
+      score: scoreResult.score,
     });
 
     await updateLeadMemory({
@@ -280,6 +310,8 @@ export async function handleInbound(payload) {
         intent: context.intent,
         stage: context.stage,
         strategy: context.strategy,
+        score: scoreResult.score,
+        score_label: scoreResult.label,
       },
     });
 
