@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — SALES BRAIN (TRACE + FACT ROUTER vNEXT.4)
+EVA CORE — SALES BRAIN (TRACE + FACT ROUTER + SETUP GUARD vNEXT.5)
 ====================================================
 */
 
@@ -33,7 +33,6 @@ FACT ROUTER (NO AI)
 
 function resolveBusinessQuery(text = "", context = {}) {
   const t = String(text).toLowerCase();
-
   const bc = context.business_context || {};
 
   // ENVÍOS
@@ -54,7 +53,11 @@ function resolveBusinessQuery(text = "", context = {}) {
   }
 
   // UBICACIÓN
-  if (t.includes("donde") || t.includes("ubicacion")) {
+  if (
+    t.includes("donde") ||
+    t.includes("ubicacion") ||
+    t.includes("ubicación")
+  ) {
     if (bc?.location?.address) {
       return `Estamos ubicados en ${bc.location.address} 📍`;
     }
@@ -129,6 +132,24 @@ async function executeAI(context) {
 
 /*
 ====================================================
+SETUP BLOCK MESSAGE
+====================================================
+*/
+
+function buildSetupBlockedMessage(missingFields = []) {
+  const lines =
+    missingFields.length > 0
+      ? missingFields.map((m) => `• ${m}`).join("\n")
+      : "• configuración base del negocio";
+
+  return `Antes de continuar necesito que completes la configuración básica de tu negocio para poder ayudarte correctamente 🙌
+
+Te falta:
+${lines}`;
+}
+
+/*
+====================================================
 MAIN
 ====================================================
 */
@@ -176,7 +197,38 @@ export async function handleInbound(payload) {
         delivery: context.business_context?.operations?.delivery,
         address: context.business_context?.location?.address,
       },
+      setup: {
+        is_ready: context.meta?.is_ready,
+        missing_setup_fields: context.meta?.missing_setup_fields,
+      },
     });
+
+    /*
+    ========================================
+    SETUP GUARD (CRÍTICO)
+    ========================================
+    */
+
+    if (!context?.meta?.is_ready) {
+      console.log("🧠 TRACE — SETUP BLOCKED", {
+        missing: context.meta?.missing_setup_fields || [],
+      });
+
+      const setupMessage = buildSetupBlockedMessage(
+        context.meta?.missing_setup_fields || []
+      );
+
+      await saveMessage({
+        organization_id,
+        conversation_id: conversation.id,
+        role: "assistant",
+        text: setupMessage,
+      });
+
+      return {
+        reply: { text: setupMessage },
+      };
+    }
 
     const decision = decideStrategy({
       intent: context.intent,
@@ -195,7 +247,7 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    🔥 FACT ROUTER (ANTES DE AI)
+    FACT ROUTER (ANTES DE AI)
     ========================================
     */
 
@@ -262,6 +314,9 @@ export async function handleInbound(payload) {
         intent: context.intent,
         stage: context.stage,
         strategy: context.strategy,
+        setup_ready: context?.meta?.is_ready ?? null,
+        missing_setup_fields:
+          context?.meta?.missing_setup_fields || [],
       },
     });
 
