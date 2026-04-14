@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — SALES BRAIN (CONTROL MODE ENFORCED vNEXT.3)
+EVA CORE — SALES BRAIN (TRACE + FACT ROUTER vNEXT.4)
 ====================================================
 */
 
@@ -17,7 +17,6 @@ import { decideStrategy } from "./brain/engines/strategyEngine.js";
 import { buildContext } from "./contextBuilder.js";
 
 import { searchCatalogSmart as searchCatalog } from "./brain/commerce/catalogEngine.js";
-import { enhanceProductReply } from "./brain/commerce/productAdvisorEngine.js";
 
 import { buildPrompt } from "./brain/utils/promptBuilder.js";
 import { runAI } from "./brain/engines/aiEngine.js";
@@ -28,47 +27,40 @@ import { createFollowupsForConversation } from "./followupEngine.js";
 
 /*
 ====================================================
-CONFIG CONTROL MODE (TEMP v1)
-====================================================
-Luego esto se mueve a DB (EvaAiSettings)
-*/
-
-const CONTROL_CONFIG = {
-  mode: "HYBRID", // SAFE | HYBRID | AUTO
-  confidence_threshold: 0.7,
-};
-
-/*
-====================================================
-EXECUTION WITH CONTROL MODE
+FACT ROUTER (NO AI)
 ====================================================
 */
 
-async function executeWithControlMode(context) {
-  const mode = CONTROL_CONFIG.mode;
+function resolveBusinessQuery(text = "", context = {}) {
+  const t = String(text).toLowerCase();
 
-  // SAFE MODE → solo fallback controlado
-  if (mode === "SAFE") {
-    return {
-      reply:
-        "Con mucho gusto le ayudo 😊 ¿Me podría indicar un poco más sobre lo que necesita?",
-    };
-  }
+  const bc = context.business_context || {};
 
-  // Ejecutar AI
-  const result = await executeAI(context);
-
-  // HYBRID → validar confidence (simple heurística v1)
-  if (mode === "HYBRID") {
-    if (!result.reply || result.reply.length < 10) {
-      return {
-        reply:
-          "Con mucho gusto le ayudo 😊 ¿Podría brindarme un poco más de información?",
-      };
+  // ENVÍOS
+  if (t.includes("envio")) {
+    if (bc?.operations?.delivery === true) {
+      return "Sí, realizamos envíos 🚚 El costo varía según la zona, con gusto te cotizo. ¿En qué ubicación te encuentras?";
+    }
+    if (bc?.operations?.delivery === false) {
+      return "En este momento no realizamos envíos, pero puedes retirar directamente en tienda 😊";
     }
   }
 
-  return result;
+  // SINPE
+  if (t.includes("sinpe")) {
+    if (bc?.payments?.sinpe) {
+      return `Sí, puedes pagar por SINPE al ${bc.payments.sinpe} 👍`;
+    }
+  }
+
+  // UBICACIÓN
+  if (t.includes("donde") || t.includes("ubicacion")) {
+    if (bc?.location?.address) {
+      return `Estamos ubicados en ${bc.location.address} 📍`;
+    }
+  }
+
+  return null;
 }
 
 /*
@@ -101,6 +93,8 @@ async function executeAI(context) {
     promptConfig,
   });
 
+  console.log("🧠 TRACE — PROMPT PREVIEW", prompt.slice(0, 500));
+
   let aiText = null;
 
   try {
@@ -111,6 +105,8 @@ async function executeAI(context) {
   } catch (err) {
     console.error("runAI error", err.message);
   }
+
+  console.log("🧠 TRACE — AI RAW TEXT", aiText);
 
   if (!aiText) {
     return {
@@ -123,6 +119,8 @@ async function executeAI(context) {
     text: aiText,
     agentName: context.assistant.name,
   });
+
+  console.log("🧠 TRACE — FINAL REPLY", formatted);
 
   return {
     reply: formatted,
@@ -169,6 +167,17 @@ export async function handleInbound(payload) {
       phone,
     };
 
+    console.log("🧠 TRACE — CONTEXT", {
+      intent: context.intent,
+      stage: context.stage,
+      known_data: context.known_data,
+      business: {
+        sinpe: context.business_context?.payments?.sinpe,
+        delivery: context.business_context?.operations?.delivery,
+        address: context.business_context?.location?.address,
+      },
+    });
+
     const decision = decideStrategy({
       intent: context.intent,
       stage: context.stage,
@@ -178,13 +187,42 @@ export async function handleInbound(payload) {
 
     context = { ...context, ...decision };
 
+    console.log("🧠 TRACE — STRATEGY", {
+      intent: context.intent,
+      stage: context.stage,
+      strategy: context.strategy,
+    });
+
     /*
     ========================================
-    CONTROL MODE EXECUTION
+    🔥 FACT ROUTER (ANTES DE AI)
     ========================================
     */
 
-    const execution = await executeWithControlMode(context);
+    const factReply = resolveBusinessQuery(text, context);
+
+    if (factReply) {
+      console.log("🧠 TRACE — FACT RESPONSE USED");
+
+      await saveMessage({
+        organization_id,
+        conversation_id: conversation.id,
+        role: "assistant",
+        text: factReply,
+      });
+
+      return {
+        reply: { text: factReply },
+      };
+    }
+
+    /*
+    ========================================
+    AI EXECUTION
+    ========================================
+    */
+
+    const execution = await executeAI(context);
 
     await saveMessage({
       organization_id,
