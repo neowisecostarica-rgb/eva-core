@@ -113,7 +113,7 @@ export async function findOrCreateLead({ organization_id, phone }) {
 
   } catch (err) {
     console.error("❌ findOrCreateLead error:", err);
-    throw err; // 🔥 FIX: no devolver null
+    throw err;
   }
 }
 
@@ -210,7 +210,6 @@ export async function saveMessage({
     }
 
     const content = safe(text);
-
     if (!content) return;
 
     await pool.query(
@@ -247,7 +246,7 @@ export async function saveMessage({
 
 /*
 ====================================================
-SAVE PIPELINE EVENT (FIX JSONB)
+SAVE PIPELINE EVENT (FIXED)
 ====================================================
 */
 
@@ -259,7 +258,7 @@ export async function savePipelineEvent({
   event_data = {},
 }) {
   try {
-    await db.query(
+    await pool.query(
       `
       INSERT INTO pipeline_events (
         organization_id,
@@ -276,7 +275,7 @@ export async function savePipelineEvent({
         conversation_id,
         lead_phone,
         event_type,
-        JSON.stringify(event_data || {}), // 🔥 CLAVE
+        JSON.stringify(event_data || {}),
       ]
     );
   } catch (err) {
@@ -286,15 +285,15 @@ export async function savePipelineEvent({
 
 /*
 ========================================
-UPDATE LEAD STAGE + SCORE
+UPDATE LEAD STAGE + SCORE (BY PHONE)
 ========================================
 */
 
 export async function updateLeadStageAndScore({
   organization_id,
-  lead_id,
-  new_stage,
-  new_score,
+  phone,
+  stage,
+  score,
 }) {
   try {
     assertOrg(organization_id);
@@ -310,10 +309,10 @@ export async function updateLeadStageAndScore({
         score = GREATEST(score, $4),
         last_contact_at = NOW(),
         updated_at = NOW()
-      WHERE id = $1
+      WHERE phone = $1
         AND organization_id = $2
       `,
-      [lead_id, organization_id, new_stage, new_score]
+      [phone, organization_id, stage, score]
     );
 
   } catch (err) {
@@ -323,14 +322,14 @@ export async function updateLeadStageAndScore({
 
 /*
 ========================================
-UPDATE LEAD MEMORY
+UPDATE LEAD MEMORY (BY PHONE)
 ========================================
 */
 
 export async function updateLeadMemory({
   organization_id,
-  lead_id,
-  memory = {},
+  phone,
+  data = {},
 }) {
   try {
     assertOrg(organization_id);
@@ -341,7 +340,7 @@ export async function updateLeadMemory({
       product_interest = null,
       interest_level = null,
       last_intent = null,
-    } = memory;
+    } = data;
 
     await pool.query(
       `
@@ -353,11 +352,11 @@ export async function updateLeadMemory({
         interest_level = COALESCE($6, interest_level),
         last_intent = COALESCE($7, last_intent),
         updated_at = NOW()
-      WHERE id = $1
+      WHERE phone = $1
         AND organization_id = $2
       `,
       [
-        lead_id,
+        phone,
         organization_id,
         budget,
         use_case,
@@ -369,34 +368,6 @@ export async function updateLeadMemory({
 
   } catch (err) {
     console.error("❌ updateLeadMemory error:", err);
-  }
-}
-
-/*
-========================================
-ORG SETTINGS
-========================================
-*/
-
-export async function getOrganizationSettings(organization_id) {
-  try {
-    assertOrg(organization_id);
-
-    const result = await pool.query(
-      `
-      SELECT *
-      FROM organization_settings
-      WHERE organization_id = $1
-      LIMIT 1
-      `,
-      [organization_id]
-    );
-
-    return result.rows[0] || null;
-
-  } catch (err) {
-    console.error("❌ getOrganizationSettings error:", err);
-    return null;
   }
 }
 
