@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — SALES BRAIN (Conversion + Human Flow vNext FINAL + STAGE ENGINE)
+EVA CORE — SALES BRAIN (Conversion Phase FULL FILE)
 ====================================================
 */
 
@@ -8,7 +8,6 @@ import {
   findOrCreateLead,
   findOrCreateConversation,
   saveMessage,
-  savePipelineEvent,
   updateLeadStageAndScore,
   updateLeadMemory,
 } from "./db.js";
@@ -43,7 +42,7 @@ function lowerText(value) {
 
 /*
 ====================================================
-🔥 STAGE ENGINE (CRITICAL)
+🔥 STAGE ENGINE
 ====================================================
 */
 
@@ -52,52 +51,34 @@ function detectStageReal(context = {}, text = "") {
   const known = context.known_data || {};
   const sales = context.sales_context || {};
 
-  // HOT
   if (
     t.includes("apartar") ||
     t.includes("comprar") ||
     t.includes("lo quiero") ||
     t.includes("coordinar")
-  ) {
-    return "HOT";
-  }
+  ) return "HOT";
 
-  // MID
   if (
     t.includes("precio") ||
     t.includes("cuanto") ||
     t.includes("disponible") ||
     sales?.interest_level === "HIGH"
-  ) {
-    return "MID";
-  }
+  ) return "MID";
 
-  // QUALIFYING
-  if (
-    known?.budget ||
-    known?.use_case ||
-    known?.product_interest
-  ) {
+  if (known?.budget || known?.use_case || known?.product_interest)
     return "QUALIFYING";
-  }
 
-  // EARLY
   return "EARLY";
 }
 
 function enforceStage(context, text) {
   const detected = detectStageReal(context, text);
-
-  // nunca retroceder
   const order = ["EARLY", "QUALIFYING", "MID", "HOT", "POST"];
 
   const currentIndex = order.indexOf(context.stage || "EARLY");
   const detectedIndex = order.indexOf(detected);
 
-  if (detectedIndex > currentIndex) {
-    return detected;
-  }
-
+  if (detectedIndex > currentIndex) return detected;
   return context.stage || detected;
 }
 
@@ -126,6 +107,67 @@ function enforceStrategyRequired(strategy, context) {
   }
 
   return strategy;
+}
+
+/*
+====================================================
+🔥 RESPONSE CONTROL (ANTI-DUMP + FLOW)
+====================================================
+*/
+
+function enforceResponseControl(context, text) {
+  let reply = String(text || "").trim();
+  const stage = context.stage;
+  const t = lowerText(reply);
+
+  if (!reply) return reply;
+
+  // 🔴 Anti dump global
+  if (reply.length > 220) {
+    reply = reply.slice(0, 200).trim() + "...";
+  }
+
+  const lines = reply.split("\n").filter(Boolean);
+  if (lines.length > 3) {
+    reply = lines.slice(0, 2).join("\n");
+  }
+
+  // 🔴 EARLY → preguntar siempre
+  if (stage === "EARLY") {
+    if (!reply.includes("?")) {
+      reply += " ¿Para qué uso la necesita?";
+    }
+    if (reply.length > 120) {
+      reply = reply.slice(0, 120).trim();
+    }
+  }
+
+  // 🔴 QUALIFYING → empujar datos
+  if (stage === "QUALIFYING") {
+    if (!reply.includes("?")) {
+      reply += " ¿Qué presupuesto tiene pensado?";
+    }
+  }
+
+  // 🔴 MID → no saturar
+  if (stage === "MID") {
+    if (reply.includes("\n")) {
+      reply = reply.split("\n")[0];
+    }
+  }
+
+  // 🔴 HOT → cierre obligatorio
+  if (stage === "HOT") {
+    if (
+      !t.includes("apartar") &&
+      !t.includes("coordinar") &&
+      !t.includes("entrega")
+    ) {
+      reply += " 👍 Si gusta se lo puedo dejar apartado de una vez.";
+    }
+  }
+
+  return reply.trim();
 }
 
 /*
@@ -182,12 +224,14 @@ async function executeStrategy(context) {
     });
   }
 
-  return {
-    reply: formatAIResponse({
-      text: aiText,
-      agentName: context.assistant.name,
-    }),
-  };
+  let reply = formatAIResponse({
+    text: aiText,
+    agentName: context.assistant.name,
+  });
+
+  reply = enforceResponseControl(context, reply);
+
+  return { reply };
 }
 
 /*
@@ -221,9 +265,17 @@ export async function handleInbound(payload) {
       payload?.context ||
       (await buildContext({ organization_id, phone, text }));
 
-    // 🔥 STAGE CORRECTION
+    context = {
+      ...context,
+      user_message: text,
+      lead_id: lead?.id,
+      conversation_id: conversation?.id,
+    };
+
+    // 🔥 STAGE
     context.stage = enforceStage(context, text);
 
+    // 🔥 STRATEGY
     const decision = decideStrategy({
       intent: context.intent,
       stage: context.stage,
@@ -236,14 +288,38 @@ export async function handleInbound(payload) {
       context
     );
 
+    if (!context.strategy) {
+      throw new Error("Strategy missing");
+    }
+
+    // 🔥 EXECUTION
     const execution = await executeStrategy(context);
 
+    // 🔥 SAVE
     await saveMessage({
       organization_id,
       conversation_id: conversation.id,
       role: "assistant",
       text: execution.reply,
     });
+
+    // 🔥 MEMORY (básica)
+    if (lead?.id) {
+      await updateLeadStageAndScore({
+        organization_id,
+        lead_id: lead.id,
+        new_stage: context.stage.toLowerCase(),
+        new_score: 50,
+      });
+
+      await updateLeadMemory({
+        organization_id,
+        lead_id: lead.id,
+        memory: {
+          last_intent: context.intent,
+        },
+      });
+    }
 
     return {
       reply: { text: execution.reply },
