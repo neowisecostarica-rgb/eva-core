@@ -57,6 +57,33 @@ function lowerText(value) {
 
 /*
 ====================================================
+🔥 STRATEGY ENFORCEMENT (CRITICAL)
+====================================================
+*/
+
+function enforceStrategyRequired(strategy, context) {
+  const validStrategies = [
+    "ASK",
+    "QUALIFY",
+    "EXPLAIN",
+    "RECOMMEND",
+    "CLOSE",
+    "FOLLOWUP",
+    "EXPLAIN_CLOSE",
+    "DEFAULT",
+  ];
+
+  if (!strategy || !validStrategies.includes(strategy)) {
+    if (context.intent === "SERVICE") return "ASK";
+    if (context.intent === "BUY") return "QUALIFY";
+    return "DEFAULT";
+  }
+
+  return strategy;
+}
+
+/*
+====================================================
 🔥 CONVERSION ENFORCEMENT
 ====================================================
 */
@@ -337,7 +364,16 @@ export async function handleInbound(payload) {
       text,
     });
 
-    context = { ...context, ...decision };
+    const enforcedStrategy = enforceStrategyRequired(
+      decision?.strategy,
+      context
+    );
+
+    context = {
+      ...context,
+      ...decision,
+      strategy: enforcedStrategy,
+    };
 
     const signals = detectCommercialSignals(text, context);
     const score = calculateLeadScore(context, signals);
@@ -366,6 +402,10 @@ export async function handleInbound(payload) {
       });
     }
 
+    if (!context.strategy) {
+      throw new Error("Strategy missing — abort");
+    }
+
     const execution = await executeStrategy(context);
 
     await saveMessage({
@@ -385,7 +425,6 @@ export async function handleInbound(payload) {
         interest_level,
       },
     };
-
   } catch (err) {
     console.error(err);
 
