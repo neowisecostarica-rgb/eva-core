@@ -54,37 +54,28 @@ router.post("/outbound", authenticate, async (req, res) => {
       });
     }
 
-    const response = await fetch(
-      `https://graph.facebook.com/v18.0/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          messaging_product: "whatsapp",
-          to: phone,
-          type: "text",
-          text: { body: text },
-        }),
-      }
+    // 🔥 EN VEZ DE ENVIAR DIRECTO → SE USA EL MISMO CIRCUITO
+    await db.query(
+      `
+      INSERT INTO followups (
+        organization_id,
+        lead_phone,
+        reason,
+        due_at,
+        status,
+        created_at,
+        updated_at
+      )
+      VALUES ($1,$2,'manual_outbound',NOW(),'PENDING',NOW(),NOW())
+      `,
+      [organization_id, phone]
     );
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      log.error("WHATSAPP_SEND_FAILED", data);
-
-      return res.status(500).json({
-        error: "WhatsApp send failed",
-      });
-    }
 
     return res.json({
       success: true,
-      data,
+      queued: true,
     });
+
   } catch (err) {
     log.error("OUTBOUND_ERROR", {
       message: err.message,
@@ -182,7 +173,9 @@ router.post("/inbound", authenticate, async (req, res) => {
       );
 
       if (existing.rows.length > 0) {
-        log.warn("DUPLICATE_MESSAGE");
+        log.warn("DUPLICATE_MESSAGE", {
+          message_id: payload.message_id,
+        });
 
         return res.json({
           success: true,
@@ -196,14 +189,14 @@ router.post("/inbound", authenticate, async (req, res) => {
 
     /*
     ========================================
-    CONTEXT (FIX CRÍTICO)
+    CONTEXT
     ========================================
     */
 
     const context = await buildContext({
       organization_id,
       phone: validated.phone,
-      text: validated.text, // 🔥 FIX IMPORTANTE
+      text: validated.text,
     });
 
     log.info("CONTEXT_BUILT", {
@@ -237,17 +230,6 @@ router.post("/inbound", authenticate, async (req, res) => {
         error: "Invalid brain response",
       });
     }
-
-    /*
-    ========================================
-    LOG RESULT
-    ========================================
-    */
-
-    log.info("BRAIN_RESULT", {
-      reply: result?.reply?.text?.slice(0, 80),
-      meta: result?.meta,
-    });
 
     /*
     ========================================
