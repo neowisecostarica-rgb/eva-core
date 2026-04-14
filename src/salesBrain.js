@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — SALES BRAIN (RUNTIME FIXED + REENTRY)
+EVA CORE — SALES BRAIN (ENFORCEMENT FIXED vNEXT)
 ====================================================
 */
 
@@ -45,74 +45,34 @@ function lowerText(v) {
 
 /*
 ====================================================
-🔥 ACTIONS
+🔥 ENFORCEMENT LAYER (CRÍTICO)
 ====================================================
 */
 
-async function registerActions({
-  organization_id,
-  conversation_id,
-  phone,
-  context,
-  text,
-}) {
-  try {
-    const t = lowerText(text);
+function enforceStrategyResponse({ strategy, text, context }) {
+  if (!text) return text;
 
-    const signals = {
-      price_interest: t.includes("precio") || t.includes("cuanto"),
-      buy_signal: t.includes("quiero") || t.includes("comprar"),
-      availability: t.includes("disponible") || t.includes("tienen"),
-    };
+  const lower = lowerText(text);
 
-    if (
-      context.stage === "HOT" ||
-      context.strategy === "CLOSE" ||
-      signals.buy_signal
-    ) {
-      await savePipelineEvent({
-        organization_id,
-        conversation_id,
-        lead_phone: phone,
-        event_type: "HOT_LEAD_DETECTED",
-        event_data: {
-          intent: context.intent,
-          stage: context.stage,
-          strategy: context.strategy,
-          score: context?.sales_context?.lead_score,
-        },
-      });
+  // 🔥 ASK / QUALIFY → debe preguntar
+  if (strategy === "ASK" || strategy === "QUALIFY") {
+    if (!text.includes("?")) {
+      return text + " ¿Me podría indicar un poco más para ayudarle mejor?";
     }
-
-    if (signals.price_interest) {
-      await savePipelineEvent({
-        organization_id,
-        conversation_id,
-        lead_phone: phone,
-        event_type: "PRICE_INTEREST",
-        event_data: {
-          intent: context.intent,
-          stage: context.stage,
-        },
-      });
-    }
-
-    if (signals.availability) {
-      await savePipelineEvent({
-        organization_id,
-        conversation_id,
-        lead_phone: phone,
-        event_type: "AVAILABILITY_CHECK",
-        event_data: {
-          intent: context.intent,
-          stage: context.stage,
-        },
-      });
-    }
-
-  } catch (err) {
-    console.error("registerActions error", err.message);
   }
+
+  // 🔥 CLOSE → debe empujar acción
+  if (strategy === "CLOSE") {
+    if (
+      !lower.includes("coordinar") &&
+      !lower.includes("apartar") &&
+      !lower.includes("envio")
+    ) {
+      return text + " Si gusta, podemos coordinar la entrega o dejarla apartada 😊";
+    }
+  }
+
+  return text;
 }
 
 /*
@@ -149,47 +109,83 @@ async function executeStrategy(context) {
     const ai = await runAI({
       prompt: [{ role: "user", content: prompt }],
     });
-    aiText = ai?.text || ai?.reply || null;
+    aiText = ai?.text || null;
   } catch {}
 
+  /*
+  ========================================
+  🔥 FALLBACK POR STRATEGY
+  ========================================
+  */
+
   if (!aiText) {
+    if (context.strategy === "ASK" || context.strategy === "QUALIFY") {
+      return {
+        reply:
+          "Con mucho gusto le ayudo 😊 ¿Me podría indicar un poco más sobre lo que necesita?",
+      };
+    }
+
+    if (context.strategy === "CLOSE") {
+      return {
+        reply:
+          "Perfecto 😊 Si gusta, podemos coordinar la entrega o dejarlo apartado.",
+      };
+    }
+
     return {
       reply:
-        "Con mucho gusto le ayudo 😊 ¿Me podría indicar un poco más sobre lo que necesita?",
+        "Con mucho gusto le ayudo 😊 ¿En qué le puedo ayudar?",
     };
   }
 
-  // 🔥 CONTROL INTELIGENTE DE PRODUCTOS
+  /*
+  ========================================
+  🔥 PRODUCT ENHANCEMENT
+  ========================================
+  */
 
-const isProductQuery =
-  context.intent === "BUY" ||
-  context.intent === "CLOSE_INTENT";
+  const isProductQuery =
+    context.intent === "BUY" ||
+    context.intent === "CLOSE_INTENT";
 
-const isInfoQuery =
-  context.intent === "INFO" &&
-  (lowerText(context.user_message).includes("laptop") ||
-    lowerText(context.user_message).includes("computadora") ||
-    lowerText(context.user_message).includes("dell") ||
-    lowerText(context.user_message).includes("lenovo"));
+  if (
+    (context.strategy === "RECOMMEND" || context.strategy === "CLOSE") &&
+    isProductQuery
+  ) {
+    aiText = enhanceProductReply({
+      reply: aiText,
+      intent: context.intent,
+      catalogMatches: catalogResults,
+      data: context.sales_context,
+    });
+  }
 
-if (
-  (context.strategy === "RECOMMEND" || context.strategy === "CLOSE") &&
-  (isProductQuery || isInfoQuery)
-) {
-  aiText = enhanceProductReply({
-    reply: aiText,
-    intent: context.intent,
-    catalogMatches: catalogResults,
-    data: context.sales_context,
+  /*
+  ========================================
+  🔥 FORMAT
+  ========================================
+  */
+
+  let formatted = formatAIResponse({
+    text: aiText,
+    agentName: context.assistant.name,
   });
-}
-  
+
+  /*
+  ========================================
+  🔥 ENFORCEMENT FINAL
+  ========================================
+  */
+
+  formatted = enforceStrategyResponse({
+    strategy: context.strategy,
+    text: formatted,
+    context,
+  });
 
   return {
-    reply: formatAIResponse({
-      text: aiText,
-      agentName: context.assistant.name,
-    }),
+    reply: formatted,
   };
 }
 
@@ -215,7 +211,6 @@ export async function handleInbound(payload) {
       channel,
     });
 
-    // 🔥 guardar inbound (idempotencia real)
     await saveMessage({
       organization_id,
       conversation_id: conversation.id,
@@ -236,21 +231,7 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    🔥 CONTROL DE REENTRY (UNIFICADO)
-    ========================================
-    */
-
-    if (context.meta?.is_reentry) {
-      if (context.stage === "EARLY") {
-        context.stage = "MID";
-      }
-
-      context.reentry_mode = true;
-    }
-
-    /*
-    ========================================
-    STRATEGY
+    STRATEGY (MANDATORY)
     ========================================
     */
 
@@ -263,13 +244,13 @@ export async function handleInbound(payload) {
 
     context = { ...context, ...decision };
 
-    const execution = await executeStrategy(context);
-
     /*
     ========================================
-    SAVE RESPONSE
+    EXECUTION
     ========================================
     */
+
+    const execution = await executeStrategy(context);
 
     await saveMessage({
       organization_id,
@@ -277,12 +258,6 @@ export async function handleInbound(payload) {
       role: "assistant",
       text: execution.reply,
     });
-
-    /*
-    ========================================
-    🔥 PERSISTENCIA CRM
-    ========================================
-    */
 
     await updateLeadStageAndScore({
       organization_id,
@@ -297,38 +272,12 @@ export async function handleInbound(payload) {
       data: context.known_data,
     });
 
-    /*
-    ========================================
-    FOLLOWUPS
-    ========================================
-    */
-
     await createFollowupsForConversation({
       organization_id,
       conversation_id: conversation.id,
       phone,
       context,
     });
-
-    /*
-    ========================================
-    ACTIONS
-    ========================================
-    */
-
-    await registerActions({
-      organization_id,
-      conversation_id: conversation.id,
-      phone,
-      context,
-      text,
-    });
-
-    /*
-    ========================================
-    LOG
-    ========================================
-    */
 
     await savePipelineEvent({
       organization_id,
