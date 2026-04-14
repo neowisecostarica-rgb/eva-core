@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — SALES BRAIN (RUNTIME FIXED P0)
+EVA CORE — SALES BRAIN (RUNTIME FIXED + REENTRY)
 ====================================================
 */
 
@@ -198,13 +198,13 @@ export async function handleInbound(payload) {
       channel,
     });
 
-    // 🔥 guardar inbound con message_id (idempotencia real)
+    // 🔥 guardar inbound (idempotencia real)
     await saveMessage({
       organization_id,
       conversation_id: conversation.id,
       role: "user",
       text,
-      external_message_id: message_id,
+      message_id,
     });
 
     let context =
@@ -217,6 +217,26 @@ export async function handleInbound(payload) {
       phone,
     };
 
+    /*
+    ========================================
+    🔥 CONTROL DE REENTRY (UNIFICADO)
+    ========================================
+    */
+
+    if (context.meta?.is_reentry) {
+      if (context.stage === "EARLY") {
+        context.stage = "MID";
+      }
+
+      context.reentry_mode = true;
+    }
+
+    /*
+    ========================================
+    STRATEGY
+    ========================================
+    */
+
     const decision = decideStrategy({
       intent: context.intent,
       stage: context.stage,
@@ -228,7 +248,12 @@ export async function handleInbound(payload) {
 
     const execution = await executeStrategy(context);
 
-    // 🔥 guardar respuesta
+    /*
+    ========================================
+    SAVE RESPONSE
+    ========================================
+    */
+
     await saveMessage({
       organization_id,
       conversation_id: conversation.id,
@@ -236,7 +261,12 @@ export async function handleInbound(payload) {
       text: execution.reply,
     });
 
-    // 🔥 PERSISTENCIA REAL (CRÍTICO)
+    /*
+    ========================================
+    🔥 PERSISTENCIA CRM
+    ========================================
+    */
+
     await updateLeadStageAndScore({
       organization_id,
       phone,
@@ -250,7 +280,12 @@ export async function handleInbound(payload) {
       data: context.known_data,
     });
 
-    // 🔥 FOLLOWUPS (ya con contexto estable)
+    /*
+    ========================================
+    FOLLOWUPS
+    ========================================
+    */
+
     await createFollowupsForConversation({
       organization_id,
       conversation_id: conversation.id,
@@ -258,7 +293,12 @@ export async function handleInbound(payload) {
       context,
     });
 
-    // 🔥 ACTIONS
+    /*
+    ========================================
+    ACTIONS
+    ========================================
+    */
+
     await registerActions({
       organization_id,
       conversation_id: conversation.id,
@@ -267,7 +307,12 @@ export async function handleInbound(payload) {
       text,
     });
 
-    // 🔥 LOG
+    /*
+    ========================================
+    LOG
+    ========================================
+    */
+
     await savePipelineEvent({
       organization_id,
       conversation_id: conversation.id,
