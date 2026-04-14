@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — SALES BRAIN (ENFORCEMENT SAFE vNEXT.2)
+EVA CORE — SALES BRAIN (CONTROL MODE ENFORCED vNEXT.3)
 ====================================================
 */
 
@@ -28,118 +28,56 @@ import { createFollowupsForConversation } from "./followupEngine.js";
 
 /*
 ====================================================
-UTILS
+CONFIG CONTROL MODE (TEMP v1)
+====================================================
+Luego esto se mueve a DB (EvaAiSettings)
+*/
+
+const CONTROL_CONFIG = {
+  mode: "HYBRID", // SAFE | HYBRID | AUTO
+  confidence_threshold: 0.7,
+};
+
+/*
+====================================================
+EXECUTION WITH CONTROL MODE
 ====================================================
 */
 
-function safe(v) {
-  return String(v || "").trim();
-}
+async function executeWithControlMode(context) {
+  const mode = CONTROL_CONFIG.mode;
 
-function lowerText(v) {
-  return safe(v)
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
+  // SAFE MODE → solo fallback controlado
+  if (mode === "SAFE") {
+    return {
+      reply:
+        "Con mucho gusto le ayudo 😊 ¿Me podría indicar un poco más sobre lo que necesita?",
+    };
+  }
+
+  // Ejecutar AI
+  const result = await executeAI(context);
+
+  // HYBRID → validar confidence (simple heurística v1)
+  if (mode === "HYBRID") {
+    if (!result.reply || result.reply.length < 10) {
+      return {
+        reply:
+          "Con mucho gusto le ayudo 😊 ¿Podría brindarme un poco más de información?",
+      };
+    }
+  }
+
+  return result;
 }
 
 /*
 ====================================================
-DETECTORES CLAVE
+AI EXECUTION
 ====================================================
 */
 
-function isTransactionalQuery(text = "") {
-  const t = lowerText(text);
-
-  return (
-    t.includes("pago") ||
-    t.includes("sinpe") ||
-    t.includes("tarjeta") ||
-    t.includes("transferencia") ||
-    t.includes("deposito") ||
-    t.includes("depósito") ||
-    t.includes("cuenta") ||
-    t.includes("iban") ||
-    t.includes("envio") ||
-    t.includes("envíos") ||
-    t.includes("envío") ||
-    t.includes("ubicacion") ||
-    t.includes("ubicación") ||
-    t.includes("direccion") ||
-    t.includes("dirección") ||
-    t.includes("donde estan") ||
-    t.includes("donde están") ||
-    t.includes("donde se ubican") ||
-    t.includes("dónde se ubican") ||
-    t.includes("horario") ||
-    t.includes("garantia") ||
-    t.includes("garantía")
-  );
-}
-
-function isProductIntent(context = {}) {
-  return context.intent === "BUY" || context.intent === "CLOSE_INTENT";
-}
-
-/*
-====================================================
-AI PRODUCT MENTION DETECTOR
-====================================================
-Si la AI ya recomendó un producto concreto, NO debemos
-reemplazarlo con enhanceProductReply.
-====================================================
-*/
-
-function aiAlreadyMentionedConcreteProduct(text = "") {
-  const t = safe(text);
-
-  if (!t) return false;
-
-  const lower = lowerText(t);
-
-  const productSignals = [
-    "lenovo",
-    "dell",
-    "hp",
-    "thinkpad",
-    "latitude",
-    "probook",
-    "elitebook",
-    "yoga",
-    "monitor",
-    "impresora",
-  ];
-
-  const specSignals = [
-    "i3",
-    "i5",
-    "i7",
-    "ryzen",
-    "8gb",
-    "16gb",
-    "32gb",
-    "ssd",
-    "ram",
-    "full hd",
-    "tactil",
-    "táctil",
-  ];
-
-  const hasProductWord = productSignals.some((signal) => lower.includes(signal));
-  const hasSpecWord = specSignals.some((signal) => lower.includes(signal));
-  const hasPrice = /₡\s?\d|crc\s?\d|\b\d{5,7}\b/.test(t);
-
-  return hasProductWord && (hasSpecWord || hasPrice);
-}
-
-/*
-====================================================
-EXECUTION
-====================================================
-*/
-
-async function executeStrategy(context) {
+async function executeAI(context) {
   let catalogResults = [];
 
   if (context.strategy === "RECOMMEND" || context.strategy === "CLOSE") {
@@ -174,52 +112,12 @@ async function executeStrategy(context) {
     console.error("runAI error", err.message);
   }
 
-  /*
-  ========================================
-  FALLBACK INTELIGENTE
-  ========================================
-  */
-
   if (!aiText) {
     return {
       reply:
         "Con mucho gusto le ayudo 😊 ¿Me podría indicar un poco más sobre lo que necesita?",
     };
   }
-
-  /*
-  ========================================
-  FIX CRÍTICO — CONTROL DE PRODUCTOS
-  ========================================
-  */
-
-  const transactional = isTransactionalQuery(context.user_message);
-  const aiMentionedConcreteProduct = aiAlreadyMentionedConcreteProduct(aiText);
-
-  const shouldEnhanceProducts =
-    !transactional &&
-    !aiMentionedConcreteProduct &&
-    (context.strategy === "RECOMMEND" || context.strategy === "CLOSE") &&
-    isProductIntent(context);
-
-  if (shouldEnhanceProducts) {
-    try {
-      aiText = enhanceProductReply({
-        reply: aiText,
-        intent: context.intent,
-        catalogMatches: catalogResults,
-        data: context.sales_context,
-      });
-    } catch (err) {
-      console.error("enhanceProductReply error", err.message);
-    }
-  }
-
-  /*
-  ========================================
-  FORMAT FINAL
-  ========================================
-  */
 
   const formatted = formatAIResponse({
     text: aiText,
@@ -239,10 +137,10 @@ MAIN
 
 export async function handleInbound(payload) {
   try {
-    const organization_id = safe(payload?.organization_id);
-    const phone = safe(payload?.phone);
-    const text = safe(payload?.text);
-    const channel = safe(payload?.channel || "whatsapp");
+    const organization_id = payload?.organization_id;
+    const phone = payload?.phone;
+    const text = payload?.text;
+    const channel = payload?.channel || "whatsapp";
     const message_id = payload?.message_id || null;
 
     await findOrCreateLead({ organization_id, phone });
@@ -271,12 +169,6 @@ export async function handleInbound(payload) {
       phone,
     };
 
-    /*
-    ========================================
-    STRATEGY
-    ========================================
-    */
-
     const decision = decideStrategy({
       intent: context.intent,
       stage: context.stage,
@@ -288,17 +180,11 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    EXECUTION
+    CONTROL MODE EXECUTION
     ========================================
     */
 
-    const execution = await executeStrategy(context);
-
-    /*
-    ========================================
-    SAVE RESPONSE
-    ========================================
-    */
+    const execution = await executeWithControlMode(context);
 
     await saveMessage({
       organization_id,
@@ -306,12 +192,6 @@ export async function handleInbound(payload) {
       role: "assistant",
       text: execution.reply,
     });
-
-    /*
-    ========================================
-    CRM
-    ========================================
-    */
 
     await updateLeadStageAndScore({
       organization_id,
@@ -326,24 +206,12 @@ export async function handleInbound(payload) {
       data: context.known_data,
     });
 
-    /*
-    ========================================
-    FOLLOWUPS
-    ========================================
-    */
-
     await createFollowupsForConversation({
       organization_id,
       conversation_id: conversation.id,
       phone,
       context,
     });
-
-    /*
-    ========================================
-    LOG
-    ========================================
-    */
 
     await savePipelineEvent({
       organization_id,
