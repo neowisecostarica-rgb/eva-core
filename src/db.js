@@ -246,36 +246,41 @@ export async function saveMessage({
 }
 
 /*
-========================================
-PIPELINE EVENTS
-========================================
+====================================================
+SAVE PIPELINE EVENT (FIX JSONB)
+====================================================
 */
 
 export async function savePipelineEvent({
   organization_id,
-  lead_id,
+  conversation_id,
+  lead_phone = null,
   event_type,
-  metadata = {},
+  event_data = {},
 }) {
   try {
-    assertOrg(organization_id);
-
-    await pool.query(
+    await db.query(
       `
       INSERT INTO pipeline_events (
         organization_id,
-        lead_id,
+        conversation_id,
+        lead_phone,
         event_type,
-        metadata,
+        event_data,
         created_at
       )
-      VALUES ($1, $2, $3, $4::jsonb, NOW())
+      VALUES ($1, $2, $3, $4, $5::jsonb, NOW())
       `,
-      [organization_id, lead_id, event_type, JSON.stringify(metadata)]
+      [
+        organization_id,
+        conversation_id,
+        lead_phone,
+        event_type,
+        JSON.stringify(event_data || {}), // 🔥 CLAVE
+      ]
     );
-
   } catch (err) {
-    console.error("❌ savePipelineEvent error:", err);
+    console.error("savePipelineEvent error", err.message);
   }
 }
 
