@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — SALES BRAIN (ENFORCEMENT SAFE vNEXT)
+EVA CORE — SALES BRAIN (ENFORCEMENT SAFE vNEXT.2)
 ====================================================
 */
 
@@ -45,7 +45,7 @@ function lowerText(v) {
 
 /*
 ====================================================
-🔥 DETECTORES CLAVE (NUEVO)
+DETECTORES CLAVE
 ====================================================
 */
 
@@ -57,20 +57,80 @@ function isTransactionalQuery(text = "") {
     t.includes("sinpe") ||
     t.includes("tarjeta") ||
     t.includes("transferencia") ||
+    t.includes("deposito") ||
+    t.includes("depósito") ||
+    t.includes("cuenta") ||
+    t.includes("iban") ||
     t.includes("envio") ||
+    t.includes("envíos") ||
     t.includes("envío") ||
     t.includes("ubicacion") ||
+    t.includes("ubicación") ||
     t.includes("direccion") ||
+    t.includes("dirección") ||
     t.includes("donde estan") ||
-    t.includes("donde se ubican")
+    t.includes("donde están") ||
+    t.includes("donde se ubican") ||
+    t.includes("dónde se ubican") ||
+    t.includes("horario") ||
+    t.includes("garantia") ||
+    t.includes("garantía")
   );
 }
 
 function isProductIntent(context = {}) {
-  return (
-    context.intent === "BUY" ||
-    context.intent === "CLOSE_INTENT"
-  );
+  return context.intent === "BUY" || context.intent === "CLOSE_INTENT";
+}
+
+/*
+====================================================
+AI PRODUCT MENTION DETECTOR
+====================================================
+Si la AI ya recomendó un producto concreto, NO debemos
+reemplazarlo con enhanceProductReply.
+====================================================
+*/
+
+function aiAlreadyMentionedConcreteProduct(text = "") {
+  const t = safe(text);
+
+  if (!t) return false;
+
+  const lower = lowerText(t);
+
+  const productSignals = [
+    "lenovo",
+    "dell",
+    "hp",
+    "thinkpad",
+    "latitude",
+    "probook",
+    "elitebook",
+    "yoga",
+    "monitor",
+    "impresora",
+  ];
+
+  const specSignals = [
+    "i3",
+    "i5",
+    "i7",
+    "ryzen",
+    "8gb",
+    "16gb",
+    "32gb",
+    "ssd",
+    "ram",
+    "full hd",
+    "tactil",
+    "táctil",
+  ];
+
+  const hasProductWord = productSignals.some((signal) => lower.includes(signal));
+  const hasSpecWord = specSignals.some((signal) => lower.includes(signal));
+  const hasPrice = /₡\s?\d|crc\s?\d|\b\d{5,7}\b/.test(t);
+
+  return hasProductWord && (hasSpecWord || hasPrice);
 }
 
 /*
@@ -89,7 +149,9 @@ async function executeStrategy(context) {
           organization_id: context.organization.id,
           text: context.user_message,
         })) || [];
-    } catch {}
+    } catch (err) {
+      console.error("searchCatalog error", err.message);
+    }
   }
 
   const promptConfig = await getPromptConfig(context.organization.id);
@@ -108,7 +170,9 @@ async function executeStrategy(context) {
       prompt: [{ role: "user", content: prompt }],
     });
     aiText = ai?.text || null;
-  } catch {}
+  } catch (err) {
+    console.error("runAI error", err.message);
+  }
 
   /*
   ========================================
@@ -125,14 +189,16 @@ async function executeStrategy(context) {
 
   /*
   ========================================
-  🔥 FIX CRÍTICO — CONTROL DE PRODUCTOS
+  FIX CRÍTICO — CONTROL DE PRODUCTOS
   ========================================
   */
 
   const transactional = isTransactionalQuery(context.user_message);
+  const aiMentionedConcreteProduct = aiAlreadyMentionedConcreteProduct(aiText);
 
   const shouldEnhanceProducts =
     !transactional &&
+    !aiMentionedConcreteProduct &&
     (context.strategy === "RECOMMEND" || context.strategy === "CLOSE") &&
     isProductIntent(context);
 
@@ -179,7 +245,7 @@ export async function handleInbound(payload) {
     const channel = safe(payload?.channel || "whatsapp");
     const message_id = payload?.message_id || null;
 
-    const lead = await findOrCreateLead({ organization_id, phone });
+    await findOrCreateLead({ organization_id, phone });
 
     const conversation = await findOrCreateConversation({
       organization_id,
@@ -296,14 +362,12 @@ export async function handleInbound(payload) {
     return {
       reply: { text: execution.reply },
     };
-
   } catch (err) {
     console.error(err);
 
     return {
       reply: {
-        text:
-          "Con mucho gusto le ayudo 😊 ¿Me podría repetir su consulta?",
+        text: "Con mucho gusto le ayudo 😊 ¿Me podría repetir su consulta?",
       },
     };
   }
