@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — PROMPT BUILDER (SOT ENFORCED vFINAL)
+EVA CORE — PROMPT BUILDER (CONTROLLED EXPANSION vNEXT)
 ====================================================
 */
 
@@ -68,24 +68,46 @@ export function buildPrompt({
 
   /*
   ====================================================
-  🔥 SOT ENFORCEMENT (CLAVE)
+  🔥 SOT FUERTE (MEJORADO)
   ====================================================
   */
 
   const sotRules = `
-REGLA CRÍTICA (NO ROMPER):
-- La información del negocio proporcionada es la fuente oficial
-- NUNCA contradigas esos datos
-- NUNCA inventes información diferente
-- SI el cliente pregunta algo relacionado con:
-  pagos, ubicación, envíos, horarios, garantía
-  → RESPONDE usando esos datos EXACTAMENTE
-- NO uses conocimiento general si existe información del negocio
+REGLAS CRÍTICAS (NO ROMPER):
+
+1. La información del negocio es la única fuente válida
+2. NUNCA contradigas esos datos
+3. NUNCA inventes información
+4. Si NO tienes un dato → dilo claramente (no lo inventes)
+
+CASOS CRÍTICOS:
+- pagos
+- envíos
+- ubicación
+- horarios
+- garantía
+
+→ RESPONDE SOLO con datos del negocio
+→ Si falta información → pide confirmación
 `;
 
   /*
   ====================================================
-  🔥 BUSINESS CONTEXT (FUENTE DE VERDAD)
+  🔥 CONTROL DE MEMORIA (NUEVO)
+  ====================================================
+  */
+
+  const memoryRules = `
+REGLA DE MEMORIA:
+
+- NO vuelvas a preguntar información que ya el cliente dio
+- Usa los datos ya conocidos para avanzar
+- Si el cliente repite molestia → corrige tu comportamiento
+`;
+
+  /*
+  ====================================================
+  🔥 BUSINESS CONTEXT
   ====================================================
   */
 
@@ -93,35 +115,39 @@ REGLA CRÍTICA (NO ROMPER):
 DATOS OFICIALES DEL NEGOCIO:
 
 Ubicación:
-Dirección: ${business_context?.location?.address || "N/A"}
-Ciudad: ${business_context?.location?.city || "N/A"}
-País: ${business_context?.location?.country || "N/A"}
+Dirección: ${business_context?.location?.address || "NO DISPONIBLE"}
 
 Pagos:
-SINPE: ${business_context?.payments?.sinpe || "N/A"}
-Banco: ${business_context?.payments?.bank_name || "N/A"}
-Cuenta colones: ${business_context?.payments?.account_colones || "N/A"}
-IBAN colones: ${business_context?.payments?.iban_colones || "N/A"}
+SINPE: ${business_context?.payments?.sinpe || "NO DISPONIBLE"}
+Banco: ${business_context?.payments?.bank_name || "NO DISPONIBLE"}
+Cuenta: ${business_context?.payments?.account_colones || "NO DISPONIBLE"}
+IBAN: ${business_context?.payments?.iban_colones || "NO DISPONIBLE"}
 Tarjeta: ${business_context?.payments?.accepts_card ? "Sí" : "No"}
 
 Operación:
 Envíos: ${business_context?.operations?.delivery ? "Sí" : "No"}
 Retiro: ${business_context?.operations?.pickup ? "Sí" : "No"}
-Horarios: ${JSON.stringify(
-    business_context?.operations?.hours || {}
-  )}
-
-Políticas:
-Garantía: ${business_context?.policies?.warranty || "N/A"}
-Envíos: ${business_context?.policies?.shipping || "N/A"}
-
-Notas:
-${business_context?.commercial?.notes || ""}
 `;
 
   /*
   ====================================================
-  🔥 IDENTITY
+  🔥 CONTROL DE LONGITUD DINÁMICO (CLAVE)
+  ====================================================
+  */
+
+  const lengthControl = `
+CONTROL DE RESPUESTA:
+
+- EARLY → respuestas cortas + pregunta
+- MID → explicación breve + guía
+- HOT → puede ser más completo + cierre
+
+NUNCA saturar con información innecesaria
+`;
+
+  /*
+  ====================================================
+  IDENTITY
   ====================================================
   */
 
@@ -130,8 +156,8 @@ ${business_context?.commercial?.notes || ""}
 
   const identityBlock =
     isFirstMessage
-      ? `Inicia SIEMPRE presentándote: "Hola 😊 le saluda ${agentName} de ${businessName}."`
-      : `No repitas tu presentación. Continúa la conversación de forma natural.`;
+      ? `Inicia SIEMPRE: "Hola 😊 le saluda ${agentName} de ${businessName}."`
+      : `Continúa la conversación sin repetir presentación`;
 
   /*
   ====================================================
@@ -142,26 +168,11 @@ ${business_context?.commercial?.notes || ""}
   const strategyBlock = `
 Estrategia actual: ${strategy}
 
-Reglas:
-- ASK / QUALIFY → hacer preguntas
+Acción:
+- ASK → preguntar
+- QUALIFY → entender
 - RECOMMEND → sugerir
 - CLOSE → cerrar
-- FOLLOWUP → reactivar
-- EXPLAIN → explicar
-`;
-
-  /*
-  ====================================================
-  STYLE
-  ====================================================
-  */
-
-  const styleRules = `
-Reglas de comunicación:
-- Máximo 1 emoji
-- Mensajes cortos
-- Lenguaje claro
-- Siempre cerrar en acción
 `;
 
   /*
@@ -175,15 +186,16 @@ ${identityBlock}
 
 ${sotRules}
 
+${memoryRules}
+
 ${strategyBlock}
 
-${styleRules}
+${lengthControl}
 
 ${customInstructions}
 
 Contexto:
 Empresa: ${businessName}
-Asistente: ${agentName}
 
 ${businessBlock}
 
@@ -199,6 +211,6 @@ ${catalogText}
 Mensaje:
 "${context.user_message}"
 
-Responde correctamente usando los datos del negocio cuando aplique.
+Responde de forma inteligente y coherente.
 `;
 }
