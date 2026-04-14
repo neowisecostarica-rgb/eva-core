@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — SALES BRAIN (ENFORCEMENT FIXED vNEXT)
+EVA CORE — SALES BRAIN (ENFORCEMENT SAFE vNEXT)
 ====================================================
 */
 
@@ -45,34 +45,32 @@ function lowerText(v) {
 
 /*
 ====================================================
-🔥 ENFORCEMENT LAYER (CRÍTICO)
+🔥 DETECTORES CLAVE (NUEVO)
 ====================================================
 */
 
-function enforceStrategyResponse({ strategy, text, context }) {
-  if (!text) return text;
+function isTransactionalQuery(text = "") {
+  const t = lowerText(text);
 
-  const lower = lowerText(text);
+  return (
+    t.includes("pago") ||
+    t.includes("sinpe") ||
+    t.includes("tarjeta") ||
+    t.includes("transferencia") ||
+    t.includes("envio") ||
+    t.includes("envío") ||
+    t.includes("ubicacion") ||
+    t.includes("direccion") ||
+    t.includes("donde estan") ||
+    t.includes("donde se ubican")
+  );
+}
 
-  // 🔥 ASK / QUALIFY → debe preguntar
-  if (strategy === "ASK" || strategy === "QUALIFY") {
-    if (!text.includes("?")) {
-      return text + " ¿Me podría indicar un poco más para ayudarle mejor?";
-    }
-  }
-
-  // 🔥 CLOSE → debe empujar acción
-  if (strategy === "CLOSE") {
-    if (
-      !lower.includes("coordinar") &&
-      !lower.includes("apartar") &&
-      !lower.includes("envio")
-    ) {
-      return text + " Si gusta, podemos coordinar la entrega o dejarla apartada 😊";
-    }
-  }
-
-  return text;
+function isProductIntent(context = {}) {
+  return (
+    context.intent === "BUY" ||
+    context.intent === "CLOSE_INTENT"
+  );
 }
 
 /*
@@ -114,74 +112,52 @@ async function executeStrategy(context) {
 
   /*
   ========================================
-  🔥 FALLBACK POR STRATEGY
+  FALLBACK INTELIGENTE
   ========================================
   */
 
   if (!aiText) {
-    if (context.strategy === "ASK" || context.strategy === "QUALIFY") {
-      return {
-        reply:
-          "Con mucho gusto le ayudo 😊 ¿Me podría indicar un poco más sobre lo que necesita?",
-      };
-    }
-
-    if (context.strategy === "CLOSE") {
-      return {
-        reply:
-          "Perfecto 😊 Si gusta, podemos coordinar la entrega o dejarlo apartado.",
-      };
-    }
-
     return {
       reply:
-        "Con mucho gusto le ayudo 😊 ¿En qué le puedo ayudar?",
+        "Con mucho gusto le ayudo 😊 ¿Me podría indicar un poco más sobre lo que necesita?",
     };
   }
 
   /*
   ========================================
-  🔥 PRODUCT ENHANCEMENT
+  🔥 FIX CRÍTICO — CONTROL DE PRODUCTOS
   ========================================
   */
 
-  const isProductQuery =
-    context.intent === "BUY" ||
-    context.intent === "CLOSE_INTENT";
+  const transactional = isTransactionalQuery(context.user_message);
 
-  if (
+  const shouldEnhanceProducts =
+    !transactional &&
     (context.strategy === "RECOMMEND" || context.strategy === "CLOSE") &&
-    isProductQuery
-  ) {
-    aiText = enhanceProductReply({
-      reply: aiText,
-      intent: context.intent,
-      catalogMatches: catalogResults,
-      data: context.sales_context,
-    });
+    isProductIntent(context);
+
+  if (shouldEnhanceProducts) {
+    try {
+      aiText = enhanceProductReply({
+        reply: aiText,
+        intent: context.intent,
+        catalogMatches: catalogResults,
+        data: context.sales_context,
+      });
+    } catch (err) {
+      console.error("enhanceProductReply error", err.message);
+    }
   }
 
   /*
   ========================================
-  🔥 FORMAT
+  FORMAT FINAL
   ========================================
   */
 
-  let formatted = formatAIResponse({
+  const formatted = formatAIResponse({
     text: aiText,
     agentName: context.assistant.name,
-  });
-
-  /*
-  ========================================
-  🔥 ENFORCEMENT FINAL
-  ========================================
-  */
-
-  formatted = enforceStrategyResponse({
-    strategy: context.strategy,
-    text: formatted,
-    context,
   });
 
   return {
@@ -231,7 +207,7 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    STRATEGY (MANDATORY)
+    STRATEGY
     ========================================
     */
 
@@ -252,12 +228,24 @@ export async function handleInbound(payload) {
 
     const execution = await executeStrategy(context);
 
+    /*
+    ========================================
+    SAVE RESPONSE
+    ========================================
+    */
+
     await saveMessage({
       organization_id,
       conversation_id: conversation.id,
       role: "assistant",
       text: execution.reply,
     });
+
+    /*
+    ========================================
+    CRM
+    ========================================
+    */
 
     await updateLeadStageAndScore({
       organization_id,
@@ -272,12 +260,24 @@ export async function handleInbound(payload) {
       data: context.known_data,
     });
 
+    /*
+    ========================================
+    FOLLOWUPS
+    ========================================
+    */
+
     await createFollowupsForConversation({
       organization_id,
       conversation_id: conversation.id,
       phone,
       context,
     });
+
+    /*
+    ========================================
+    LOG
+    ========================================
+    */
 
     await savePipelineEvent({
       organization_id,
