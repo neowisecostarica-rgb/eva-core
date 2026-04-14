@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — SALES BRAIN (Conversion + Human Flow vNext FINAL)
+EVA CORE — SALES BRAIN (Conversion + Human Flow vNext FINAL + STAGE ENGINE)
 ====================================================
 */
 
@@ -34,20 +34,6 @@ function safe(value) {
   return String(value || "").trim();
 }
 
-function clampText(text, max = 320) {
-  const clean = safe(text).replace(/\s+/g, " ");
-  if (!clean) return "";
-  if (clean.length <= max) return clean;
-  return clean.slice(0, max - 1).trim() + "…";
-}
-
-function hasValue(v) {
-  if (v === null || v === undefined) return false;
-  if (typeof v === "string") return v.trim().length > 0;
-  if (Array.isArray(v)) return v.length > 0;
-  return true;
-}
-
 function lowerText(value) {
   return safe(value)
     .toLowerCase()
@@ -57,12 +43,72 @@ function lowerText(value) {
 
 /*
 ====================================================
-🔥 STRATEGY ENFORCEMENT (CRITICAL)
+🔥 STAGE ENGINE (CRITICAL)
+====================================================
+*/
+
+function detectStageReal(context = {}, text = "") {
+  const t = lowerText(text);
+  const known = context.known_data || {};
+  const sales = context.sales_context || {};
+
+  // HOT
+  if (
+    t.includes("apartar") ||
+    t.includes("comprar") ||
+    t.includes("lo quiero") ||
+    t.includes("coordinar")
+  ) {
+    return "HOT";
+  }
+
+  // MID
+  if (
+    t.includes("precio") ||
+    t.includes("cuanto") ||
+    t.includes("disponible") ||
+    sales?.interest_level === "HIGH"
+  ) {
+    return "MID";
+  }
+
+  // QUALIFYING
+  if (
+    known?.budget ||
+    known?.use_case ||
+    known?.product_interest
+  ) {
+    return "QUALIFYING";
+  }
+
+  // EARLY
+  return "EARLY";
+}
+
+function enforceStage(context, text) {
+  const detected = detectStageReal(context, text);
+
+  // nunca retroceder
+  const order = ["EARLY", "QUALIFYING", "MID", "HOT", "POST"];
+
+  const currentIndex = order.indexOf(context.stage || "EARLY");
+  const detectedIndex = order.indexOf(detected);
+
+  if (detectedIndex > currentIndex) {
+    return detected;
+  }
+
+  return context.stage || detected;
+}
+
+/*
+====================================================
+🔥 STRATEGY ENFORCEMENT
 ====================================================
 */
 
 function enforceStrategyRequired(strategy, context) {
-  const validStrategies = [
+  const valid = [
     "ASK",
     "QUALIFY",
     "EXPLAIN",
@@ -73,181 +119,13 @@ function enforceStrategyRequired(strategy, context) {
     "DEFAULT",
   ];
 
-  if (!strategy || !validStrategies.includes(strategy)) {
+  if (!strategy || !valid.includes(strategy)) {
     if (context.intent === "SERVICE") return "ASK";
     if (context.intent === "BUY") return "QUALIFY";
     return "DEFAULT";
   }
 
   return strategy;
-}
-
-/*
-====================================================
-🔥 CONVERSION ENFORCEMENT
-====================================================
-*/
-
-function enforceConversionRules(context, text) {
-  const stage = context.stage;
-  const strategy = context.strategy;
-  const t = lowerText(text);
-
-  if (stage === "EARLY") {
-    if (t.includes("₡") || t.includes("precio") || t.includes("tenemos")) {
-      return "Con mucho gusto le ayudo 😊 ¿Para qué uso la necesita?";
-    }
-  }
-
-  if (strategy === "QUALIFY") {
-    if (!text.includes("?")) {
-      return text + " ¿Qué presupuesto tiene pensado?";
-    }
-  }
-
-  if (stage === "MID") {
-    const lines = text.split("\n");
-    if (lines.length > 3) {
-      return lines[0];
-    }
-  }
-
-  if (stage === "HOT") {
-    if (
-      !t.includes("apartar") &&
-      !t.includes("coordinar") &&
-      !t.includes("entrega")
-    ) {
-      return text + " 👍 Si gusta se lo puedo dejar apartado de una vez.";
-    }
-  }
-
-  return text;
-}
-
-/*
-====================================================
-🔥 HUMAN FLOW ENGINE
-====================================================
-*/
-
-function enforceHumanFlow(context, text) {
-  let reply = String(text || "").trim();
-  if (!reply) return reply;
-
-  const stage = context.stage;
-
-  if (reply.length > 220) {
-    reply = reply.slice(0, 220).trim() + "...";
-  }
-
-  const sentences = reply.split(/[.!?]/).filter(Boolean);
-
-  if (sentences.length > 3) {
-    reply = sentences.slice(0, 2).join(".") + ".";
-  }
-
-  if (stage === "EARLY") {
-    if (!reply.includes("?")) {
-      reply += " ¿Para qué uso la necesita?";
-    }
-    if (reply.length > 120) {
-      reply = reply.slice(0, 120).trim();
-    }
-  }
-
-  if (stage === "QUALIFYING") {
-    if (!reply.includes("?")) {
-      reply += " ¿Qué presupuesto tiene pensado?";
-    }
-  }
-
-  if (stage === "MID") {
-    if (reply.includes("\n")) {
-      reply = reply.split("\n")[0];
-    }
-  }
-
-  if (stage === "HOT") {
-    if (!reply.includes("¿")) {
-      reply += " ¿Le gustaría que se la deje apartada?";
-    }
-  }
-
-  reply = reply
-    .replace(/usted puede/g, "puede")
-    .replace(/le podemos/g, "le puedo")
-    .replace(/le ayudaremos/g, "le ayudo");
-
-  return reply.trim();
-}
-
-/*
-====================================================
-COMMERCIAL SIGNALS
-====================================================
-*/
-
-function detectCommercialSignals(text = "", context = {}) {
-  const t = lowerText(text);
-  const known = context?.known_data || {};
-  const current = context?.current_turn_known_data || {};
-  const salesContext = context?.sales_context || {};
-
-  return {
-    price_interest: t.includes("precio") || t.includes("cuanto"),
-    availability_check: t.includes("disponible") || t.includes("tienen"),
-    buy_signal: t.includes("quiero") || t.includes("comprar"),
-    budget_detected:
-      hasValue(current?.budget) || hasValue(known?.budget),
-    product_interest_detected:
-      hasValue(current?.product_interest) ||
-      hasValue(known?.product_interest),
-    use_case_detected:
-      hasValue(current?.use_case) || hasValue(known?.use_case),
-    high_intent:
-      String(salesContext?.interest_level || "LOW").toUpperCase() ===
-        "HIGH" || t.includes("quiero"),
-  };
-}
-
-function calculateLeadScore(context = {}, signals = {}) {
-  let score = 0;
-
-  if (context.intent === "BUY") score += 20;
-  if (signals.price_interest) score += 10;
-  if (signals.availability_check) score += 10;
-  if (signals.budget_detected) score += 15;
-  if (signals.product_interest_detected) score += 15;
-  if (signals.use_case_detected) score += 10;
-  if (signals.buy_signal) score += 20;
-  if (signals.high_intent) score += 20;
-
-  return Math.min(score, 100);
-}
-
-function mapInterestLevel(score = 0) {
-  if (score >= 70) return "HIGH";
-  if (score >= 40) return "MEDIUM";
-  return "LOW";
-}
-
-/*
-====================================================
-SAFE CONTEXT
-====================================================
-*/
-
-function ensureContext(context = {}) {
-  return {
-    organization: context.organization || { id: null },
-    assistant: context.assistant || { name: "Asistente" },
-    intent: context.intent || "UNKNOWN",
-    stage: context.stage || "EARLY",
-    known_data: context.known_data || {},
-    history: context.history || [],
-    ...context,
-  };
 }
 
 /*
@@ -292,7 +170,6 @@ async function executeStrategy(context) {
     return {
       reply:
         "Con mucho gusto le ayudo 😊 ¿Me podría indicar un poco más sobre lo que necesita?",
-      catalogResults,
     };
   }
 
@@ -305,17 +182,11 @@ async function executeStrategy(context) {
     });
   }
 
-  let reply = formatAIResponse({
-    text: aiText,
-    agentName: context.assistant.name,
-  });
-
-  reply = enforceConversionRules(context, reply);
-  reply = enforceHumanFlow(context, reply);
-
   return {
-    reply: clampText(reply),
-    catalogResults,
+    reply: formatAIResponse({
+      text: aiText,
+      agentName: context.assistant.name,
+    }),
   };
 }
 
@@ -350,12 +221,8 @@ export async function handleInbound(payload) {
       payload?.context ||
       (await buildContext({ organization_id, phone, text }));
 
-    context = ensureContext({
-      ...context,
-      user_message: text,
-      lead_id: lead?.id,
-      conversation_id: conversation?.id,
-    });
+    // 🔥 STAGE CORRECTION
+    context.stage = enforceStage(context, text);
 
     const decision = decideStrategy({
       intent: context.intent,
@@ -364,47 +231,10 @@ export async function handleInbound(payload) {
       text,
     });
 
-    const enforcedStrategy = enforceStrategyRequired(
+    context.strategy = enforceStrategyRequired(
       decision?.strategy,
       context
     );
-
-    context = {
-      ...context,
-      ...decision,
-      strategy: enforcedStrategy,
-    };
-
-    const signals = detectCommercialSignals(text, context);
-    const score = calculateLeadScore(context, signals);
-    const interest_level = mapInterestLevel(score);
-
-    context.sales_context = {
-      interest_level,
-      lead_score: score,
-    };
-
-    if (lead?.id) {
-      await updateLeadStageAndScore({
-        organization_id,
-        lead_id: lead.id,
-        new_stage: context.stage.toLowerCase(),
-        new_score: score,
-      });
-
-      await updateLeadMemory({
-        organization_id,
-        lead_id: lead.id,
-        memory: {
-          interest_level,
-          last_intent: context.intent,
-        },
-      });
-    }
-
-    if (!context.strategy) {
-      throw new Error("Strategy missing — abort");
-    }
 
     const execution = await executeStrategy(context);
 
@@ -421,10 +251,9 @@ export async function handleInbound(payload) {
         intent: context.intent,
         stage: context.stage,
         strategy: context.strategy,
-        score,
-        interest_level,
       },
     };
+
   } catch (err) {
     console.error(err);
 
