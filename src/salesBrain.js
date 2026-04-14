@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — SALES BRAIN (Actions Integrated FINAL)
+EVA CORE — SALES BRAIN (RUNTIME FIXED P0)
 ====================================================
 */
 
@@ -45,7 +45,7 @@ function lowerText(v) {
 
 /*
 ====================================================
-🔥 ACTIONS (INTEGRADO)
+🔥 ACTIONS
 ====================================================
 */
 
@@ -65,7 +65,6 @@ async function registerActions({
       availability: t.includes("disponible") || t.includes("tienen"),
     };
 
-    // 🔥 HOT LEAD
     if (
       context.stage === "HOT" ||
       context.strategy === "CLOSE" ||
@@ -85,7 +84,6 @@ async function registerActions({
       });
     }
 
-    // 🔥 PRICE INTEREST
     if (signals.price_interest) {
       await savePipelineEvent({
         organization_id,
@@ -99,7 +97,6 @@ async function registerActions({
       });
     }
 
-    // 🔥 AVAILABILITY
     if (signals.availability) {
       await savePipelineEvent({
         organization_id,
@@ -190,20 +187,24 @@ export async function handleInbound(payload) {
     const organization_id = safe(payload?.organization_id);
     const phone = safe(payload?.phone);
     const text = safe(payload?.text);
+    const channel = safe(payload?.channel || "whatsapp");
+    const message_id = payload?.message_id || null;
 
     const lead = await findOrCreateLead({ organization_id, phone });
 
     const conversation = await findOrCreateConversation({
       organization_id,
       phone,
-      channel: "whatsapp",
+      channel,
     });
 
+    // 🔥 guardar inbound con message_id (idempotencia real)
     await saveMessage({
       organization_id,
       conversation_id: conversation.id,
       role: "user",
       text,
+      external_message_id: message_id,
     });
 
     let context =
@@ -227,6 +228,7 @@ export async function handleInbound(payload) {
 
     const execution = await executeStrategy(context);
 
+    // 🔥 guardar respuesta
     await saveMessage({
       organization_id,
       conversation_id: conversation.id,
@@ -234,7 +236,21 @@ export async function handleInbound(payload) {
       text: execution.reply,
     });
 
-    // 🔥 FOLLOWUPS
+    // 🔥 PERSISTENCIA REAL (CRÍTICO)
+    await updateLeadStageAndScore({
+      organization_id,
+      phone,
+      stage: context.stage,
+      score: context?.sales_context?.lead_score || 0,
+    });
+
+    await updateLeadMemory({
+      organization_id,
+      phone,
+      data: context.known_data,
+    });
+
+    // 🔥 FOLLOWUPS (ya con contexto estable)
     await createFollowupsForConversation({
       organization_id,
       conversation_id: conversation.id,
@@ -242,7 +258,7 @@ export async function handleInbound(payload) {
       context,
     });
 
-    // 🔥 ACTIONS INTEGRADAS
+    // 🔥 ACTIONS
     await registerActions({
       organization_id,
       conversation_id: conversation.id,
@@ -251,7 +267,7 @@ export async function handleInbound(payload) {
       text,
     });
 
-    // 🔥 LOG PRINCIPAL
+    // 🔥 LOG
     await savePipelineEvent({
       organization_id,
       conversation_id: conversation.id,
