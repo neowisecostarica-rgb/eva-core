@@ -274,6 +274,68 @@ export async function handleInbound(payload) {
     console.log("🧠 TRACE — SCORE", scoreResult);
 
     /*
+====================================================
+PIPELINE EVENTS (COMMERCIAL SIGNALS)
+====================================================
+*/
+
+// SCORE UPDATED
+await savePipelineEvent({
+  organization_id,
+  conversation_id: conversation.id,
+  lead_phone: phone,
+  event_type: "SCORE_UPDATED",
+  event_data: {
+    score: scoreResult.score,
+    label: scoreResult.label,
+    signals: scoreResult.signals,
+  },
+});
+
+// STAGE UPDATED (solo si cambia)
+const previousStage = context?.lead?.stage || null;
+const newStage = context.stage || scoreResult.stage_suggested;
+
+if (previousStage !== newStage) {
+  await savePipelineEvent({
+    organization_id,
+    conversation_id: conversation.id,
+    lead_phone: phone,
+    event_type: "STAGE_UPDATED",
+    event_data: {
+      from: previousStage,
+      to: newStage,
+    },
+  });
+}
+
+// HIGH INTENT
+if (scoreResult.score >= 65) {
+  await savePipelineEvent({
+    organization_id,
+    conversation_id: conversation.id,
+    lead_phone: phone,
+    event_type: "HIGH_INTENT",
+    event_data: {
+      score: scoreResult.score,
+    },
+  });
+}
+
+// READY TO CLOSE
+if (scoreResult.score >= 85) {
+  await savePipelineEvent({
+    organization_id,
+    conversation_id: conversation.id,
+    lead_phone: phone,
+    event_type: "READY_TO_CLOSE",
+    event_data: {
+      score: scoreResult.score,
+    },
+  });
+}
+    
+    /*
     ========================================
     UPDATE LEAD (NOW USING SCORE ENGINE)
     ========================================
