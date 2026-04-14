@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — SALES BRAIN (Stage Lock FULL FILE)
+EVA CORE — SALES BRAIN (Action Engine FULL FILE)
 ====================================================
 */
 
@@ -23,7 +23,9 @@ import { buildPrompt } from "./brain/utils/promptBuilder.js";
 import { runAI } from "./brain/engines/aiEngine.js";
 import { getPromptConfig } from "./brain/utils/getPromptConfig.js";
 import { formatAIResponse } from "./brain/utils/responseFormatter.js";
+
 import { createFollowupsForConversation } from "./followupEngine.js";
+import { executeActions } from "./actionEngine.js";
 
 /*
 ====================================================
@@ -280,7 +282,6 @@ function detectStageReal(context = {}, text = "", signals = {}) {
     t.includes("apartar") ||
     t.includes("apártelo") ||
     t.includes("apartemelo") ||
-    t.includes("apartar") ||
     t.includes("coordinar") ||
     t.includes("me lo dejo") ||
     t.includes("me la dejo")
@@ -307,7 +308,6 @@ function detectStageReal(context = {}, text = "", signals = {}) {
   }
 
   if (intent === "GREETING") return "EARLY";
-
   if (intent === "BUY") return "QUALIFYING";
 
   return "EARLY";
@@ -461,6 +461,7 @@ async function logExecution({
   context,
   text,
   reply,
+  actions = [],
 }) {
   try {
     await savePipelineEvent({
@@ -478,6 +479,7 @@ async function logExecution({
         interest_level: context?.sales_context?.interest_level,
         lead_score: context?.sales_context?.lead_score,
         test_mode: context?.test_mode || false,
+        actions: actions.map((a) => a.type),
       },
     });
   } catch (err) {
@@ -646,20 +648,30 @@ export async function handleInbound(payload) {
       role: "assistant",
       text: execution.reply,
     });
-    
-await createFollowupsForConversation({
-  organization_id,
-  conversation_id: conversation.id,
-  phone,
-  context,
-});
-    
+
+    await createFollowupsForConversation({
+      organization_id,
+      conversation_id: conversation.id,
+      phone,
+      context,
+    });
+
+    const actions = await executeActions({
+      organization_id,
+      conversation_id: conversation.id,
+      phone,
+      lead_id: lead?.id,
+      context,
+      text,
+    });
+
     await logExecution({
       organization_id,
       conversation_id: conversation.id,
       context,
       text,
       reply: execution.reply,
+      actions,
     });
 
     if (!testMode && lead?.id) {
@@ -691,6 +703,7 @@ await createFollowupsForConversation({
         interest_level: context?.sales_context?.interest_level,
         score: context?.sales_context?.lead_score,
         test_mode: testMode,
+        actions: actions.map((a) => a.type),
       },
     };
   } catch (err) {
