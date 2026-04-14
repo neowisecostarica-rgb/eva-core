@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — SALES BRAIN (Conversion Phase FULL FILE)
+EVA CORE — SALES BRAIN (Conversion + Memory Control FULL FILE)
 ====================================================
 */
 
@@ -38,6 +38,30 @@ function lowerText(value) {
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
+}
+
+/*
+====================================================
+🔥 MEMORY CONTROL (CRITICAL)
+====================================================
+*/
+
+function isTestMode(payload = {}) {
+  return (
+    payload?.test_mode === true ||
+    payload?.sandbox === true ||
+    payload?.ignore_memory === true
+  );
+}
+
+function sanitizeContextForTest(context = {}) {
+  return {
+    ...context,
+    stage: "EARLY",
+    known_data: {},
+    history: [],
+    sales_context: {},
+  };
 }
 
 /*
@@ -111,7 +135,7 @@ function enforceStrategyRequired(strategy, context) {
 
 /*
 ====================================================
-🔥 RESPONSE CONTROL (ANTI-DUMP + FLOW)
+🔥 RESPONSE CONTROL
 ====================================================
 */
 
@@ -122,7 +146,6 @@ function enforceResponseControl(context, text) {
 
   if (!reply) return reply;
 
-  // 🔴 Anti dump global
   if (reply.length > 220) {
     reply = reply.slice(0, 200).trim() + "...";
   }
@@ -132,7 +155,6 @@ function enforceResponseControl(context, text) {
     reply = lines.slice(0, 2).join("\n");
   }
 
-  // 🔴 EARLY → preguntar siempre
   if (stage === "EARLY") {
     if (!reply.includes("?")) {
       reply += " ¿Para qué uso la necesita?";
@@ -142,21 +164,18 @@ function enforceResponseControl(context, text) {
     }
   }
 
-  // 🔴 QUALIFYING → empujar datos
   if (stage === "QUALIFYING") {
     if (!reply.includes("?")) {
       reply += " ¿Qué presupuesto tiene pensado?";
     }
   }
 
-  // 🔴 MID → no saturar
   if (stage === "MID") {
     if (reply.includes("\n")) {
       reply = reply.split("\n")[0];
     }
   }
 
-  // 🔴 HOT → cierre obligatorio
   if (stage === "HOT") {
     if (
       !t.includes("apartar") &&
@@ -246,6 +265,8 @@ export async function handleInbound(payload) {
     const phone = safe(payload?.phone);
     const text = safe(payload?.text);
 
+    const testMode = isTestMode(payload);
+
     const lead = await findOrCreateLead({ organization_id, phone });
 
     const conversation = await findOrCreateConversation({
@@ -272,6 +293,11 @@ export async function handleInbound(payload) {
       conversation_id: conversation?.id,
     };
 
+    // 🔥 MEMORY CONTROL
+    if (testMode) {
+      context = sanitizeContextForTest(context);
+    }
+
     // 🔥 STAGE
     context.stage = enforceStage(context, text);
 
@@ -292,10 +318,8 @@ export async function handleInbound(payload) {
       throw new Error("Strategy missing");
     }
 
-    // 🔥 EXECUTION
     const execution = await executeStrategy(context);
 
-    // 🔥 SAVE
     await saveMessage({
       organization_id,
       conversation_id: conversation.id,
@@ -303,8 +327,8 @@ export async function handleInbound(payload) {
       text: execution.reply,
     });
 
-    // 🔥 MEMORY (básica)
-    if (lead?.id) {
+    // 🔥 SOLO guardar memoria si NO es test
+    if (!testMode && lead?.id) {
       await updateLeadStageAndScore({
         organization_id,
         lead_id: lead.id,
@@ -327,6 +351,7 @@ export async function handleInbound(payload) {
         intent: context.intent,
         stage: context.stage,
         strategy: context.strategy,
+        test_mode: testMode,
       },
     };
 
