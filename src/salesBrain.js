@@ -361,6 +361,48 @@ if (scoreResult.score >= 85) {
       context,
     });
 
+    /*
+====================================================
+🔥 SMART FOLLOWUP BOOST (AUTOMATION)
+====================================================
+*/
+
+if (scoreResult.score >= 85) {
+  await savePipelineEvent({
+    organization_id,
+    conversation_id: conversation.id,
+    lead_phone: phone,
+    event_type: "AUTO_CLOSE_TRIGGER",
+    event_data: {
+      reason: "high_score",
+      score: scoreResult.score,
+    },
+  });
+
+  await createFollowupsForConversation({
+    organization_id,
+    conversation_id: conversation.id,
+    phone,
+    context: {
+      ...context,
+      force_followup: true,
+      delay_hours: 0.5, // 30 min
+    },
+  });
+}
+
+if (scoreResult.score >= 65 && scoreResult.score < 85) {
+  await createFollowupsForConversation({
+    organization_id,
+    conversation_id: conversation.id,
+    phone,
+    context: {
+      ...context,
+      delay_hours: 2,
+    },
+  });
+}
+    
     await savePipelineEvent({
       organization_id,
       conversation_id: conversation.id,
