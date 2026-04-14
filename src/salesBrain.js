@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — SALES BRAIN (Conversion + Memory Control FULL FILE)
+EVA CORE — SALES BRAIN (Conversion + Memory + Logs FULL FILE)
 ====================================================
 */
 
@@ -8,6 +8,7 @@ import {
   findOrCreateLead,
   findOrCreateConversation,
   saveMessage,
+  savePipelineEvent,
   updateLeadStageAndScore,
   updateLeadMemory,
 } from "./db.js";
@@ -42,7 +43,7 @@ function lowerText(value) {
 
 /*
 ====================================================
-🔥 MEMORY CONTROL (CRITICAL)
+🔥 MEMORY CONTROL
 ====================================================
 */
 
@@ -191,6 +192,42 @@ function enforceResponseControl(context, text) {
 
 /*
 ====================================================
+🔥 LOGGING ENGINE
+====================================================
+*/
+
+async function logExecution({
+  organization_id,
+  conversation_id,
+  lead_id,
+  context,
+  text,
+  reply,
+}) {
+  try {
+    await savePipelineEvent({
+      organization_id,
+      conversation_id,
+      lead_phone: context?.phone || null,
+      event_type: "MESSAGE_PROCESSED",
+      event_data: {
+        user_input: text,
+        reply,
+        intent: context.intent,
+        stage: context.stage,
+        strategy: context.strategy,
+        interest_level: context?.sales_context?.interest_level,
+        lead_score: context?.sales_context?.lead_score,
+        test_mode: context?.test_mode || false,
+      },
+    });
+  } catch (err) {
+    console.warn("logExecution failed", err.message);
+  }
+}
+
+/*
+====================================================
 EXECUTION
 ====================================================
 */
@@ -291,9 +328,10 @@ export async function handleInbound(payload) {
       user_message: text,
       lead_id: lead?.id,
       conversation_id: conversation?.id,
+      phone,
+      test_mode: testMode,
     };
 
-    // 🔥 MEMORY CONTROL
     if (testMode) {
       context = sanitizeContextForTest(context);
     }
@@ -327,13 +365,23 @@ export async function handleInbound(payload) {
       text: execution.reply,
     });
 
-    // 🔥 SOLO guardar memoria si NO es test
+    // 🔥 LOG
+    await logExecution({
+      organization_id,
+      conversation_id: conversation.id,
+      lead_id: lead?.id,
+      context,
+      text,
+      reply: execution.reply,
+    });
+
+    // 🔥 MEMORY
     if (!testMode && lead?.id) {
       await updateLeadStageAndScore({
         organization_id,
         lead_id: lead.id,
         new_stage: context.stage.toLowerCase(),
-        new_score: 50,
+        new_score: context?.sales_context?.lead_score || 50,
       });
 
       await updateLeadMemory({
@@ -341,6 +389,7 @@ export async function handleInbound(payload) {
         lead_id: lead.id,
         memory: {
           last_intent: context.intent,
+          interest_level: context?.sales_context?.interest_level,
         },
       });
     }
@@ -351,6 +400,8 @@ export async function handleInbound(payload) {
         intent: context.intent,
         stage: context.stage,
         strategy: context.strategy,
+        interest_level: context?.sales_context?.interest_level,
+        score: context?.sales_context?.lead_score,
         test_mode: testMode,
       },
     };
