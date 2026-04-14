@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — METRICS ROUTES (Sales Radar + Conversion vNext)
+EVA CORE — METRICS ROUTES (Sales Radar + Conversion + Dashboard vNext)
 ====================================================
 */
 
@@ -20,16 +20,8 @@ router.get("/summary", async (req, res) => {
     const organization_id = req.organization?.id;
 
     if (!organization_id) {
-      return res.status(401).json({
-        error: "Unauthorized",
-      });
+      return res.status(401).json({ error: "Unauthorized" });
     }
-
-    /*
-    ========================================
-    BASE COUNTS
-    ========================================
-    */
 
     const leadsResult = await pool.query(
       `SELECT COUNT(*) FROM leads WHERE organization_id = $1`,
@@ -46,12 +38,6 @@ router.get("/summary", async (req, res) => {
       [organization_id]
     );
 
-    /*
-    ========================================
-    PIPELINE EVENTS
-    ========================================
-    */
-
     const eventsResult = await pool.query(
       `
       SELECT event_type, COUNT(*) as count
@@ -67,51 +53,28 @@ router.get("/summary", async (req, res) => {
       eventMap[row.event_type] = Number(row.count);
     }
 
-    /*
-    ========================================
-    FUNNEL (REAL)
-    ========================================
-    */
-
     const intents = eventMap["intent_detected"] || 0;
-    const highIntent = eventMap["high_intent"] || 0;
-    const priceInterest = eventMap["price_interest"] || 0;
+    const highIntent = eventMap["HIGH_INTENT"] || 0;
     const followups = eventMap["followup_created"] || 0;
 
-    /*
-    ========================================
-    CONVERSION RATES
-    ========================================
-    */
-
     const leadCount = Number(leadsResult.rows[0].count || 0);
-    const conversationCount = Number(conversationsResult.rows[0].count || 0);
 
     const intentRate = leadCount ? intents / leadCount : 0;
     const highIntentRate = intents ? highIntent / intents : 0;
-
-    /*
-    ========================================
-    RESPONSE
-    ========================================
-    */
 
     return res.json({
       success: true,
       data: {
         counts: {
           leads: leadCount,
-          conversations: conversationCount,
+          conversations: Number(conversationsResult.rows[0].count || 0),
           messages: Number(messagesResult.rows[0].count || 0),
         },
-
         funnel: {
           intents,
           high_intent: highIntent,
-          price_interest: priceInterest,
           followups,
         },
-
         conversion: {
           intent_rate: Number(intentRate.toFixed(2)),
           high_intent_rate: Number(highIntentRate.toFixed(2)),
@@ -121,9 +84,7 @@ router.get("/summary", async (req, res) => {
 
   } catch (err) {
     console.error("METRICS SUMMARY ERROR", err);
-    return res.status(500).json({
-      error: "internal_error",
-    });
+    return res.status(500).json({ error: "internal_error" });
   }
 });
 
@@ -138,16 +99,8 @@ router.get("/radar", async (req, res) => {
     const organization_id = req.organization?.id;
 
     if (!organization_id) {
-      return res.status(401).json({
-        error: "Unauthorized",
-      });
+      return res.status(401).json({ error: "Unauthorized" });
     }
-
-    /*
-    ========================================
-    DEMANDA POR PRODUCTO (REAL)
-    ========================================
-    */
 
     const demandResult = await pool.query(
       `
@@ -161,12 +114,6 @@ router.get("/radar", async (req, res) => {
       [organization_id]
     );
 
-    /*
-    ========================================
-    USO (USE CASE)
-    ========================================
-    */
-
     const useCaseResult = await pool.query(
       `
       SELECT use_case, COUNT(*) as count
@@ -179,12 +126,6 @@ router.get("/radar", async (req, res) => {
       [organization_id]
     );
 
-    /*
-    ========================================
-    PRESUPUESTO DETECTADO
-    ========================================
-    */
-
     const budgetResult = await pool.query(
       `
       SELECT COUNT(*) 
@@ -194,12 +135,6 @@ router.get("/radar", async (req, res) => {
       `,
       [organization_id]
     );
-
-    /*
-    ========================================
-    RESPONSE
-    ========================================
-    */
 
     return res.json({
       success: true,
@@ -212,9 +147,89 @@ router.get("/radar", async (req, res) => {
 
   } catch (err) {
     console.error("RADAR ERROR", err);
-    return res.status(500).json({
-      error: "internal_error",
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+/*
+====================================================
+🔥 DASHBOARD — COMMERCIAL INTELLIGENCE
+====================================================
+*/
+
+router.get("/dashboard", async (req, res) => {
+  try {
+    const organization_id = req.organization?.id;
+
+    if (!organization_id) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const scoreDist = await pool.query(`
+      SELECT
+        CASE
+          WHEN score >= 85 THEN 'READY'
+          WHEN score >= 65 THEN 'HOT'
+          WHEN score >= 40 THEN 'WARM'
+          ELSE 'COLD'
+        END as bucket,
+        COUNT(*) as total
+      FROM leads
+      WHERE organization_id = $1
+      GROUP BY bucket
+    `, [organization_id]);
+
+    const activeLeads = await pool.query(`
+      SELECT COUNT(*) as total
+      FROM leads
+      WHERE organization_id = $1
+      AND last_contact_at > NOW() - INTERVAL '24 hours'
+    `, [organization_id]);
+
+    const riskLeads = await pool.query(`
+      SELECT COUNT(*) as total
+      FROM leads
+      WHERE organization_id = $1
+      AND last_contact_at < NOW() - INTERVAL '48 hours'
+    `, [organization_id]);
+
+    const readyLeads = await pool.query(`
+      SELECT COUNT(*) as total
+      FROM leads
+      WHERE organization_id = $1
+      AND score >= 85
+    `, [organization_id]);
+
+    const stageDist = await pool.query(`
+      SELECT stage, COUNT(*) as total
+      FROM leads
+      WHERE organization_id = $1
+      GROUP BY stage
+    `, [organization_id]);
+
+    const recentEvents = await pool.query(`
+      SELECT event_type, COUNT(*) as total
+      FROM pipeline_events
+      WHERE organization_id = $1
+      AND created_at > NOW() - INTERVAL '24 hours'
+      GROUP BY event_type
+    `, [organization_id]);
+
+    return res.json({
+      success: true,
+      data: {
+        score_distribution: scoreDist.rows,
+        active_leads: Number(activeLeads.rows[0]?.total || 0),
+        at_risk_leads: Number(riskLeads.rows[0]?.total || 0),
+        ready_to_close: Number(readyLeads.rows[0]?.total || 0),
+        stage_distribution: stageDist.rows,
+        recent_events: recentEvents.rows,
+      },
     });
+
+  } catch (err) {
+    console.error("DASHBOARD ERROR", err);
+    return res.status(500).json({ error: "internal_error" });
   }
 });
 
