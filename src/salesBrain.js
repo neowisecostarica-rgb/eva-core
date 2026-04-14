@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — SALES BRAIN (TRACE + FACT ROUTER + SETUP MONITOR vNEXT.7)
+EVA CORE — SALES BRAIN (TRACE + FACT ROUTER + SETUP MONITOR vNEXT.8)
 ====================================================
 */
 
@@ -24,12 +24,6 @@ import { getPromptConfig } from "./brain/utils/getPromptConfig.js";
 import { formatAIResponse } from "./brain/utils/responseFormatter.js";
 
 import { createFollowupsForConversation } from "./followupEngine.js";
-
-/*
-====================================================
-🔥 SCORE ENGINE (NEW OWNER)
-====================================================
-*/
 import { calculateScore } from "./brain/engines/scoreEngine.js";
 
 /*
@@ -96,8 +90,6 @@ async function executeAI(context) {
     promptConfig,
   });
 
-  console.log("🧠 TRACE — PROMPT PREVIEW", prompt.slice(0, 500));
-
   let aiText = null;
 
   try {
@@ -108,8 +100,6 @@ async function executeAI(context) {
   } catch (err) {
     console.error("runAI error", err.message);
   }
-
-  console.log("🧠 TRACE — AI RAW TEXT", aiText);
 
   if (!aiText) {
     return {
@@ -123,11 +113,7 @@ async function executeAI(context) {
     agentName: context.assistant.name,
   });
 
-  console.log("🧠 TRACE — FINAL REPLY", formatted);
-
-  return {
-    reply: formatted,
-  };
+  return { reply: formatted };
 }
 
 /*
@@ -170,39 +156,6 @@ export async function handleInbound(payload) {
       phone,
     };
 
-    console.log("🧠 TRACE — CONTEXT", {
-      intent: context.intent,
-      stage: context.stage,
-      known_data: context.known_data,
-      business: {
-        sinpe: context.business_context?.payments?.sinpe,
-        delivery: context.business_context?.operations?.delivery,
-        address: context.business_context?.location?.address,
-      },
-    });
-
-    /*
-    ========================================
-    🔥 SETUP MONITOR (NO BLOQUEA)
-    ========================================
-    */
-
-    if (!context?.meta?.is_ready) {
-      console.log("🧠 TRACE — SETUP INCOMPLETE", {
-        missing: context.meta?.missing_setup_fields || [],
-      });
-
-      await savePipelineEvent({
-        organization_id,
-        conversation_id: conversation.id,
-        lead_phone: phone,
-        event_type: "SETUP_INCOMPLETE",
-        event_data: {
-          missing_fields: context.meta?.missing_setup_fields || [],
-        },
-      });
-    }
-
     const decision = decideStrategy({
       intent: context.intent,
       stage: context.stage,
@@ -212,23 +165,9 @@ export async function handleInbound(payload) {
 
     context = { ...context, ...decision };
 
-    console.log("🧠 TRACE — STRATEGY", {
-      intent: context.intent,
-      stage: context.stage,
-      strategy: context.strategy,
-    });
-
-    /*
-    ========================================
-    FACT ROUTER
-    ========================================
-    */
-
     const factReply = resolveBusinessQuery(text, context);
 
     if (factReply) {
-      console.log("🧠 TRACE — FACT RESPONSE USED");
-
       await saveMessage({
         organization_id,
         conversation_id: conversation.id,
@@ -236,16 +175,8 @@ export async function handleInbound(payload) {
         text: factReply,
       });
 
-      return {
-        reply: { text: factReply },
-      };
+      return { reply: { text: factReply } };
     }
-
-    /*
-    ========================================
-    AI EXECUTION
-    ========================================
-    */
 
     const execution = await executeAI(context);
 
@@ -258,86 +189,34 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    🔥 SCORE ENGINE (NEW SYSTEM)
+    SCORE ENGINE
     ========================================
     */
-
-    const lastMessages = []; // dejamos vacío por ahora (bloque futuro)
 
     const scoreResult = calculateScore({
       lead: context?.lead || {},
       context,
-      lastMessages,
+      lastMessages: [],
       now: Date.now(),
     });
 
-    console.log("🧠 TRACE — SCORE", scoreResult);
-
-    /*
-====================================================
-PIPELINE EVENTS (COMMERCIAL SIGNALS)
-====================================================
-*/
-
-// SCORE UPDATED
-await savePipelineEvent({
-  organization_id,
-  conversation_id: conversation.id,
-  lead_phone: phone,
-  event_type: "SCORE_UPDATED",
-  event_data: {
-    score: scoreResult.score,
-    label: scoreResult.label,
-    signals: scoreResult.signals,
-  },
-});
-
-// STAGE UPDATED (solo si cambia)
-const previousStage = context?.lead?.stage || null;
-const newStage = context.stage || scoreResult.stage_suggested;
-
-if (previousStage !== newStage) {
-  await savePipelineEvent({
-    organization_id,
-    conversation_id: conversation.id,
-    lead_phone: phone,
-    event_type: "STAGE_UPDATED",
-    event_data: {
-      from: previousStage,
-      to: newStage,
-    },
-  });
-}
-
-// HIGH INTENT
-if (scoreResult.score >= 65) {
-  await savePipelineEvent({
-    organization_id,
-    conversation_id: conversation.id,
-    lead_phone: phone,
-    event_type: "HIGH_INTENT",
-    event_data: {
-      score: scoreResult.score,
-    },
-  });
-}
-
-// READY TO CLOSE
-if (scoreResult.score >= 85) {
-  await savePipelineEvent({
-    organization_id,
-    conversation_id: conversation.id,
-    lead_phone: phone,
-    event_type: "READY_TO_CLOSE",
-    event_data: {
-      score: scoreResult.score,
-    },
-  });
-}
-    
     /*
     ========================================
-    UPDATE LEAD (NOW USING SCORE ENGINE)
+    PIPELINE EVENTS
+    ========================================
+    */
+
+    await savePipelineEvent({
+      organization_id,
+      conversation_id: conversation.id,
+      lead_phone: phone,
+      event_type: "SCORE_UPDATED",
+      event_data: scoreResult,
+    });
+
+    /*
+    ========================================
+    UPDATE LEAD
     ========================================
     */
 
@@ -354,74 +233,72 @@ if (scoreResult.score >= 85) {
       data: context.known_data,
     });
 
-    await createFollowupsForConversation({
-      organization_id,
-      conversation_id: conversation.id,
-      phone,
-      context,
-    });
-
     /*
-====================================================
-🔥 SMART FOLLOWUP BOOST (AUTOMATION)
-====================================================
-*/
+    ========================================
+    SMART FOLLOWUP + AUTO CLOSE
+    ========================================
+    */
 
-if (scoreResult.score >= 85) {
-  await savePipelineEvent({
-    organization_id,
-    conversation_id: conversation.id,
-    lead_phone: phone,
-    event_type: "AUTO_CLOSE_TRIGGER",
-    event_data: {
-      reason: "high_score",
-      score: scoreResult.score,
-    },
-  });
+    if (scoreResult.score >= 85) {
+      await savePipelineEvent({
+        organization_id,
+        conversation_id: conversation.id,
+        lead_phone: phone,
+        event_type: "AUTO_CLOSE_TRIGGER",
+        event_data: { score: scoreResult.score },
+      });
 
-  await createFollowupsForConversation({
-    organization_id,
-    conversation_id: conversation.id,
-    phone,
-    context: {
-      ...context,
-      force_followup: true,
-      delay_hours: 0.5, // 30 min
-    },
-  });
-}
+      await saveMessage({
+        organization_id,
+        conversation_id: conversation.id,
+        role: "assistant",
+        text: "¡Perfecto! 🙌 Podemos dejarlo apartado de una vez y coordinamos 👍",
+      });
 
-if (scoreResult.score >= 65 && scoreResult.score < 85) {
-  await createFollowupsForConversation({
-    organization_id,
-    conversation_id: conversation.id,
-    phone,
-    context: {
-      ...context,
-      delay_hours: 2,
-    },
-  });
-}
-    
+      await createFollowupsForConversation({
+        organization_id,
+        conversation_id: conversation.id,
+        phone,
+        context: {
+          ...context,
+          delay_hours: 0.5,
+        },
+      });
+
+    } else if (scoreResult.score >= 65) {
+      await createFollowupsForConversation({
+        organization_id,
+        conversation_id: conversation.id,
+        phone,
+        context: {
+          ...context,
+          delay_hours: 2,
+        },
+      });
+
+    } else {
+      await createFollowupsForConversation({
+        organization_id,
+        conversation_id: conversation.id,
+        phone,
+        context,
+      });
+    }
+
     await savePipelineEvent({
       organization_id,
       conversation_id: conversation.id,
       lead_phone: phone,
       event_type: "MESSAGE_PROCESSED",
       event_data: {
-        user_input: text,
-        reply: execution.reply,
+        score: scoreResult.score,
+        label: scoreResult.label,
         intent: context.intent,
         stage: context.stage,
-        strategy: context.strategy,
-        score: scoreResult.score,
-        score_label: scoreResult.label,
       },
     });
 
-    return {
-      reply: { text: execution.reply },
-    };
+    return { reply: { text: execution.reply } };
 
   } catch (err) {
     console.error(err);
