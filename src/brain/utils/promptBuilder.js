@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — PROMPT BUILDER (Identity Injection FULL FILE)
+EVA CORE — PROMPT BUILDER (SOT BUSINESS AWARE vNext)
 ====================================================
 */
 
@@ -17,6 +17,7 @@ export function buildPrompt({
     organization,
     assistant,
     known_data = {},
+    business_context = {}, // 🔥 NUEVO
   } = context || {};
 
   const agentName =
@@ -64,6 +65,56 @@ export function buildPrompt({
           )
           .join("\n")
       : "No hay productos disponibles para esta consulta.";
+
+  /*
+  ====================================================
+  🔥 BUSINESS CONTEXT (SOT)
+  ====================================================
+  */
+
+  const businessBlock = `
+Información del negocio (usar SOLO si es relevante):
+
+Ubicación:
+- Dirección: ${business_context?.location?.address || "N/A"}
+- Ciudad: ${business_context?.location?.city || "N/A"}
+- País: ${business_context?.location?.country || "N/A"}
+
+Pagos:
+- SINPE: ${business_context?.payments?.sinpe || "N/A"}
+- Banco: ${business_context?.payments?.bank_name || "N/A"}
+- Cuenta colones: ${business_context?.payments?.account_colones || "N/A"}
+- IBAN colones: ${business_context?.payments?.iban_colones || "N/A"}
+- Tarjeta: ${business_context?.payments?.accepts_card ? "Sí" : "No"}
+
+Operación:
+- Envíos: ${business_context?.operations?.delivery ? "Sí" : "No"}
+- Retiro: ${business_context?.operations?.pickup ? "Sí" : "No"}
+- Horarios: ${JSON.stringify(
+    business_context?.operations?.hours || {}
+  )}
+
+Políticas:
+- Garantía: ${business_context?.policies?.warranty || "N/A"}
+- Envíos: ${business_context?.policies?.shipping || "N/A"}
+
+Notas comerciales:
+${business_context?.commercial?.notes || ""}
+`;
+
+  /*
+  ====================================================
+  🔥 REGLA CRÍTICA DE USO
+  ====================================================
+  */
+
+  const usageRules = `
+Reglas de uso de información del negocio:
+- NO mencionar todo esto automáticamente
+- SOLO usarlo si el cliente lo pregunta o es necesario para cerrar
+- Priorizar conversación, no saturar
+- Responder directo a la intención del cliente
+`;
 
   /*
   ====================================================
@@ -124,11 +175,15 @@ ${strategyBlock}
 
 ${styleRules}
 
+${usageRules}
+
 ${customInstructions}
 
 Contexto del negocio:
 - Empresa: ${businessName}
 - Asistente: ${agentName}
+
+${businessBlock}
 
 Datos conocidos del cliente:
 ${JSON.stringify(known_data, null, 2)}
