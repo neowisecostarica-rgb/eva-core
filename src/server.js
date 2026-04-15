@@ -86,6 +86,14 @@ app.use("/v1/products", authenticate, productsRoutes);
 
 /*
 ====================================================
+SETUP (BUSINESS + EVA PERSONA)
+====================================================
+*/
+import setupRoutes from "./routes/setup.js";
+
+app.use("/v1/setup", setupRoutes);
+/*
+====================================================
 DASHBOARD APIs
 ====================================================
 */
