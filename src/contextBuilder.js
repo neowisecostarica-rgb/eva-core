@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — CONTEXT BUILDER (PERSONA ENABLED vNEXT)
+EVA CORE — CONTEXT BUILDER (PERSONA + STRATEGY READY)
 ====================================================
 */
 
@@ -89,7 +89,7 @@ function detectKnownData(text = "") {
 
 /*
 ====================================================
-PERSONA BUILDER (NEW)
+PERSONA BUILDER
 ====================================================
 */
 
@@ -159,7 +159,7 @@ export async function buildContext({
   try {
     /*
     ========================================
-    CORE
+    CORE DATA
     ========================================
     */
 
@@ -188,7 +188,7 @@ export async function buildContext({
 
     /*
     ========================================
-    HISTORY + TIME
+    HISTORY
     ========================================
     */
 
@@ -259,12 +259,6 @@ export async function buildContext({
       }
     }
 
-    /*
-    ========================================
-    CONTEXT TYPE
-    ========================================
-    */
-
     let conversation_type = "new";
 
     if (history.length > 0 && !is_reentry) {
@@ -277,7 +271,7 @@ export async function buildContext({
 
     /*
     ========================================
-    MERGE DATA
+    DATA MERGE
     ========================================
     */
 
@@ -293,7 +287,7 @@ export async function buildContext({
 
     /*
     ========================================
-    PERSONA (NEW)
+    PERSONA
     ========================================
     */
 
@@ -310,53 +304,13 @@ export async function buildContext({
       type: business?.business_type || null,
       phone: business?.phone || null,
 
-      location: {
-        address:
-          business?.address ||
-          business?.location_address ||
-          null,
-        city: business?.city || null,
-        country: business?.country || null,
-        maps: business?.google_maps_url || null,
-      },
-
       payments: {
-        sinpe:
-          business?.sinpe_number ||
-          business?.sinpe ||
-          null,
+        sinpe: business?.sinpe_number || null,
         bank_name: business?.bank_name ?? null,
-        account_colones:
-          business?.account_colones ||
-          business?.account_crc ||
-          null,
-        iban_colones: business?.iban_colones ?? null,
-        account_usd: business?.account_usd ?? null,
-        iban_usd: business?.iban_usd ?? null,
-        owner: business?.account_owner ?? null,
-        accepts_card: business?.accepts_card ?? null,
       },
 
       operations: {
-        delivery:
-          business?.delivery_available ??
-          business?.delivery ??
-          null,
-        pickup:
-          business?.pickup_available ??
-          business?.pickup ??
-          null,
-        hours: business?.working_hours ?? null,
-      },
-
-      policies: {
-        warranty: business?.warranty_info ?? null,
-        shipping: business?.shipping_info ?? null,
-      },
-
-      commercial: {
-        cta: business?.main_cta ?? null,
-        notes: business?.sales_notes ?? null,
+        delivery: business?.delivery_available ?? null,
       },
     };
 
@@ -368,6 +322,30 @@ export async function buildContext({
 
     const missing_setup_fields = getMissingSetupFields(business);
     const is_ready = missing_setup_fields.length === 0;
+
+    /*
+    ====================================================
+    STRATEGY INPUTS (NEW — CORE INTELLIGENCE)
+    ====================================================
+    */
+
+    const strategy_inputs = {
+      has_problem: !!known_data.problem,
+      has_budget: !!known_data.budget,
+      has_product_interest: !!known_data.product_interest,
+
+      readiness_level:
+        lead?.score >= 80
+          ? "HIGH"
+          : lead?.score >= 40
+          ? "MEDIUM"
+          : "LOW",
+
+      conversation_goal:
+        config?.objective || "SELL",
+
+      is_service_flow: !!known_data.problem,
+    };
 
     /*
     ========================================
@@ -388,13 +366,15 @@ export async function buildContext({
           "Asistente",
       },
 
-      persona, // 🔥 NUEVO
+      persona,
 
       intent: detectIntent(text),
 
       stage: lead?.stage || "EARLY",
 
       known_data,
+
+      strategy_inputs, // 🔥 NUEVO
 
       user_message: safe(text),
 
@@ -415,13 +395,14 @@ export async function buildContext({
         missing_setup_fields,
       },
     };
+
   } catch (err) {
     console.error("❌ CONTEXT ERROR", err);
 
     return {
       organization: { id: organization_id, business_name: "el negocio" },
       assistant: { name: "Asistente" },
-      persona: {}, // 🔥 NUEVO
+      persona: {},
       intent: detectIntent(text),
       stage: "EARLY",
       known_data: {
@@ -430,6 +411,7 @@ export async function buildContext({
         product_interest: null,
         problem: null,
       },
+      strategy_inputs: {}, // 🔥 fallback seguro
       user_message: safe(text),
       sales_context: {
         interest_level: "LOW",
@@ -442,9 +424,7 @@ export async function buildContext({
         is_reentry: false,
         hours_since_last_message: null,
         is_ready: false,
-        missing_setup_fields: [
-          "configuración base del negocio",
-        ],
+        missing_setup_fields: ["configuración base del negocio"],
       },
     };
   }
