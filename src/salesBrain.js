@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — SALES BRAIN (SCORE INTELLIGENCE vNEXT.11)
+EVA CORE — SALES BRAIN (STRATEGY INTELLIGENCE vNEXT)
 ====================================================
 */
 
@@ -15,8 +15,6 @@ import {
 
 import { decideStrategy } from "./brain/engines/strategyEngine.js";
 import { buildContext } from "./contextBuilder.js";
-
-import { searchCatalogSmart as searchCatalog } from "./brain/commerce/catalogEngine.js";
 
 import { buildPrompt } from "./brain/utils/promptBuilder.js";
 import { runAI } from "./brain/engines/aiEngine.js";
@@ -42,7 +40,7 @@ function classifyScore(score) {
 
 /*
 ====================================================
-AI (MISMO BLOQUE 3)
+AI EXECUTION
 ====================================================
 */
 
@@ -118,7 +116,7 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    STRATEGY
+    STRATEGY (REAL — WITH STRATEGY INPUTS)
     ========================================
     */
 
@@ -126,10 +124,14 @@ export async function handleInbound(payload) {
       intent: context.intent,
       stage: context.stage,
       known_data: context.known_data,
+      strategy_inputs: context.strategy_inputs, // 🔥 NUEVO
       text,
     });
 
-    context = { ...context, ...decision };
+    context = {
+      ...context,
+      strategy: decision?.strategy || "DEFAULT",
+    };
 
     /*
     ========================================
@@ -148,7 +150,7 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    PIPELINE EVENTS (NEW)
+    PIPELINE EVENTS
     ========================================
     */
 
@@ -212,7 +214,7 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    FOLLOWUPS (INTELIGENTE)
+    FOLLOWUPS
     ========================================
     */
 
