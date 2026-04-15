@@ -1,27 +1,19 @@
 /*
 ====================================================
-EVA CORE — FOLLOWUP ENGINE (CREATION ONLY - FIXED)
+EVA CORE — FOLLOWUP ENGINE (INTELLIGENT)
 ====================================================
 */
 
 import db from "./db.js";
 
-/*
-====================================================
-SCHEDULE FOLLOWUP
-====================================================
-*/
-
 export async function scheduleFollowup({
   organization_id,
   conversation_id,
   phone,
-  delay_hours = 24,
-  reason = "sales_followup",
+  delay_hours,
+  reason,
 }) {
   try {
-    if (!organization_id || !phone) return;
-
     const due_at = new Date(
       Date.now() + delay_hours * 60 * 60 * 1000
     );
@@ -50,15 +42,9 @@ export async function scheduleFollowup({
       ]
     );
   } catch (err) {
-    console.error("scheduleFollowup error", err.message);
+    console.error(err);
   }
 }
-
-/*
-====================================================
-CREATE FOLLOWUPS (RULES)
-====================================================
-*/
 
 export async function createFollowupsForConversation({
   organization_id,
@@ -67,35 +53,47 @@ export async function createFollowupsForConversation({
   context,
 }) {
   try {
-    const stage = context?.stage;
+    const score = context?.score || 0;
 
-    if (stage === "HOT") return;
+    /*
+    ========================================
+    INTELLIGENT FOLLOWUPS
+    ========================================
+    */
 
+    if (score >= 85) {
+      // seguimiento rápido cierre
+      await scheduleFollowup({
+        organization_id,
+        conversation_id,
+        phone,
+        delay_hours: 1,
+        reason: "hot_close_followup",
+      });
+      return;
+    }
+
+    if (score >= 65) {
+      await scheduleFollowup({
+        organization_id,
+        conversation_id,
+        phone,
+        delay_hours: 4,
+        reason: "warm_followup",
+      });
+      return;
+    }
+
+    // default
     await scheduleFollowup({
       organization_id,
       conversation_id,
       phone,
       delay_hours: 24,
-      reason: "followup_24h",
-    });
-
-    await scheduleFollowup({
-      organization_id,
-      conversation_id,
-      phone,
-      delay_hours: 72,
-      reason: "followup_3d",
-    });
-
-    await scheduleFollowup({
-      organization_id,
-      conversation_id,
-      phone,
-      delay_hours: 168,
-      reason: "followup_7d",
+      reason: "standard_followup",
     });
 
   } catch (err) {
-    console.error("createFollowups error", err.message);
+    console.error(err);
   }
 }
