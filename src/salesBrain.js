@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — SALES BRAIN (STRATEGY ENFORCED vNEXT.9)
+EVA CORE — SALES BRAIN (AI CONTROL vNEXT.10)
 ====================================================
 */
 
@@ -28,48 +28,43 @@ import { calculateScore } from "./brain/engines/scoreEngine.js";
 
 /*
 ====================================================
-STRATEGY EXECUTION LAYER (NEW CORE)
+AI RESPONSE PARSER (NEW CORE)
 ====================================================
 */
 
-async function executeByStrategy(context) {
-  const strategy = context.strategy;
+function parseAIResponse(text = "") {
+  try {
+    const jsonStart = text.indexOf("{");
+    const jsonEnd = text.lastIndexOf("}");
 
-  /*
-  ========================================
-  ASK / QUALIFY (NO AI)
-  ========================================
-  */
+    if (jsonStart !== -1 && jsonEnd !== -1) {
+      const jsonString = text.slice(jsonStart, jsonEnd + 1);
+      const parsed = JSON.parse(jsonString);
 
-  if (strategy === "ASK" || strategy === "QUALIFY") {
-    return {
-      reply:
-        "Con mucho gusto le ayudo 😊 ¿Me podría indicar un poco más sobre lo que necesita?",
-    };
+      return {
+        reply: parsed.reply || null,
+        intent: parsed.intent || null,
+        confidence: parsed.confidence || null,
+        next_action: parsed.next_action || null,
+      };
+    }
+  } catch (err) {
+    console.error("AI JSON parse error:", err.message);
   }
 
-  /*
-  ========================================
-  FOLLOWUP (NO AI)
-  ========================================
-  */
+  return null;
+}
 
-  if (strategy === "FOLLOWUP") {
-    return {
-      reply:
-        "Solo quería darle seguimiento 😊 ¿Le puedo ayudar con algo más?",
-    };
-  }
+/*
+====================================================
+AI SAFE EXECUTION
+====================================================
+*/
 
-  /*
-  ========================================
-  AI EXECUTION (CONTROLLED)
-  ========================================
-  */
-
+async function executeAI(context) {
   let catalogResults = [];
 
-  if (strategy === "RECOMMEND" || strategy === "CLOSE") {
+  if (context.strategy === "RECOMMEND" || context.strategy === "CLOSE") {
     try {
       catalogResults =
         (await searchCatalog({
@@ -77,7 +72,7 @@ async function executeByStrategy(context) {
           text: context.user_message,
         })) || [];
     } catch (err) {
-      console.error("searchCatalog error", err.message);
+      console.error("catalog error", err.message);
     }
   }
 
@@ -90,30 +85,98 @@ async function executeByStrategy(context) {
     promptConfig,
   });
 
+  /*
+  ========================================
+  JSON ENFORCEMENT
+  ========================================
+  */
+
+  const enforcedPrompt = `
+Responde en formato JSON válido:
+
+{
+  "reply": "mensaje al cliente",
+  "intent": "BUY | INFO | SERVICE | OTHER",
+  "confidence": 0.0,
+  "next_action": "ASK | QUALIFY | CLOSE | FOLLOWUP"
+}
+
+Mensaje:
+${prompt}
+`;
+
   let aiText = null;
 
   try {
     const ai = await runAI({
-      prompt: [{ role: "user", content: prompt }],
+      prompt: [{ role: "user", content: enforcedPrompt }],
     });
     aiText = ai?.text || null;
   } catch (err) {
-    console.error("runAI error", err.message);
+    console.error("AI error", err.message);
   }
 
   if (!aiText) {
-    return {
-      reply:
-        "Con mucho gusto le ayudo 😊 ¿Me podría indicar un poco más sobre lo que necesita?",
-    };
+    return fallbackResponse(context);
+  }
+
+  const parsed = parseAIResponse(aiText);
+
+  /*
+  ========================================
+  VALIDATION LAYER
+  ========================================
+  */
+
+  if (!parsed || !parsed.reply) {
+    return fallbackResponse(context);
   }
 
   const formatted = formatAIResponse({
-    text: aiText,
+    text: parsed.reply,
     agentName: context.assistant.name,
   });
 
-  return { reply: formatted };
+  return {
+    reply: formatted,
+    meta: parsed,
+  };
+}
+
+/*
+====================================================
+FALLBACK SAFE RESPONSE
+====================================================
+*/
+
+function fallbackResponse(context) {
+  return {
+    reply:
+      "Con mucho gusto le ayudo 😊 ¿Me podría indicar un poco más sobre lo que necesita?",
+  };
+}
+
+/*
+====================================================
+STRATEGY EXECUTION
+====================================================
+*/
+
+async function executeByStrategy(context) {
+  const strategy = context.strategy;
+
+  if (strategy === "ASK" || strategy === "QUALIFY") {
+    return fallbackResponse(context);
+  }
+
+  if (strategy === "FOLLOWUP") {
+    return {
+      reply:
+        "Solo quería darle seguimiento 😊 ¿Le puedo ayudar con algo más?",
+    };
+  }
+
+  return executeAI(context);
 }
 
 /*
@@ -124,18 +187,14 @@ MAIN
 
 export async function handleInbound(payload) {
   try {
-    const organization_id = payload?.organization_id;
-    const phone = payload?.phone;
-    const text = payload?.text;
-    const channel = payload?.channel || "whatsapp";
-    const message_id = payload?.message_id || null;
+    const { organization_id, phone, text } = payload;
 
     await findOrCreateLead({ organization_id, phone });
 
     const conversation = await findOrCreateConversation({
       organization_id,
       phone,
-      channel,
+      channel: "whatsapp",
     });
 
     await saveMessage({
@@ -143,7 +202,6 @@ export async function handleInbound(payload) {
       conversation_id: conversation.id,
       role: "user",
       text,
-      message_id,
     });
 
     let context =
@@ -158,7 +216,7 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    STRATEGY (ENFORCED)
+    STRATEGY
     ========================================
     */
 
@@ -173,7 +231,7 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    EXECUTION BY STRATEGY
+    EXECUTION
     ========================================
     */
 
@@ -199,14 +257,6 @@ export async function handleInbound(payload) {
       now: Date.now(),
     });
 
-    await savePipelineEvent({
-      organization_id,
-      conversation_id: conversation.id,
-      lead_phone: phone,
-      event_type: "SCORE_UPDATED",
-      event_data: scoreResult,
-    });
-
     await updateLeadStageAndScore({
       organization_id,
       phone,
@@ -219,12 +269,6 @@ export async function handleInbound(payload) {
       phone,
       data: context.known_data,
     });
-
-    /*
-    ========================================
-    FOLLOWUPS
-    ========================================
-    */
 
     await createFollowupsForConversation({
       organization_id,
