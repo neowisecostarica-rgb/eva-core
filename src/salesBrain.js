@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — SALES BRAIN (TRACE + FACT ROUTER + SETUP MONITOR vNEXT.8)
+EVA CORE — SALES BRAIN (STRATEGY ENFORCED vNEXT.9)
 ====================================================
 */
 
@@ -28,48 +28,48 @@ import { calculateScore } from "./brain/engines/scoreEngine.js";
 
 /*
 ====================================================
-FACT ROUTER
+STRATEGY EXECUTION LAYER (NEW CORE)
 ====================================================
 */
 
-function resolveBusinessQuery(text = "", context = {}) {
-  const t = String(text).toLowerCase();
-  const bc = context.business_context || {};
+async function executeByStrategy(context) {
+  const strategy = context.strategy;
 
-  if (t.includes("envio")) {
-    if (bc?.operations?.delivery === true) {
-      return "Sí, realizamos envíos 🚚 El costo varía según la zona, con gusto te cotizo. ¿En qué ubicación te encuentras?";
-    }
-    if (bc?.operations?.delivery === false) {
-      return "En este momento no realizamos envíos, pero puedes retirar directamente en tienda 😊";
-    }
+  /*
+  ========================================
+  ASK / QUALIFY (NO AI)
+  ========================================
+  */
+
+  if (strategy === "ASK" || strategy === "QUALIFY") {
+    return {
+      reply:
+        "Con mucho gusto le ayudo 😊 ¿Me podría indicar un poco más sobre lo que necesita?",
+    };
   }
 
-  if (t.includes("sinpe")) {
-    if (bc?.payments?.sinpe) {
-      return `Sí, puedes pagar por SINPE al ${bc.payments.sinpe} 👍`;
-    }
+  /*
+  ========================================
+  FOLLOWUP (NO AI)
+  ========================================
+  */
+
+  if (strategy === "FOLLOWUP") {
+    return {
+      reply:
+        "Solo quería darle seguimiento 😊 ¿Le puedo ayudar con algo más?",
+    };
   }
 
-  if (t.includes("donde") || t.includes("ubicacion")) {
-    if (bc?.location?.address) {
-      return `Estamos ubicados en ${bc.location.address} 📍`;
-    }
-  }
+  /*
+  ========================================
+  AI EXECUTION (CONTROLLED)
+  ========================================
+  */
 
-  return null;
-}
-
-/*
-====================================================
-AI EXECUTION
-====================================================
-*/
-
-async function executeAI(context) {
   let catalogResults = [];
 
-  if (context.strategy === "RECOMMEND" || context.strategy === "CLOSE") {
+  if (strategy === "RECOMMEND" || strategy === "CLOSE") {
     try {
       catalogResults =
         (await searchCatalog({
@@ -156,6 +156,12 @@ export async function handleInbound(payload) {
       phone,
     };
 
+    /*
+    ========================================
+    STRATEGY (ENFORCED)
+    ========================================
+    */
+
     const decision = decideStrategy({
       intent: context.intent,
       stage: context.stage,
@@ -165,20 +171,13 @@ export async function handleInbound(payload) {
 
     context = { ...context, ...decision };
 
-    const factReply = resolveBusinessQuery(text, context);
+    /*
+    ========================================
+    EXECUTION BY STRATEGY
+    ========================================
+    */
 
-    if (factReply) {
-      await saveMessage({
-        organization_id,
-        conversation_id: conversation.id,
-        role: "assistant",
-        text: factReply,
-      });
-
-      return { reply: { text: factReply } };
-    }
-
-    const execution = await executeAI(context);
+    const execution = await executeByStrategy(context);
 
     await saveMessage({
       organization_id,
@@ -189,7 +188,7 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    SCORE ENGINE
+    SCORE
     ========================================
     */
 
@@ -200,12 +199,6 @@ export async function handleInbound(payload) {
       now: Date.now(),
     });
 
-    /*
-    ========================================
-    PIPELINE EVENTS
-    ========================================
-    */
-
     await savePipelineEvent({
       organization_id,
       conversation_id: conversation.id,
@@ -213,12 +206,6 @@ export async function handleInbound(payload) {
       event_type: "SCORE_UPDATED",
       event_data: scoreResult,
     });
-
-    /*
-    ========================================
-    UPDATE LEAD
-    ========================================
-    */
 
     await updateLeadStageAndScore({
       organization_id,
@@ -235,67 +222,15 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    SMART FOLLOWUP + AUTO CLOSE
+    FOLLOWUPS
     ========================================
     */
 
-    if (scoreResult.score >= 85) {
-      await savePipelineEvent({
-        organization_id,
-        conversation_id: conversation.id,
-        lead_phone: phone,
-        event_type: "AUTO_CLOSE_TRIGGER",
-        event_data: { score: scoreResult.score },
-      });
-
-      await saveMessage({
-        organization_id,
-        conversation_id: conversation.id,
-        role: "assistant",
-        text: "¡Perfecto! 🙌 Podemos dejarlo apartado de una vez y coordinamos 👍",
-      });
-
-      await createFollowupsForConversation({
-        organization_id,
-        conversation_id: conversation.id,
-        phone,
-        context: {
-          ...context,
-          delay_hours: 0.5,
-        },
-      });
-
-    } else if (scoreResult.score >= 65) {
-      await createFollowupsForConversation({
-        organization_id,
-        conversation_id: conversation.id,
-        phone,
-        context: {
-          ...context,
-          delay_hours: 2,
-        },
-      });
-
-    } else {
-      await createFollowupsForConversation({
-        organization_id,
-        conversation_id: conversation.id,
-        phone,
-        context,
-      });
-    }
-
-    await savePipelineEvent({
+    await createFollowupsForConversation({
       organization_id,
       conversation_id: conversation.id,
-      lead_phone: phone,
-      event_type: "MESSAGE_PROCESSED",
-      event_data: {
-        score: scoreResult.score,
-        label: scoreResult.label,
-        intent: context.intent,
-        stage: context.stage,
-      },
+      phone,
+      context,
     });
 
     return { reply: { text: execution.reply } };
