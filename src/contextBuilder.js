@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — CONTEXT BUILDER (SOT DATA ENHANCED)
+EVA CORE — CONTEXT BUILDER (PERSONA ENABLED vNEXT)
 ====================================================
 */
 
@@ -84,6 +84,37 @@ function detectKnownData(text = "") {
     use_case,
     problem,
     product_interest,
+  };
+}
+
+/*
+====================================================
+PERSONA BUILDER (NEW)
+====================================================
+*/
+
+function buildPersona(config = {}, business = {}) {
+  return {
+    name:
+      config?.agent_name ||
+      config?.assistant_name ||
+      "Asistente",
+
+    tone: config?.tone || "neutral_professional",
+
+    emoji_policy: config?.emoji_policy || "max_1",
+
+    communication_style:
+      config?.communication_style || "concise",
+
+    restrictions: [
+      ...(config?.restrictions || []),
+      "no_technical_explanations",
+      "no_information_dump",
+      "must_close_conversation",
+    ],
+
+    closing_style: config?.closing_style || "soft_close",
   };
 }
 
@@ -262,6 +293,14 @@ export async function buildContext({
 
     /*
     ========================================
+    PERSONA (NEW)
+    ========================================
+    */
+
+    const persona = buildPersona(config, business);
+
+    /*
+    ========================================
     BUSINESS CONTEXT
     ========================================
     */
@@ -349,6 +388,8 @@ export async function buildContext({
           "Asistente",
       },
 
+      persona, // 🔥 NUEVO
+
       intent: detectIntent(text),
 
       stage: lead?.stage || "EARLY",
@@ -380,6 +421,7 @@ export async function buildContext({
     return {
       organization: { id: organization_id, business_name: "el negocio" },
       assistant: { name: "Asistente" },
+      persona: {}, // 🔥 NUEVO
       intent: detectIntent(text),
       stage: "EARLY",
       known_data: {
