@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — CONTEXT BUILDER (PERSONA + STRATEGY READY)
+EVA CORE — CONTEXT BUILDER (INTELLIGENCE vNEXT FIXED)
 ====================================================
 */
 
@@ -23,60 +23,38 @@ function lower(v) {
 
 /*
 ====================================================
-DETECTION
+DETECTION (LIGHT — NO DUPLICAR ENGINES)
 ====================================================
 */
 
-function detectKnownData(text = "") {
+function detectKnownData(text = "", lead = {}) {
   const t = lower(text);
 
-  let use_case = null;
-  let product_interest = null;
-  let problem = null;
-  let budget = null;
+  let use_case = lead?.use_case || null;
+  let product_interest = lead?.product_interest || null;
+  let problem = lead?.problem || null;
+  let budget = lead?.budget || null;
 
-  if (
-    t.includes("teletrabajo") ||
-    t.includes("oficina") ||
-    t.includes("office") ||
-    t.includes("trabajo")
-  ) {
-    use_case = "WORK";
-  } else if (
-    t.includes("estudio") ||
-    t.includes("colegio") ||
-    t.includes("universidad") ||
-    t.includes("clases")
-  ) {
-    use_case = "STUDY";
+  // SOLO detección ligera (NO duplicar engines complejos)
+  if (!use_case) {
+    if (t.includes("trabajo")) use_case = "WORK";
+    if (t.includes("estudio")) use_case = "STUDY";
   }
 
-  if (
-    t.includes("laptop") ||
-    t.includes("computadora") ||
-    t.includes("compu")
-  ) {
-    product_interest = "LAPTOP";
-  } else if (t.includes("impresora")) {
-    product_interest = "PRINTER";
-  } else if (t.includes("monitor")) {
-    product_interest = "MONITOR";
+  if (!product_interest) {
+    if (t.includes("laptop")) product_interest = "LAPTOP";
+    if (t.includes("impresora")) product_interest = "PRINTER";
   }
 
-  if (
-    t.includes("no imprime") ||
-    t.includes("no enciende") ||
-    t.includes("error") ||
-    t.includes("falla") ||
-    t.includes("malo") ||
-    t.includes("dañado")
-  ) {
-    problem = text;
+  if (!problem) {
+    if (t.includes("no imprime") || t.includes("error")) {
+      problem = text;
+    }
   }
 
-  const budgetMatch = t.match(/(\d{2,3}(?:[.,]\d{3})+|\d{5,7})/);
-  if (budgetMatch) {
-    budget = budgetMatch[1].replace(/[.,]/g, "");
+  if (!budget) {
+    const match = t.match(/(\d{5,7})/);
+    if (match) budget = match[1];
   }
 
   return {
@@ -85,6 +63,30 @@ function detectKnownData(text = "") {
     problem,
     product_interest,
   };
+}
+
+/*
+====================================================
+STAGE DETECTION (🔥 NUEVO REAL)
+====================================================
+*/
+
+function detectStage({ lead = {}, history = [], known_data }) {
+  if (lead?.stage && lead.stage !== "EARLY") return lead.stage;
+
+  if (known_data.problem) return "QUALIFYING";
+
+  if (known_data.product_interest && known_data.use_case && !known_data.budget) {
+    return "QUALIFYING";
+  }
+
+  if (known_data.product_interest && known_data.budget) {
+    return "MID";
+  }
+
+  if (lead?.score >= 80) return "HOT";
+
+  return "EARLY";
 }
 
 /*
@@ -116,33 +118,6 @@ function buildPersona(config = {}, business = {}) {
 
     closing_style: config?.closing_style || "soft_close",
   };
-}
-
-/*
-====================================================
-SETUP VALIDATION
-====================================================
-*/
-
-function getMissingSetupFields(business = {}) {
-  const missing = [];
-
-  if (!business?.business_name) {
-    missing.push("nombre del negocio");
-  }
-
-  if (!business?.sinpe_number && !business?.bank_name) {
-    missing.push("métodos de pago");
-  }
-
-  if (
-    business?.delivery_available === null ||
-    business?.delivery_available === undefined
-  ) {
-    missing.push("configuración de envíos");
-  }
-
-  return missing;
 }
 
 /*
@@ -193,7 +168,6 @@ export async function buildContext({
     */
 
     let history = [];
-    let lastMessageTime = null;
 
     if (phone) {
       const conversation = (
@@ -211,10 +185,10 @@ export async function buildContext({
       ).rows[0];
 
       if (conversation?.id) {
-        const historyRows = (
+        const rows = (
           await pool.query(
             `
-            SELECT role, content, created_at
+            SELECT role, content
             FROM messages
             WHERE organization_id = $1
             AND conversation_id = $2
@@ -225,108 +199,34 @@ export async function buildContext({
           )
         ).rows || [];
 
-        if (historyRows.length > 0) {
-          lastMessageTime = historyRows[0].created_at;
-        }
-
-        history = historyRows
-          .reverse()
-          .map((m) => ({
-            role: m.role,
-            content: m.content,
-          }));
+        history = rows.reverse();
       }
     }
 
     /*
     ========================================
-    TIME LOGIC
+    DATA MERGE (🔥 MEJORADO)
     ========================================
     */
 
-    let hours_since_last_message = null;
-    let is_reentry = false;
-
-    if (lastMessageTime) {
-      const diff =
-        (Date.now() - new Date(lastMessageTime).getTime()) /
-        (1000 * 60 * 60);
-
-      hours_since_last_message = diff;
-
-      if (diff > 2) {
-        is_reentry = true;
-      }
-    }
-
-    let conversation_type = "new";
-
-    if (history.length > 0 && !is_reentry) {
-      conversation_type = "active";
-    }
-
-    if (is_reentry) {
-      conversation_type = "reentry";
-    }
+    const known_data = detectKnownData(text, lead);
 
     /*
     ========================================
-    DATA MERGE
+    STAGE
     ========================================
     */
 
-    const detected = detectKnownData(text);
-
-    const known_data = {
-      budget: detected.budget || lead?.budget || null,
-      use_case: detected.use_case || lead?.use_case || null,
-      product_interest:
-        detected.product_interest || lead?.product_interest || null,
-      problem: detected.problem || lead?.problem || null,
-    };
+    const stage = detectStage({
+      lead,
+      history,
+      known_data,
+    });
 
     /*
     ========================================
-    PERSONA
+    STRATEGY INPUTS (🔥 PRO)
     ========================================
-    */
-
-    const persona = buildPersona(config, business);
-
-    /*
-    ========================================
-    BUSINESS CONTEXT
-    ========================================
-    */
-
-    const business_context = {
-      name: business?.business_name || null,
-      type: business?.business_type || null,
-      phone: business?.phone || null,
-
-      payments: {
-        sinpe: business?.sinpe_number || null,
-        bank_name: business?.bank_name ?? null,
-      },
-
-      operations: {
-        delivery: business?.delivery_available ?? null,
-      },
-    };
-
-    /*
-    ========================================
-    SETUP STATUS
-    ========================================
-    */
-
-    const missing_setup_fields = getMissingSetupFields(business);
-    const is_ready = missing_setup_fields.length === 0;
-
-    /*
-    ====================================================
-    STRATEGY INPUTS (NEW — CORE INTELLIGENCE)
-    ====================================================
     */
 
     const strategy_inputs = {
@@ -334,17 +234,24 @@ export async function buildContext({
       has_budget: !!known_data.budget,
       has_product_interest: !!known_data.product_interest,
 
+      has_enough_info:
+        known_data.product_interest &&
+        (known_data.use_case || known_data.problem),
+
+      needs_qualification:
+        !known_data.use_case || !known_data.product_interest,
+
+      can_close:
+        known_data.product_interest &&
+        known_data.budget &&
+        stage === "MID",
+
       readiness_level:
         lead?.score >= 80
           ? "HIGH"
           : lead?.score >= 40
           ? "MEDIUM"
           : "LOW",
-
-      conversation_goal:
-        config?.objective || "SELL",
-
-      is_service_flow: !!known_data.problem,
     };
 
     /*
@@ -366,15 +273,15 @@ export async function buildContext({
           "Asistente",
       },
 
-      persona,
+      persona: buildPersona(config, business),
 
       intent: detectIntent(text),
 
-      stage: lead?.stage || "EARLY",
+      stage,
 
       known_data,
 
-      strategy_inputs, // 🔥 NUEVO
+      strategy_inputs,
 
       user_message: safe(text),
 
@@ -385,14 +292,11 @@ export async function buildContext({
 
       history,
 
-      business_context,
-
-      meta: {
-        conversation_type,
-        is_reentry,
-        hours_since_last_message,
-        is_ready,
-        missing_setup_fields,
+      business_context: {
+        name: business?.business_name || null,
+        payments: {
+          sinpe: business?.sinpe_number || null,
+        },
       },
     };
 
@@ -400,32 +304,14 @@ export async function buildContext({
     console.error("❌ CONTEXT ERROR", err);
 
     return {
-      organization: { id: organization_id, business_name: "el negocio" },
+      organization: { id: organization_id },
       assistant: { name: "Asistente" },
-      persona: {},
       intent: detectIntent(text),
       stage: "EARLY",
-      known_data: {
-        budget: null,
-        use_case: null,
-        product_interest: null,
-        problem: null,
-      },
-      strategy_inputs: {}, // 🔥 fallback seguro
-      user_message: safe(text),
-      sales_context: {
-        interest_level: "LOW",
-        lead_score: 0,
-      },
+      known_data: {},
+      strategy_inputs: {},
+      user_message: text,
       history: [],
-      business_context: {},
-      meta: {
-        conversation_type: "new",
-        is_reentry: false,
-        hours_since_last_message: null,
-        is_ready: false,
-        missing_setup_fields: ["configuración base del negocio"],
-      },
     };
   }
 }
