@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — SALES BRAIN (STRATEGY INTELLIGENCE vNEXT)
+EVA CORE — SALES BRAIN (STRATEGY INTELLIGENCE vNEXT FIXED)
 ====================================================
 */
 
@@ -40,22 +40,66 @@ function classifyScore(score) {
 
 /*
 ====================================================
+ANTI DUMP CONTROL (🔥 NUEVO)
+====================================================
+*/
+
+function enforceResponseControl({ text, strategy, stage }) {
+  if (!text) return text;
+
+  // ❌ evitar respuestas largas en EARLY
+  if (stage === "EARLY" && text.length > 220) {
+    return text.slice(0, 200) + "...";
+  }
+
+  // ❌ evitar respuestas sin pregunta en QUALIFY
+  if (
+    (strategy === "QUALIFY" || strategy === "ASK") &&
+    !text.includes("?")
+  ) {
+    return text + " ¿Me podría indicar un poco más para ayudarle mejor?";
+  }
+
+  return text;
+}
+
+/*
+====================================================
 AI EXECUTION
 ====================================================
 */
 
-function fallbackResponse() {
+function fallbackResponse(strategy = "DEFAULT") {
+  // fallback estratégico
+  if (strategy === "QUALIFY" || strategy === "ASK") {
+    return {
+      reply:
+        "Con mucho gusto le ayudo 😊 ¿Me podría indicar un poco más sobre lo que necesita?",
+    };
+  }
+
   return {
     reply:
-      "Con mucho gusto le ayudo 😊 ¿Me podría indicar un poco más sobre lo que necesita?",
+      "Con mucho gusto le ayudo 😊 ¿En qué le puedo apoyar?",
   };
 }
 
 async function executeAI(context) {
   const promptConfig = await getPromptConfig(context.organization.id);
 
+  /*
+  ========================================
+  🔥 INYECTAR STRATEGY EN PROMPT
+  ========================================
+  */
+
+  const enrichedContext = {
+    ...context,
+    system_strategy: context.strategy, // 🔥 clave
+  };
+
   const prompt = buildPrompt({
-    context,
+    context: enrichedContext,
     history: context.history || [],
     promptConfig,
   });
@@ -66,17 +110,30 @@ async function executeAI(context) {
     const ai = await runAI({
       prompt: [{ role: "user", content: prompt }],
     });
+
     aiText = ai?.text || null;
   } catch (err) {}
 
-  if (!aiText) return fallbackResponse();
+  if (!aiText) return fallbackResponse(context.strategy);
 
   const formatted = formatAIResponse({
     text: aiText,
     agentName: context.assistant.name,
   });
 
-  return { reply: formatted };
+  /*
+  ========================================
+  🔥 ENFORCEMENT (CRÍTICO)
+  ========================================
+  */
+
+  const controlled = enforceResponseControl({
+    text: formatted,
+    strategy: context.strategy,
+    stage: context.stage,
+  });
+
+  return { reply: controlled };
 }
 
 /*
@@ -116,7 +173,7 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    STRATEGY (REAL — WITH STRATEGY INPUTS)
+    STRATEGY (REAL)
     ========================================
     */
 
@@ -124,7 +181,7 @@ export async function handleInbound(payload) {
       intent: context.intent,
       stage: context.stage,
       known_data: context.known_data,
-      strategy_inputs: context.strategy_inputs, // 🔥 NUEVO
+      strategy_inputs: context.strategy_inputs,
       text,
     });
 
