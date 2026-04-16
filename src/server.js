@@ -4,7 +4,6 @@ EVA CORE — SERVER (Production Safe vNext)
 ====================================================
 */
 
-import { startFollowupWorker } from "./followupWorker.js";
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -16,6 +15,8 @@ import whatsappWebhook from "./routes/whatsappWebhook.js";
 import messagesRouter from "./routes/messages.js";
 import metricsRouter from "./routes/metrics.js";
 import productsRoutes from "./routes/products.js";
+import setupRoutes from "./routes/setup.js";
+import businessProfileRoutes from "./routes/businessProfile.js";
 
 import pool from "./db.js";
 
@@ -23,6 +24,8 @@ import { registerConversationRoutes } from "./api/conversations.js";
 import { registerLeadRoutes } from "./api/leads.js";
 
 import { authenticate } from "./lib/auth.js";
+
+import { startFollowupWorker } from "./followupWorker.js";
 
 dotenv.config();
 
@@ -33,6 +36,11 @@ ENV VALIDATION
 */
 validateEnv();
 
+/*
+====================================================
+APP INIT
+====================================================
+*/
 const app = express();
 const PORT = process.env.PORT || 10000;
 
@@ -89,9 +97,15 @@ app.use("/v1/products", authenticate, productsRoutes);
 SETUP (BUSINESS + EVA PERSONA)
 ====================================================
 */
-import setupRoutes from "./routes/setup.js";
-
 app.use("/v1/setup", setupRoutes);
+
+/*
+====================================================
+🔥 BUSINESS PROFILE (NEW — CRITICAL)
+====================================================
+*/
+app.use("/v1/business-profile", businessProfileRoutes);
+
 /*
 ====================================================
 DASHBOARD APIs
