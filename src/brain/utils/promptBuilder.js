@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — PROMPT BUILDER (CONTROLLED EXPANSION vNEXT)
+EVA CORE — PROMPT BUILDER (CONTROLLED EXPANSION vNEXT v2)
 ====================================================
 */
 
@@ -40,16 +40,17 @@ export function buildPrompt({
 
   const historyText = history
     .slice(-6)
-    .map((m) =>
-      `${m.role === "user" ? "Cliente" : agentName}: ${
-        m.content || m.text || ""
-      }`
+    .map(
+      (m) =>
+        `${m.role === "user" ? "Cliente" : agentName}: ${
+          m.content || ""
+        }`
     )
     .join("\n");
 
   /*
   ====================================================
-  CATÁLOGO
+  CATÁLOGO (CONTROLADO)
   ====================================================
   */
 
@@ -64,120 +65,129 @@ export function buildPrompt({
               }`
           )
           .join("\n")
-      : "No hay productos disponibles para esta consulta.";
+      : "SIN RESULTADOS RELEVANTES";
 
   /*
   ====================================================
-  🔥 SOT FUERTE (MEJORADO)
+  🔥 SOT FUERTE
   ====================================================
   */
 
   const sotRules = `
-REGLAS CRÍTICAS (NO ROMPER):
+REGLAS CRÍTICAS:
 
-1. La información del negocio es la única fuente válida
-2. NUNCA contradigas esos datos
-3. NUNCA inventes información
-4. Si NO tienes un dato → dilo claramente (no lo inventes)
-
-CASOS CRÍTICOS:
-- pagos
-- envíos
-- ubicación
-- horarios
-- garantía
-
-→ RESPONDE SOLO con datos del negocio
-→ Si falta información → pide confirmación
+- NUNCA inventes información
+- SOLO usa datos del negocio
+- Si falta información → pide confirmación
 `;
 
   /*
   ====================================================
-  🔥 CONTROL DE MEMORIA (NUEVO)
+  🔥 STRATEGY ENFORCEMENT (CRÍTICO)
+  ====================================================
+  */
+
+  const strategyBlock = `
+ESTRATEGIA OBLIGATORIA: ${strategy}
+
+Debes cumplir:
+
+ASK / QUALIFY:
+→ Hacer pregunta
+→ NO explicar todo
+→ NO dar precios aún
+
+RECOMMEND:
+→ Sugerir opciones claras
+→ Explicar breve
+
+CLOSE:
+→ Llevar a acción (compra / visita / apartado)
+
+SI NO SIGUES ESTO → RESPUESTA INCORRECTA
+`;
+
+  /*
+  ====================================================
+  🔥 OUTPUT CONTROL
+  ====================================================
+  */
+
+  const outputRules = `
+FORMATO DE RESPUESTA:
+
+- Máximo 3–4 líneas en EARLY
+- Máximo 1 emoji
+- Lenguaje claro, humano
+- SIEMPRE terminar en acción o pregunta
+`;
+
+  /*
+  ====================================================
+  🔥 MEMORY CONTROL
   ====================================================
   */
 
   const memoryRules = `
-REGLA DE MEMORIA:
+MEMORIA:
 
-- NO vuelvas a preguntar información que ya el cliente dio
-- Usa los datos ya conocidos para avanzar
-- Si el cliente repite molestia → corrige tu comportamiento
+- NO repitas preguntas ya respondidas
+- Usa datos conocidos
 `;
 
   /*
   ====================================================
-  🔥 BUSINESS CONTEXT
+  🔥 BUSINESS CONTEXT FIXED
   ====================================================
   */
 
   const businessBlock = `
-DATOS OFICIALES DEL NEGOCIO:
+NEGOCIO:
 
-Ubicación:
-Dirección: ${business_context?.location?.address || "NO DISPONIBLE"}
+Nombre: ${businessName}
 
 Pagos:
 SINPE: ${business_context?.payments?.sinpe || "NO DISPONIBLE"}
-Banco: ${business_context?.payments?.bank_name || "NO DISPONIBLE"}
-Cuenta: ${business_context?.payments?.account_colones || "NO DISPONIBLE"}
-IBAN: ${business_context?.payments?.iban_colones || "NO DISPONIBLE"}
-Tarjeta: ${business_context?.payments?.accepts_card ? "Sí" : "No"}
+IBAN: ${business_context?.payments?.iban || "NO DISPONIBLE"}
 
-Operación:
-Envíos: ${business_context?.operations?.delivery ? "Sí" : "No"}
-Retiro: ${business_context?.operations?.pickup ? "Sí" : "No"}
+Ubicación:
+${business_context?.location || "NO DISPONIBLE"}
+
+Envíos:
+${business_context?.delivery?.available ? "Sí" : "No"}
 `;
 
   /*
   ====================================================
-  🔥 CONTROL DE LONGITUD DINÁMICO (CLAVE)
+  🔥 KNOWN DATA HUMANIZED
   ====================================================
   */
 
-  const lengthControl = `
-CONTROL DE RESPUESTA:
+  const knownDataText = `
+Datos detectados del cliente:
 
-- EARLY → respuestas cortas + pregunta
-- MID → explicación breve + guía
-- HOT → puede ser más completo + cierre
-
-NUNCA saturar con información innecesaria
+Producto: ${known_data.product_interest || "No definido"}
+Uso: ${known_data.use_case || "No definido"}
+Problema: ${known_data.problem || "No definido"}
+Presupuesto: ${known_data.budget || "No definido"}
 `;
 
   /*
   ====================================================
-  IDENTITY
+  🔥 IDENTITY
   ====================================================
   */
 
   const isFirstMessage =
     !history || history.length === 0;
 
-  const identityBlock =
-    isFirstMessage
-      ? `Inicia SIEMPRE: "Hola 😊 le saluda ${agentName} de ${businessName}."`
-      : `Continúa la conversación sin repetir presentación`;
+  const identityBlock = isFirstMessage
+    ? `Inicia con: "Hola 😊 le saluda ${agentName} de ${businessName}."`
+    : `Continúa la conversación sin repetir presentación`;
 
   /*
   ====================================================
-  STRATEGY
-  ====================================================
-  */
-
-  const strategyBlock = `
-Estrategia actual: ${strategy}
-
-Acción:
-- ASK → preguntar
-- QUALIFY → entender
-- RECOMMEND → sugerir
-- CLOSE → cerrar
-`;
-
-  /*
-  ====================================================
-  FINAL
+  FINAL PROMPT
   ====================================================
   */
 
@@ -186,31 +196,32 @@ ${identityBlock}
 
 ${sotRules}
 
-${memoryRules}
-
 ${strategyBlock}
 
-${lengthControl}
+${outputRules}
+
+${memoryRules}
 
 ${customInstructions}
 
-Contexto:
+CONTEXTO:
 Empresa: ${businessName}
+Intento: ${intent}
+Etapa: ${stage}
 
 ${businessBlock}
 
-Datos cliente:
-${JSON.stringify(known_data, null, 2)}
+${knownDataText}
 
 Historial:
 ${historyText || "Sin historial"}
 
-Productos:
+Catálogo:
 ${catalogText}
 
-Mensaje:
+Mensaje del cliente:
 "${context.user_message}"
 
-Responde de forma inteligente y coherente.
+Responde cumpliendo TODAS las reglas.
 `;
 }
