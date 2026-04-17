@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — SALES BRAIN (STRATEGY INTELLIGENCE vNEXT FIXED)
+EVA CORE — SALES BRAIN (STRATEGY INTELLIGENCE vNEXT FIXED v2)
 ====================================================
 */
 
@@ -40,24 +40,60 @@ function classifyScore(score) {
 
 /*
 ====================================================
-ANTI DUMP CONTROL (🔥 NUEVO)
+NORMALIZE STAGE (🔥 NUEVO CRÍTICO)
+====================================================
+*/
+
+function normalizeStage(stage, fallback) {
+  const valid = ["EARLY", "QUALIFYING", "MID", "HOT", "POST"];
+
+  if (valid.includes(stage)) return stage;
+  if (valid.includes(fallback)) return fallback;
+
+  return "EARLY";
+}
+
+/*
+====================================================
+ANTI DUMP CONTROL (MEJORADO)
 ====================================================
 */
 
 function enforceResponseControl({ text, strategy, stage }) {
   if (!text) return text;
 
-  // ❌ evitar respuestas largas en EARLY
-  if (stage === "EARLY" && text.length > 220) {
-    return text.slice(0, 200) + "...";
+  let clean = text;
+
+  if (stage === "EARLY" && clean.length > 220) {
+    clean = clean.slice(0, 200) + "...";
   }
 
-  // ❌ evitar respuestas sin pregunta en QUALIFY
   if (
-    (strategy === "QUALIFY" || strategy === "ASK") &&
-    !text.includes("?")
+    ["QUALIFY", "ASK", "DEFAULT"].includes(strategy) &&
+    !clean.includes("?")
   ) {
-    return text + " ¿Me podría indicar un poco más para ayudarle mejor?";
+    clean += " ¿Me podría indicar un poco más para ayudarle mejor?";
+  }
+
+  return clean;
+}
+
+/*
+====================================================
+STRATEGY ENFORCEMENT (🔥 NUEVO)
+====================================================
+*/
+
+function enforceStrategyOutput({ text, strategy }) {
+  if (!text) return text;
+
+  if (strategy === "ASK" || strategy === "QUALIFY") {
+    if (!text.includes("?")) {
+      return (
+        text +
+        " ¿Podría darme un poco más de detalle para ayudarle mejor?"
+      );
+    }
   }
 
   return text;
@@ -70,7 +106,6 @@ AI EXECUTION
 */
 
 function fallbackResponse(strategy = "DEFAULT") {
-  // fallback estratégico
   if (strategy === "QUALIFY" || strategy === "ASK") {
     return {
       reply:
@@ -87,15 +122,9 @@ function fallbackResponse(strategy = "DEFAULT") {
 async function executeAI(context) {
   const promptConfig = await getPromptConfig(context.organization.id);
 
-  /*
-  ========================================
-  🔥 INYECTAR STRATEGY EN PROMPT
-  ========================================
-  */
-
   const enrichedContext = {
     ...context,
-    system_strategy: context.strategy, // 🔥 clave
+    system_strategy: context.strategy,
   };
 
   const prompt = buildPrompt({
@@ -121,16 +150,15 @@ async function executeAI(context) {
     agentName: context.assistant.name,
   });
 
-  /*
-  ========================================
-  🔥 ENFORCEMENT (CRÍTICO)
-  ========================================
-  */
-
-  const controlled = enforceResponseControl({
+  let controlled = enforceResponseControl({
     text: formatted,
     strategy: context.strategy,
     stage: context.stage,
+  });
+
+  controlled = enforceStrategyOutput({
+    text: controlled,
+    strategy: context.strategy,
   });
 
   return { reply: controlled };
@@ -173,7 +201,7 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    STRATEGY (REAL)
+    STRATEGY
     ========================================
     */
 
@@ -184,11 +212,6 @@ export async function handleInbound(payload) {
       strategy_inputs: context.strategy_inputs,
       text,
     });
-
-    context = {
-      ...context,
-      strategy: decision?.strategy || "DEFAULT",
-    };
 
     /*
     ========================================
@@ -207,6 +230,37 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
+    NORMALIZE STAGE
+    ========================================
+    */
+
+    const finalStage = normalizeStage(
+      context.stage,
+      scoreResult.stage_suggested
+    );
+
+    /*
+    ========================================
+    STRATEGY FINAL
+    ========================================
+    */
+
+    let finalStrategy = decision?.strategy || "DEFAULT";
+
+    if (scoreSignals.is_ready) {
+      finalStrategy = "CLOSE";
+    } else if (scoreSignals.is_hot && finalStrategy === "QUALIFY") {
+      finalStrategy = "RECOMMEND";
+    }
+
+    context = {
+      ...context,
+      stage: finalStage,
+      strategy: finalStrategy,
+    };
+
+    /*
+    ========================================
     PIPELINE EVENTS
     ========================================
     */
@@ -219,21 +273,11 @@ export async function handleInbound(payload) {
       event_data: {
         score: scoreResult.score,
         label: scoreResult.label,
+        stage: finalStage,
+        strategy: finalStrategy,
         ...scoreSignals,
       },
     });
-
-    /*
-    ========================================
-    STRATEGY OVERRIDE BY SCORE
-    ========================================
-    */
-
-    if (scoreSignals.is_ready) {
-      context.strategy = "CLOSE";
-    } else if (scoreSignals.is_hot && context.strategy === "QUALIFY") {
-      context.strategy = "RECOMMEND";
-    }
 
     /*
     ========================================
@@ -259,7 +303,7 @@ export async function handleInbound(payload) {
     await updateLeadStageAndScore({
       organization_id,
       phone,
-      stage: context.stage || scoreResult.stage_suggested,
+      stage: finalStage,
       score: scoreResult.score,
     });
 
