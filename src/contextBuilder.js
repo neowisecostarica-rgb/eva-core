@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — CONTEXT BUILDER (INTELLIGENCE vNEXT FIXED)
+EVA CORE — CONTEXT BUILDER (INTELLIGENCE vNEXT FIXED v2)
 ====================================================
 */
 
@@ -23,39 +23,46 @@ function lower(v) {
 
 /*
 ====================================================
-DETECTION (LIGHT — NO DUPLICAR ENGINES)
+MERGE MEMORY (🔥 NUEVO)
 ====================================================
 */
 
-function detectKnownData(text = "", lead = {}) {
+function mergeKnownData(detected, lead = {}) {
+  return {
+    budget: detected.budget || lead?.budget || null,
+    use_case: detected.use_case || lead?.use_case || null,
+    problem: detected.problem || lead?.problem || null,
+    product_interest:
+      detected.product_interest || lead?.product_interest || null,
+  };
+}
+
+/*
+====================================================
+DETECTION
+====================================================
+*/
+
+function detectKnownData(text = "") {
   const t = lower(text);
 
-  let use_case = lead?.use_case || null;
-  let product_interest = lead?.product_interest || null;
-  let problem = lead?.problem || null;
-  let budget = lead?.budget || null;
+  let use_case = null;
+  let product_interest = null;
+  let problem = null;
+  let budget = null;
 
-  // SOLO detección ligera (NO duplicar engines complejos)
-  if (!use_case) {
-    if (t.includes("trabajo")) use_case = "WORK";
-    if (t.includes("estudio")) use_case = "STUDY";
+  if (t.includes("trabajo")) use_case = "WORK";
+  if (t.includes("estudio")) use_case = "STUDY";
+
+  if (t.includes("laptop")) product_interest = "LAPTOP";
+  if (t.includes("impresora")) product_interest = "PRINTER";
+
+  if (t.includes("no imprime") || t.includes("error")) {
+    problem = text;
   }
 
-  if (!product_interest) {
-    if (t.includes("laptop")) product_interest = "LAPTOP";
-    if (t.includes("impresora")) product_interest = "PRINTER";
-  }
-
-  if (!problem) {
-    if (t.includes("no imprime") || t.includes("error")) {
-      problem = text;
-    }
-  }
-
-  if (!budget) {
-    const match = t.match(/(\d{5,7})/);
-    if (match) budget = match[1];
-  }
+  const match = t.match(/(\d{5,7})/);
+  if (match) budget = match[1];
 
   return {
     budget,
@@ -67,25 +74,32 @@ function detectKnownData(text = "", lead = {}) {
 
 /*
 ====================================================
-STAGE DETECTION (🔥 NUEVO REAL)
+STAGE DETECTION (🔥 MEJORADO REAL)
 ====================================================
 */
 
-function detectStage({ lead = {}, history = [], known_data }) {
-  if (lead?.stage && lead.stage !== "EARLY") return lead.stage;
+function detectStage({ lead = {}, known_data, history = [] }) {
+  // prioridad: score
+  if (lead?.score >= 85) return "HOT";
 
+  // problema detectado → diagnóstico
   if (known_data.problem) return "QUALIFYING";
 
-  if (known_data.product_interest && known_data.use_case && !known_data.budget) {
-    return "QUALIFYING";
-  }
-
-  if (known_data.product_interest && known_data.budget) {
+  // info suficiente para recomendar
+  if (
+    known_data.product_interest &&
+    known_data.use_case &&
+    known_data.budget
+  ) {
     return "MID";
   }
 
-  if (lead?.score >= 80) return "HOT";
+  // interés pero falta info
+  if (known_data.product_interest) {
+    return "QUALIFYING";
+  }
 
+  // fallback
   return "EARLY";
 }
 
@@ -95,7 +109,7 @@ PERSONA BUILDER
 ====================================================
 */
 
-function buildPersona(config = {}, business = {}) {
+function buildPersona(config = {}) {
   return {
     name:
       config?.agent_name ||
@@ -163,7 +177,7 @@ export async function buildContext({
 
     /*
     ========================================
-    HISTORY
+    HISTORY (MEJORADO)
     ========================================
     */
 
@@ -188,28 +202,32 @@ export async function buildContext({
         const rows = (
           await pool.query(
             `
-            SELECT role, content
+            SELECT role, content, created_at
             FROM messages
             WHERE organization_id = $1
             AND conversation_id = $2
             ORDER BY created_at DESC
-            LIMIT 10
+            LIMIT 12
             `,
             [organization_id, conversation.id]
           )
         ).rows || [];
 
-        history = rows.reverse();
+        history = rows.reverse().map((m) => ({
+          role: m.role,
+          content: m.content,
+        }));
       }
     }
 
     /*
     ========================================
-    DATA MERGE (🔥 MEJORADO)
+    DATA
     ========================================
     */
 
-    const known_data = detectKnownData(text, lead);
+    const detected = detectKnownData(text);
+    const known_data = mergeKnownData(detected, lead);
 
     /*
     ========================================
@@ -219,13 +237,13 @@ export async function buildContext({
 
     const stage = detectStage({
       lead,
-      history,
       known_data,
+      history,
     });
 
     /*
     ========================================
-    STRATEGY INPUTS (🔥 PRO)
+    STRATEGY INPUTS (MEJORADO)
     ========================================
     */
 
@@ -245,6 +263,10 @@ export async function buildContext({
         known_data.product_interest &&
         known_data.budget &&
         stage === "MID",
+
+      interaction_depth: history.length,
+
+      repeat_user: history.length > 3,
 
       readiness_level:
         lead?.score >= 80
@@ -273,7 +295,7 @@ export async function buildContext({
           "Asistente",
       },
 
-      persona: buildPersona(config, business),
+      persona: buildPersona(config),
 
       intent: detectIntent(text),
 
@@ -294,8 +316,13 @@ export async function buildContext({
 
       business_context: {
         name: business?.business_name || null,
+        location: business?.location || null,
         payments: {
           sinpe: business?.sinpe_number || null,
+          iban: business?.iban || null,
+        },
+        delivery: {
+          available: true,
         },
       },
     };
