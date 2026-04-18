@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — SALES BRAIN (STRATEGY INTELLIGENCE vNEXT FIXED v2)
+EVA CORE — SALES BRAIN (STRATEGY INTELLIGENCE vNEXT ALIGNED v3)
 ====================================================
 */
 
@@ -40,32 +40,17 @@ function classifyScore(score) {
 
 /*
 ====================================================
-NORMALIZE STAGE (🔥 NUEVO CRÍTICO)
-====================================================
-*/
-
-function normalizeStage(stage, fallback) {
-  const valid = ["EARLY", "QUALIFYING", "MID", "HOT", "POST"];
-
-  if (valid.includes(stage)) return stage;
-  if (valid.includes(fallback)) return fallback;
-
-  return "EARLY";
-}
-
-/*
-====================================================
-ANTI DUMP CONTROL (MEJORADO)
+ANTI DUMP CONTROL
 ====================================================
 */
 
 function enforceResponseControl({ text, strategy, stage }) {
   if (!text) return text;
 
-  let clean = text;
+  let clean = String(text).trim();
 
   if (stage === "EARLY" && clean.length > 220) {
-    clean = clean.slice(0, 200) + "...";
+    clean = clean.slice(0, 200).trim() + "...";
   }
 
   if (
@@ -80,23 +65,25 @@ function enforceResponseControl({ text, strategy, stage }) {
 
 /*
 ====================================================
-STRATEGY ENFORCEMENT (🔥 NUEVO)
+STRATEGY ENFORCEMENT
 ====================================================
 */
 
 function enforceStrategyOutput({ text, strategy }) {
   if (!text) return text;
 
+  const clean = String(text).trim();
+
   if (strategy === "ASK" || strategy === "QUALIFY") {
-    if (!text.includes("?")) {
+    if (!clean.includes("?")) {
       return (
-        text +
+        clean +
         " ¿Podría darme un poco más de detalle para ayudarle mejor?"
       );
     }
   }
 
-  return text;
+  return clean;
 }
 
 /*
@@ -110,6 +97,20 @@ function fallbackResponse(strategy = "DEFAULT") {
     return {
       reply:
         "Con mucho gusto le ayudo 😊 ¿Me podría indicar un poco más sobre lo que necesita?",
+    };
+  }
+
+  if (strategy === "RECOMMEND") {
+    return {
+      reply:
+        "Con mucho gusto le ayudo 😊 Si me indica un poco más de lo que busca, le recomiendo una opción.",
+    };
+  }
+
+  if (strategy === "CLOSE") {
+    return {
+      reply:
+        "Con mucho gusto le ayudo 😊 Si gusta, lo podemos coordinar de una vez.",
     };
   }
 
@@ -141,13 +142,19 @@ async function executeAI(context) {
     });
 
     aiText = ai?.text || null;
-  } catch (err) {}
+  } catch (err) {
+    console.error("❌ EXECUTE AI ERROR:", err);
+  }
 
   if (!aiText) return fallbackResponse(context.strategy);
 
   const formatted = formatAIResponse({
     text: aiText,
-    agentName: context.assistant.name,
+    agentName: context?.assistant?.name || "Asistente",
+    context: {
+      stage: context.stage,
+      strategy: context.strategy,
+    },
   });
 
   let controlled = enforceResponseControl({
@@ -172,16 +179,43 @@ MAIN
 
 export async function handleInbound(payload) {
   try {
-    const { organization_id, phone, text } = payload;
+    const {
+      organization_id,
+      phone,
+      text,
+      channel = "whatsapp",
+      message_id = null,
+    } = payload || {};
+
+    /*
+    ========================================
+    LEAD
+    ========================================
+    */
 
     await findOrCreateLead({ organization_id, phone });
+
+    /*
+    ========================================
+    CONVERSATION
+    ========================================
+    */
 
     const conversation = await findOrCreateConversation({
       organization_id,
       phone,
-      channel: "whatsapp",
+      channel,
     });
 
+    /*
+    ========================================
+    INBOUND MESSAGE
+    ========================================
+    */
+
+    // NOTA:
+    // No agrego external_message_id aquí porque no vimos el contrato real de saveMessage/db.js.
+    // La idempotencia ya se controla en routes/messages.js antes de llegar aquí.
     await saveMessage({
       organization_id,
       conversation_id: conversation.id,
@@ -189,29 +223,27 @@ export async function handleInbound(payload) {
       text,
     });
 
+    /*
+    ========================================
+    CONTEXT
+    ========================================
+    */
+
     let context =
       payload?.context ||
-      (await buildContext({ organization_id, phone, text }));
+      (await buildContext({
+        organization_id,
+        phone,
+        text,
+      }));
 
     context = {
       ...context,
       user_message: text,
       phone,
+      channel,
+      message_id,
     };
-
-    /*
-    ========================================
-    STRATEGY
-    ========================================
-    */
-
-    const decision = decideStrategy({
-      intent: context.intent,
-      stage: context.stage,
-      known_data: context.known_data,
-      strategy_inputs: context.strategy_inputs,
-      text,
-    });
 
     /*
     ========================================
@@ -222,7 +254,7 @@ export async function handleInbound(payload) {
     const scoreResult = calculateScore({
       lead: context?.lead || {},
       context,
-      lastMessages: [],
+      lastMessages: context?.history || [],
       now: Date.now(),
     });
 
@@ -230,33 +262,40 @@ export async function handleInbound(payload) {
 
     /*
     ========================================
-    NORMALIZE STAGE
+    STRATEGY FINAL AUTHORITY
     ========================================
     */
 
-    const finalStage = normalizeStage(
-      context.stage,
-      scoreResult.stage_suggested
-    );
+    const decision = decideStrategy({
+      intent: context.intent,
+      stage: context.stage,
+      known_data: context.known_data,
+      sales_context: context.sales_context,
+      signals: scoreSignals,
+      text,
+    });
 
-    /*
-    ========================================
-    STRATEGY FINAL
-    ========================================
-    */
-
-    let finalStrategy = decision?.strategy || "DEFAULT";
-
-    if (scoreSignals.is_ready) {
-      finalStrategy = "CLOSE";
-    } else if (scoreSignals.is_hot && finalStrategy === "QUALIFY") {
-      finalStrategy = "RECOMMEND";
-    }
+    const finalStage = decision?.stage || context.stage || "EARLY";
+    const finalStrategy = decision?.strategy || "ASK";
+    const finalIntent = decision?.intent || context.intent || "OTHER";
+    const finalKnownData = decision?.known_data || context.known_data || {};
 
     context = {
       ...context,
+      intent: finalIntent,
       stage: finalStage,
       strategy: finalStrategy,
+      known_data: finalKnownData,
+      strategy_reason: decision?.reason || null,
+      strategy_inputs: {
+        ...(context.strategy_inputs || {}),
+        current_turn_known_data:
+          decision?.current_turn_known_data || {},
+      },
+      sales_context: {
+        ...(context.sales_context || {}),
+        lead_score: scoreResult.score,
+      },
     };
 
     /*
@@ -273,8 +312,10 @@ export async function handleInbound(payload) {
       event_data: {
         score: scoreResult.score,
         label: scoreResult.label,
+        intent: finalIntent,
         stage: finalStage,
         strategy: finalStrategy,
+        strategy_reason: decision?.reason || null,
         ...scoreSignals,
       },
     });
@@ -310,7 +351,7 @@ export async function handleInbound(payload) {
     await updateLeadMemory({
       organization_id,
       phone,
-      data: context.known_data,
+      data: finalKnownData,
     });
 
     /*
@@ -330,10 +371,13 @@ export async function handleInbound(payload) {
       },
     });
 
-    return { reply: { text: execution.reply } };
-
+    return {
+      reply: {
+        text: execution.reply,
+      },
+    };
   } catch (err) {
-    console.error(err);
+    console.error("❌ HANDLE INBOUND ERROR:", err);
 
     return {
       reply: {
