@@ -47,7 +47,7 @@ console.log("📡 WHATSAPP CONFIG:", {
    VERIFY
 ====================================== */
 
-router.get("/webhook/whatsapp", (req, res) => {
+router.get("/", (req, res) => {
   const mode = req.query["hub.mode"];
   const token = req.query["hub.verify_token"];
   const challenge = req.query["hub.challenge"];
