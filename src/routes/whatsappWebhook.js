@@ -47,17 +47,23 @@ console.log("📡 WHATSAPP CONFIG:", {
    VERIFY
 ====================================== */
 
-router.get("/", (req, res) => {
+router.get("/webhook/whatsapp", (req, res) => {
   const mode = req.query["hub.mode"];
   const token = req.query["hub.verify_token"];
   const challenge = req.query["hub.challenge"];
+
+  console.log("📡 VERIFY REQUEST:", req.query);
 
   if (mode === "subscribe" && token === VERIFY_TOKEN) {
     console.log("✅ Webhook verified");
     return res.status(200).send(challenge);
   }
 
-  console.error("❌ Webhook verification failed");
+  console.error("❌ Webhook verification failed", {
+    received_token: token,
+    expected_token: VERIFY_TOKEN
+  });
+
   return res.sendStatus(403);
 });
 
