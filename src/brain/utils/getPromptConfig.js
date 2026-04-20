@@ -1,4 +1,8 @@
-// src/brain/utils/getPromptConfig.js
+/*
+====================================================
+EVA CORE — PROMPT CONFIG LOADER (NORMALIZED vNEXT v2)
+====================================================
+*/
 
 import pool from "../../db.js";
 
@@ -14,11 +18,6 @@ export async function getPromptConfig(organization_id) {
       [organization_id]
     );
 
-    /*
-    ========================================
-    1. NO CONFIG FOUND → HARD WARNING
-    ========================================
-    */
     if (result.rows.length === 0) {
       console.error("🚨 PROMPT_CONFIG MISSING", { organization_id });
 
@@ -27,43 +26,39 @@ export async function getPromptConfig(organization_id) {
         agent_name: "Asistente",
         tone: "profesional cercano",
         instructions: "",
-        __source: "fallback_missing_config"
+        emoji_policy: "max_1",
+        communication_style: "concise",
+        closing_style: "soft_close",
+        __source: "fallback_missing_config",
       };
     }
 
     const config = result.rows[0];
 
-    /*
-    ========================================
-    2. NORMALIZACIÓN ALINEADA AL CORE
-    ========================================
-    */
     const normalized = {
       business_name: config.business_name || "este negocio",
-      agent_name: config.agent_name || "Asistente", // ✅ FIX CLAVE
+      agent_name:
+        config.agent_name || config.assistant_name || "Asistente",
       tone: config.tone || "profesional cercano",
-      instructions: config.instructions || "", // ✅ FIX CLAVE
-      __source: "database"
+      instructions: config.instructions || "",
+      emoji_policy: config.emoji_policy || "max_1",
+      communication_style: config.communication_style || "concise",
+      closing_style: config.closing_style || "soft_close",
+      __source: "database",
     };
 
-    /*
-    ========================================
-    3. LOG CONTROLADO (DEBUG)
-    ========================================
-    */
     console.log("🧠 PROMPT_CONFIG_LOADED", {
       organization_id,
       source: normalized.__source,
       business_name: normalized.business_name,
-      agent_name: normalized.agent_name
+      agent_name: normalized.agent_name,
     });
 
     return normalized;
-
   } catch (err) {
     console.error("❌ ERROR getPromptConfig:", {
       organization_id,
-      error: err.message
+      error: err.message,
     });
 
     return {
@@ -71,7 +66,10 @@ export async function getPromptConfig(organization_id) {
       agent_name: "Asistente",
       tone: "profesional cercano",
       instructions: "",
-      __source: "fallback_error"
+      emoji_policy: "max_1",
+      communication_style: "concise",
+      closing_style: "soft_close",
+      __source: "fallback_error",
     };
   }
 }
