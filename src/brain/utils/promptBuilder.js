@@ -1,8 +1,59 @@
 /*
 ====================================================
-EVA CORE — PROMPT BUILDER (CONTROLLED EXPANSION vNEXT v2)
+EVA CORE — PROMPT BUILDER (CONTROLLED EXPANSION vNEXT v3)
 ====================================================
 */
+
+function safe(value) {
+  return String(value || "").trim();
+}
+
+function formatHistory(history = [], agentName = "Asistente") {
+  return history
+    .slice(-6)
+    .map((m) => {
+      const speaker = m.role === "user" ? "Cliente" : agentName;
+      return `${speaker}: ${safe(m.content)}`;
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
+function formatCatalog(catalogResults = []) {
+  if (!Array.isArray(catalogResults) || catalogResults.length === 0) {
+    return "SIN RESULTADOS RELEVANTES";
+  }
+
+  return catalogResults
+    .slice(0, 5)
+    .map((p, i) => {
+      const name = safe(p?.name) || "Producto";
+      const price = safe(p?.price);
+      return `${i + 1}. ${name}${price ? ` — ₡${price}` : ""}`;
+    })
+    .join("\n");
+}
+
+function formatRestrictions(restrictions = []) {
+  if (!Array.isArray(restrictions) || restrictions.length === 0) {
+    return "- No inventar información\n- Pedir confirmación si falta contexto";
+  }
+
+  return restrictions.map((r) => `- ${r}`).join("\n");
+}
+
+function formatKnownData(knownData = {}) {
+  return [
+    `Producto: ${safe(knownData?.product_interest) || "No definido"}`,
+    `Uso: ${safe(knownData?.use_case) || "No definido"}`,
+    `Problema: ${safe(knownData?.problem) || "No definido"}`,
+    `Presupuesto: ${
+      knownData?.budget !== null && knownData?.budget !== undefined
+        ? safe(knownData.budget)
+        : "No definido"
+    }`,
+  ].join("\n");
+}
 
 export function buildPrompt({
   context,
@@ -11,217 +62,156 @@ export function buildPrompt({
   promptConfig = {},
 }) {
   const {
-    intent,
-    stage,
-    strategy,
+    intent = "OTHER",
+    stage = "EARLY",
+    strategy = "ASK",
     organization,
     assistant,
     known_data = {},
     business_context = {},
+    business_rules = {},
+    constraints = {},
+    user_message = "",
   } = context || {};
 
   const agentName =
-    assistant?.name ||
-    promptConfig?.agent_name ||
+    safe(assistant?.name) ||
+    safe(promptConfig?.agent_name) ||
     "Asistente";
 
   const businessName =
-    organization?.business_name ||
-    promptConfig?.business_name ||
+    safe(organization?.business_name) ||
+    safe(promptConfig?.business_name) ||
     "el negocio";
 
-  const customInstructions = promptConfig?.instructions || "";
+  const historyText = formatHistory(history, agentName);
+  const catalogText = formatCatalog(catalogResults);
+  const knownDataText = formatKnownData(known_data);
 
-  /*
-  ====================================================
-  HISTORY
-  ====================================================
-  */
+  const tone =
+    safe(business_rules?.tone) ||
+    safe(promptConfig?.tone) ||
+    "profesional cercano";
 
-  const historyText = history
-    .slice(-6)
-    .map(
-      (m) =>
-        `${m.role === "user" ? "Cliente" : agentName}: ${
-          m.content || ""
-        }`
-    )
-    .join("\n");
+  const emojiPolicy =
+    safe(business_rules?.emoji_policy) ||
+    "max_1";
 
-  /*
-  ====================================================
-  CATÁLOGO (CONTROLADO)
-  ====================================================
-  */
+  const communicationStyle =
+    safe(business_rules?.communication_style) ||
+    "concise";
 
-  const catalogText =
-    catalogResults.length > 0
-      ? catalogResults
-          .slice(0, 5)
-          .map(
-            (p, i) =>
-              `${i + 1}. ${p.name || "Producto"} — ₡${
-                p.price || ""
-              }`
-          )
-          .join("\n")
-      : "SIN RESULTADOS RELEVANTES";
+  const closingStyle =
+    safe(business_rules?.closing_style) ||
+    "soft_close";
 
-  /*
-  ====================================================
-  🔥 SOT FUERTE
-  ====================================================
-  */
+  const restrictionsText = formatRestrictions(
+    business_rules?.restrictions || []
+  );
 
-  const sotRules = `
+  const paymentsSinpe =
+    safe(business_context?.payments?.sinpe) || "NO DISPONIBLE";
+
+  const paymentsIban =
+    safe(business_context?.payments?.iban) || "NO DISPONIBLE";
+
+  const location =
+    safe(business_context?.location) || "NO DISPONIBLE";
+
+  const delivery =
+    business_context?.delivery?.available === true ? "Sí" : "No";
+
+  const maxLinesEarly = constraints?.max_lines_early || 4;
+  const maxLinesDefault = constraints?.max_lines_default || 5;
+  const maxEmojis = constraints?.max_emojis || 1;
+
+  const customInstructions = safe(promptConfig?.instructions);
+
+  const isFirstMessage = !history || history.length === 0;
+
+  const systemPrompt = `
+Eres ${agentName}, asistente comercial de ${businessName}.
+
+OBJETIVO:
+Ayudar al cliente y mover la conversación hacia una acción concreta.
+No eres un chatbot informativo. Eres un asistente de ventas.
+
+IDENTIDAD:
+- Nombre del asistente: ${agentName}
+- Negocio: ${businessName}
+- Tono: ${tone}
+- Política de emojis: ${emojiPolicy}
+- Estilo de comunicación: ${communicationStyle}
+- Estilo de cierre: ${closingStyle}
+
 REGLAS CRÍTICAS:
+- NUNCA inventes información.
+- SOLO usa datos confirmados del negocio y del contexto.
+- Si falta información clave, pide confirmación.
+- NO repitas preguntas ya respondidas.
+- NO des bombazos de información.
+- NO uses lenguaje técnico innecesario.
+- SIEMPRE termina en pregunta o acción clara.
+- Máximo ${maxEmojis} emoji por respuesta.
+- En etapa EARLY usa máximo ${maxLinesEarly} líneas.
+- En otras etapas usa máximo ${maxLinesDefault} líneas.
 
-- NUNCA inventes información
-- SOLO usa datos del negocio
-- Si falta información → pide confirmación
-`;
+RESTRICCIONES DEL NEGOCIO:
+${restrictionsText}
 
-  /*
-  ====================================================
-  🔥 STRATEGY ENFORCEMENT (CRÍTICO)
-  ====================================================
-  */
-
-  const strategyBlock = `
 ESTRATEGIA OBLIGATORIA: ${strategy}
 
-Debes cumplir:
+CUMPLIMIENTO DE ESTRATEGIA:
+- ASK: pedir información faltante, no explicar todo todavía.
+- QUALIFY: entender necesidad, uso, contexto o presupuesto.
+- EXPLAIN: explicar breve, claro y útil, sin saturar.
+- RECOMMEND: sugerir opción concreta y breve.
+- CLOSE: llevar a acción concreta como compra, visita, coordinación o apartado.
+- FOLLOWUP: reactivar sin sonar invasivo.
+- EXPLAIN_CLOSE: explicar simple y cerrar a acción.
 
-ASK / QUALIFY:
-→ Hacer pregunta
-→ NO explicar todo
-→ NO dar precios aún
+DATOS DEL NEGOCIO:
+- Ubicación: ${location}
+- SINPE: ${paymentsSinpe}
+- IBAN: ${paymentsIban}
+- Envíos disponibles: ${delivery}
 
-RECOMMEND:
-→ Sugerir opciones claras
-→ Explicar breve
+INSTRUCCIONES PERSONALIZADAS:
+${customInstructions || "Sin instrucciones adicionales"}
 
-CLOSE:
-→ Llevar a acción (compra / visita / apartado)
+REGLA DE APERTURA:
+${
+  isFirstMessage
+    ? `Si es el primer mensaje, puedes iniciar saludando como ${agentName} de ${businessName}.`
+    : "Si la conversación ya empezó, no repitas presentación."
+}
 
-SI NO SIGUES ESTO → RESPUESTA INCORRECTA
-`;
+CONTEXTO ACTUAL:
+- Intento: ${intent}
+- Etapa: ${stage}
 
-  /*
-  ====================================================
-  🔥 OUTPUT CONTROL
-  ====================================================
-  */
-
-  const outputRules = `
-FORMATO DE RESPUESTA:
-
-- Máximo 3–4 líneas en EARLY
-- Máximo 1 emoji
-- Lenguaje claro, humano
-- SIEMPRE terminar en acción o pregunta
-`;
-
-  /*
-  ====================================================
-  🔥 MEMORY CONTROL
-  ====================================================
-  */
-
-  const memoryRules = `
-MEMORIA:
-
-- NO repitas preguntas ya respondidas
-- Usa datos conocidos
-`;
-
-  /*
-  ====================================================
-  🔥 BUSINESS CONTEXT FIXED
-  ====================================================
-  */
-
-  const businessBlock = `
-NEGOCIO:
-
-Nombre: ${businessName}
-
-Pagos:
-SINPE: ${business_context?.payments?.sinpe || "NO DISPONIBLE"}
-IBAN: ${business_context?.payments?.iban || "NO DISPONIBLE"}
-
-Ubicación:
-${business_context?.location || "NO DISPONIBLE"}
-
-Envíos:
-${business_context?.delivery?.available ? "Sí" : "No"}
-`;
-
-  /*
-  ====================================================
-  🔥 KNOWN DATA HUMANIZED
-  ====================================================
-  */
-
-  const knownDataText = `
-Datos detectados del cliente:
-
-Producto: ${known_data.product_interest || "No definido"}
-Uso: ${known_data.use_case || "No definido"}
-Problema: ${known_data.problem || "No definido"}
-Presupuesto: ${known_data.budget || "No definido"}
-`;
-
-  /*
-  ====================================================
-  🔥 IDENTITY
-  ====================================================
-  */
-
-  const isFirstMessage =
-    !history || history.length === 0;
-
-  const identityBlock = isFirstMessage
-    ? `Inicia con: "Hola 😊 le saluda ${agentName} de ${businessName}."`
-    : `Continúa la conversación sin repetir presentación`;
-
-  /*
-  ====================================================
-  FINAL PROMPT
-  ====================================================
-  */
-
-  return `
-${identityBlock}
-
-${sotRules}
-
-${strategyBlock}
-
-${outputRules}
-
-${memoryRules}
-
-${customInstructions}
-
-CONTEXTO:
-Empresa: ${businessName}
-Intento: ${intent}
-Etapa: ${stage}
-
-${businessBlock}
-
+DATOS CONOCIDOS DEL CLIENTE:
 ${knownDataText}
 
-Historial:
+HISTORIAL RECIENTE:
 ${historyText || "Sin historial"}
 
-Catálogo:
+CATÁLOGO RELEVANTE:
 ${catalogText}
 
-Mensaje del cliente:
-"${context.user_message}"
+Devuelve solo el texto final que se enviará al cliente.
+No agregues etiquetas, JSON, explicaciones ni prefijos.
+`.trim();
 
-Responde cumpliendo TODAS las reglas.
-`;
+  const userPrompt = `
+Mensaje del cliente:
+"${safe(user_message)}"
+
+Responde cumpliendo todas las reglas.
+`.trim();
+
+  return {
+    systemPrompt,
+    userPrompt,
+  };
 }
