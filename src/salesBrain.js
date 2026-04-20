@@ -155,7 +155,7 @@ async function executeAI(context) {
   let aiText = null;
 
   try {
-    const ai = await runAI({ messages });
+    const ai = await runAI({ prompt: messages }); // 🔧 FIX CRÍTICO
     aiText = ai?.text || null;
   } catch (err) {
     console.error("❌ EXECUTE AI ERROR:", err);
@@ -202,19 +202,7 @@ export async function handleInbound(payload) {
       message_id = null,
     } = payload || {};
 
-    /*
-    ========================================
-    LEAD
-    ========================================
-    */
-
     await findOrCreateLead({ organization_id, phone });
-
-    /*
-    ========================================
-    CONVERSATION
-    ========================================
-    */
 
     const conversation = await findOrCreateConversation({
       organization_id,
@@ -222,24 +210,12 @@ export async function handleInbound(payload) {
       channel,
     });
 
-    /*
-    ========================================
-    INBOUND MESSAGE
-    ========================================
-    */
-
     await saveMessage({
       organization_id,
       conversation_id: conversation.id,
       role: "user",
       text,
     });
-
-    /*
-    ========================================
-    CONTEXT
-    ========================================
-    */
 
     let context =
       payload?.context ||
@@ -257,12 +233,6 @@ export async function handleInbound(payload) {
       message_id,
     };
 
-    /*
-    ========================================
-    SCORE
-    ========================================
-    */
-
     const scoreResult = calculateScore({
       lead: context?.lead || {},
       context,
@@ -271,12 +241,6 @@ export async function handleInbound(payload) {
     });
 
     const scoreSignals = classifyScore(scoreResult.score);
-
-    /*
-    ========================================
-    STRATEGY FINAL AUTHORITY
-    ========================================
-    */
 
     const decision = decideStrategy({
       intent: context.intent,
@@ -310,12 +274,6 @@ export async function handleInbound(payload) {
       },
     };
 
-    /*
-    ========================================
-    PIPELINE EVENTS
-    ========================================
-    */
-
     await savePipelineEvent({
       organization_id,
       conversation_id: conversation.id,
@@ -332,12 +290,6 @@ export async function handleInbound(payload) {
       },
     });
 
-    /*
-    ========================================
-    EXECUTION
-    ========================================
-    */
-
     const execution = await executeAI(context);
 
     await saveMessage({
@@ -346,12 +298,6 @@ export async function handleInbound(payload) {
       role: "assistant",
       text: execution.reply,
     });
-
-    /*
-    ========================================
-    UPDATE LEAD
-    ========================================
-    */
 
     await updateLeadStageAndScore({
       organization_id,
@@ -365,12 +311,6 @@ export async function handleInbound(payload) {
       phone,
       data: finalKnownData,
     });
-
-    /*
-    ========================================
-    FOLLOWUPS
-    ========================================
-    */
 
     await createFollowupsForConversation({
       organization_id,
@@ -386,4 +326,16 @@ export async function handleInbound(payload) {
     return {
       reply: {
         text: execution.reply,
-     
+      },
+    };
+
+  } catch (err) {
+    console.error("❌ HANDLE INBOUND ERROR:", err);
+
+    return {
+      reply: {
+        text: "Con mucho gusto le ayudo 😊 ¿Me podría repetir su consulta?",
+      },
+    };
+  }
+}
