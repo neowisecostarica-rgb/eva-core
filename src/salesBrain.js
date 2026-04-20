@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — SALES BRAIN (STRATEGY INTELLIGENCE vNEXT ALIGNED v3)
+EVA CORE — SALES BRAIN (STRATEGY INTELLIGENCE vNEXT ALIGNED v4)
 ====================================================
 */
 
@@ -114,6 +114,13 @@ function fallbackResponse(strategy = "DEFAULT") {
     };
   }
 
+  if (strategy === "EXPLAIN_CLOSE") {
+    return {
+      reply:
+        "Con mucho gusto le ayudo 😊 Si me confirma un poco más del caso, le indico la mejor forma de coordinarlo.",
+    };
+  }
+
   return {
     reply:
       "Con mucho gusto le ayudo 😊 ¿En qué le puedo apoyar?",
@@ -128,19 +135,27 @@ async function executeAI(context) {
     system_strategy: context.strategy,
   };
 
-  const prompt = buildPrompt({
+  const promptPayload = buildPrompt({
     context: enrichedContext,
     history: context.history || [],
     promptConfig,
   });
 
+  const messages = [
+    {
+      role: "system",
+      content: promptPayload.systemPrompt,
+    },
+    {
+      role: "user",
+      content: promptPayload.userPrompt,
+    },
+  ];
+
   let aiText = null;
 
   try {
-    const ai = await runAI({
-      prompt: [{ role: "user", content: prompt }],
-    });
-
+    const ai = await runAI({ messages });
     aiText = ai?.text || null;
   } catch (err) {
     console.error("❌ EXECUTE AI ERROR:", err);
@@ -213,9 +228,6 @@ export async function handleInbound(payload) {
     ========================================
     */
 
-    // NOTA:
-    // No agrego external_message_id aquí porque no vimos el contrato real de saveMessage/db.js.
-    // La idempotencia ya se controla en routes/messages.js antes de llegar aquí.
     await saveMessage({
       organization_id,
       conversation_id: conversation.id,
@@ -374,15 +386,4 @@ export async function handleInbound(payload) {
     return {
       reply: {
         text: execution.reply,
-      },
-    };
-  } catch (err) {
-    console.error("❌ HANDLE INBOUND ERROR:", err);
-
-    return {
-      reply: {
-        text: "Con mucho gusto le ayudo 😊 ¿Me podría repetir su consulta?",
-      },
-    };
-  }
-}
+     
