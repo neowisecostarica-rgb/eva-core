@@ -1,6 +1,10 @@
-// src/brain/engines/aiEngine.js
+/*
+====================================================
+EVA CORE — AI ENGINE (CHAT COMPLETIONS vNEXT SAFE)
+====================================================
+*/
 
-export async function runAI({ prompt }) {
+export async function runAI({ prompt, messages }) {
   try {
     const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
@@ -9,7 +13,13 @@ export async function runAI({ prompt }) {
       return null;
     }
 
-    if (!prompt || !Array.isArray(prompt)) {
+    const finalMessages = Array.isArray(messages)
+      ? messages
+      : Array.isArray(prompt)
+      ? prompt
+      : null;
+
+    if (!finalMessages || !Array.isArray(finalMessages)) {
       throw new Error("Invalid prompt format (expected messages array)");
     }
 
@@ -27,7 +37,7 @@ export async function runAI({ prompt }) {
       },
       body: JSON.stringify({
         model: "gpt-4o-mini",
-        messages: prompt, // ✅ FIX CLAVE
+        messages: finalMessages,
         temperature: 0.7,
         max_tokens: 200,
       }),
@@ -67,7 +77,6 @@ export async function runAI({ prompt }) {
       text,
       raw: data,
     };
-
   } catch (err) {
     if (err.name === "AbortError") {
       console.error("⏱️ AI TIMEOUT");
