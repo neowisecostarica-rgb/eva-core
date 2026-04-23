@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — SALES BRAIN (STRATEGY INTELLIGENCE vNEXT ALIGNED v4)
+EVA CORE — SALES BRAIN (CONTROLLED vNEXT FINAL)
 ====================================================
 */
 
@@ -26,37 +26,22 @@ import { calculateScore } from "./brain/engines/scoreEngine.js";
 
 /*
 ====================================================
-HELPERS
+STRICT AI CONTROL
 ====================================================
 */
 
-function classifyScore(score) {
-  return {
-    is_ready: score >= 85,
-    is_hot: score >= 65,
-    is_warm: score >= 40,
-  };
-}
-
-/*
-====================================================
-ANTI DUMP CONTROL
-====================================================
-*/
-
-function enforceResponseControl({ text, strategy, stage }) {
+function enforceHardRules(text, context) {
   if (!text) return text;
 
   let clean = String(text).trim();
 
-  if (stage === "EARLY" && clean.length > 220) {
+  // 🚫 No dump
+  if (context.stage === "EARLY" && clean.length > 220) {
     clean = clean.slice(0, 200).trim() + "...";
   }
 
-  if (
-    ["QUALIFY", "ASK", "DEFAULT"].includes(strategy) &&
-    !clean.includes("?")
-  ) {
+  // 🚫 Siempre avanzar conversación
+  if (!clean.includes("?") && ["ASK", "QUALIFY"].includes(context.strategy)) {
     clean += " ¿Me podría indicar un poco más para ayudarle mejor?";
   }
 
@@ -65,125 +50,55 @@ function enforceResponseControl({ text, strategy, stage }) {
 
 /*
 ====================================================
-STRATEGY ENFORCEMENT
+AI EXECUTION (CONTROLLED)
 ====================================================
 */
-
-function enforceStrategyOutput({ text, strategy }) {
-  if (!text) return text;
-
-  const clean = String(text).trim();
-
-  if (strategy === "ASK" || strategy === "QUALIFY") {
-    if (!clean.includes("?")) {
-      return (
-        clean +
-        " ¿Podría darme un poco más de detalle para ayudarle mejor?"
-      );
-    }
-  }
-
-  return clean;
-}
-
-/*
-====================================================
-AI EXECUTION
-====================================================
-*/
-
-function fallbackResponse(strategy = "DEFAULT") {
-  if (strategy === "QUALIFY" || strategy === "ASK") {
-    return {
-      reply:
-        "Con mucho gusto le ayudo 😊 ¿Me podría indicar un poco más sobre lo que necesita?",
-    };
-  }
-
-  if (strategy === "RECOMMEND") {
-    return {
-      reply:
-        "Con mucho gusto le ayudo 😊 Si me indica un poco más de lo que busca, le recomiendo una opción.",
-    };
-  }
-
-  if (strategy === "CLOSE") {
-    return {
-      reply:
-        "Con mucho gusto le ayudo 😊 Si gusta, lo podemos coordinar de una vez.",
-    };
-  }
-
-  if (strategy === "EXPLAIN_CLOSE") {
-    return {
-      reply:
-        "Con mucho gusto le ayudo 😊 Si me confirma un poco más del caso, le indico la mejor forma de coordinarlo.",
-    };
-  }
-
-  return {
-    reply:
-      "Con mucho gusto le ayudo 😊 ¿En qué le puedo apoyar?",
-  };
-}
 
 async function executeAI(context) {
   const promptConfig = await getPromptConfig(context.organization.id);
 
-  const enrichedContext = {
-    ...context,
-    system_strategy: context.strategy,
-  };
-
   const promptPayload = buildPrompt({
-    context: enrichedContext,
+    context,
     history: context.history || [],
     promptConfig,
   });
 
   const messages = [
-    {
-      role: "system",
-      content: promptPayload.systemPrompt,
-    },
-    {
-      role: "user",
-      content: promptPayload.userPrompt,
-    },
+    { role: "system", content: promptPayload.systemPrompt },
+    { role: "user", content: promptPayload.userPrompt },
   ];
 
   let aiText = null;
 
   try {
-    const ai = await runAI({ prompt: messages }); // 🔧 FIX CRÍTICO
+    const ai = await runAI({
+      prompt: messages,
+      metadata: {
+        intent: context.intent,
+        stage: context.stage,
+        strategy: context.strategy,
+      },
+    });
+
     aiText = ai?.text || null;
   } catch (err) {
-    console.error("❌ EXECUTE AI ERROR:", err);
+    console.error("❌ AI ERROR:", err);
   }
 
-  if (!aiText) return fallbackResponse(context.strategy);
+  if (!aiText) {
+    return {
+      reply: "Con mucho gusto le ayudo 😊 ¿Me podría indicar un poco más?",
+    };
+  }
 
-  const formatted = formatAIResponse({
+  let formatted = formatAIResponse({
     text: aiText,
     agentName: context?.assistant?.name || "Asistente",
-    context: {
-      stage: context.stage,
-      strategy: context.strategy,
-    },
   });
 
-  let controlled = enforceResponseControl({
-    text: formatted,
-    strategy: context.strategy,
-    stage: context.stage,
-  });
+  formatted = enforceHardRules(formatted, context);
 
-  controlled = enforceStrategyOutput({
-    text: controlled,
-    strategy: context.strategy,
-  });
-
-  return { reply: controlled };
+  return { reply: formatted };
 }
 
 /*
@@ -240,55 +155,21 @@ export async function handleInbound(payload) {
       now: Date.now(),
     });
 
-    const scoreSignals = classifyScore(scoreResult.score);
-
     const decision = decideStrategy({
       intent: context.intent,
       stage: context.stage,
       known_data: context.known_data,
       sales_context: context.sales_context,
-      signals: scoreSignals,
       text,
     });
 
-    const finalStage = decision?.stage || context.stage || "EARLY";
-    const finalStrategy = decision?.strategy || "ASK";
-    const finalIntent = decision?.intent || context.intent || "OTHER";
-    const finalKnownData = decision?.known_data || context.known_data || {};
-
     context = {
       ...context,
-      intent: finalIntent,
-      stage: finalStage,
-      strategy: finalStrategy,
-      known_data: finalKnownData,
-      strategy_reason: decision?.reason || null,
-      strategy_inputs: {
-        ...(context.strategy_inputs || {}),
-        current_turn_known_data:
-          decision?.current_turn_known_data || {},
-      },
-      sales_context: {
-        ...(context.sales_context || {}),
-        lead_score: scoreResult.score,
-      },
+      intent: decision.intent,
+      stage: decision.stage,
+      strategy: decision.strategy,
+      known_data: decision.known_data,
     };
-
-    await savePipelineEvent({
-      organization_id,
-      conversation_id: conversation.id,
-      lead_phone: phone,
-      event_type: "LEAD_CLASSIFIED",
-      event_data: {
-        score: scoreResult.score,
-        label: scoreResult.label,
-        intent: finalIntent,
-        stage: finalStage,
-        strategy: finalStrategy,
-        strategy_reason: decision?.reason || null,
-        ...scoreSignals,
-      },
-    });
 
     const execution = await executeAI(context);
 
@@ -302,33 +183,26 @@ export async function handleInbound(payload) {
     await updateLeadStageAndScore({
       organization_id,
       phone,
-      stage: finalStage,
+      stage: context.stage,
       score: scoreResult.score,
     });
 
     await updateLeadMemory({
       organization_id,
       phone,
-      data: finalKnownData,
+      data: context.known_data,
     });
 
     await createFollowupsForConversation({
       organization_id,
       conversation_id: conversation.id,
       phone,
-      context: {
-        ...context,
-        score: scoreResult.score,
-        scoreSignals,
-      },
+      context,
     });
 
     return {
-      reply: {
-        text: execution.reply,
-      },
+      reply: { text: execution.reply },
     };
-
   } catch (err) {
     console.error("❌ HANDLE INBOUND ERROR:", err);
 
