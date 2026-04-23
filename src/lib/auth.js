@@ -1,11 +1,6 @@
-console.log("🔐 AUTH OK:", {
-  orgId,
-  apiKey: apiKey ? "OK" : "MISSING"
-});
-
 /*
 ====================================================
-EVA CORE — AUTH (Production Safe vNext)
+EVA CORE — AUTH (Production Safe vNext FIXED)
 ====================================================
 */
 
@@ -55,10 +50,14 @@ export async function authenticate(req, res, next) {
       });
     }
 
+    // ✅ LOG CORRECTO (ya con variables definidas)
+    console.log("🔐 AUTH OK:", {
+      orgId,
+      apiKey: "OK",
+    });
+
     req.organization = { id: orgId };
     req.organization_id = orgId;
-
-    console.log("🔐 AUTH OK:", orgId);
 
     next();
 
