@@ -230,13 +230,11 @@ export async function handleInbound(payload) {
     ============================
     */
 
-    let context =
-      payload?.context ||
-      (await buildContext({
-        organization_id,
-        phone,
-        text,
-      }));
+    let context = await buildContext({
+  organization_id,
+  phone,
+  text,
+});
 
     context = {
       ...context,
