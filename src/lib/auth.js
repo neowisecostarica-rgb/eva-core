@@ -1,3 +1,8 @@
+console.log("🔐 AUTH OK:", {
+  orgId,
+  apiKey: apiKey ? "OK" : "MISSING"
+});
+
 /*
 ====================================================
 EVA CORE — AUTH (Production Safe vNext)
