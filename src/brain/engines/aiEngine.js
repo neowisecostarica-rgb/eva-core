@@ -1,89 +1,67 @@
 /*
 ====================================================
-EVA CORE — AI ENGINE (CHAT COMPLETIONS vNEXT SAFE)
+EVA CORE — AI ENGINE (CONTROLLED vNEXT FINAL)
 ====================================================
 */
 
-export async function runAI({ prompt, messages }) {
+import OpenAI from "openai";
+
+const client = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+/*
+====================================================
+SANITIZER
+====================================================
+*/
+
+function sanitizeOutput(text = "") {
+  if (!text) return null;
+
+  let clean = String(text).trim();
+
+  // eliminar prefijos raros
+  clean = clean.replace(/^(asistente|assistant|eva)\s*:\s*/gi, "");
+
+  return clean;
+}
+
+/*
+====================================================
+MAIN AI RUNNER
+====================================================
+*/
+
+export async function runAI({ prompt = [], metadata = {} }) {
   try {
-    const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-
-    if (!OPENAI_API_KEY) {
-      console.error("❌ OPENAI_API_KEY NO CONFIGURADA");
-      return null;
+    if (!prompt || !Array.isArray(prompt)) {
+      throw new Error("Invalid prompt format");
     }
 
-    const finalMessages = Array.isArray(messages)
-      ? messages
-      : Array.isArray(prompt)
-      ? prompt
-      : null;
-
-    if (!finalMessages || !Array.isArray(finalMessages)) {
-      throw new Error("Invalid prompt format (expected messages array)");
-    }
-
-    console.log("🧠 AI START");
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
-
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      signal: controller.signal,
-      headers: {
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: finalMessages,
-        temperature: 0.7,
-        max_tokens: 200,
-      }),
+    const response = await client.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: prompt,
+      temperature: 0.4, // 🔒 controlado (menos creatividad, más consistencia)
+      max_tokens: 180,
     });
 
-    clearTimeout(timeout);
-
-    const rawText = await response.text();
-
-    console.log("🧠 OPENAI RAW:", rawText);
-
-    let data;
-
-    try {
-      data = JSON.parse(rawText);
-    } catch (err) {
-      console.error("❌ JSON PARSE ERROR:", err);
-      return null;
-    }
-
-    if (!response.ok) {
-      console.error("❌ OPENAI STATUS ERROR:", data);
-      return null;
-    }
-
     const text =
-      data?.choices?.[0]?.message?.content?.trim() || null;
+      response?.choices?.[0]?.message?.content || null;
 
-    if (!text) {
-      console.warn("⚠️ AI RESPUESTA VACÍA:", data);
-      return null;
-    }
-
-    console.log("✅ AI RESPONSE OK");
+    const cleaned = sanitizeOutput(text);
 
     return {
-      text,
-      raw: data,
+      text: cleaned,
+      raw: text,
+      metadata,
     };
   } catch (err) {
-    if (err.name === "AbortError") {
-      console.error("⏱️ AI TIMEOUT");
-    } else {
-      console.error("❌ AI ENGINE ERROR:", err);
-    }
+    console.error("❌ AI ENGINE ERROR:", err);
 
-    return null;
+    return {
+      text: null,
+      error: true,
+    };
   }
 }
