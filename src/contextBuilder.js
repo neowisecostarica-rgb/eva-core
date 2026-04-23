@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — CONTEXT BUILDER (INTELLIGENCE vNEXT FIXED v3)
+EVA CORE — CONTEXT BUILDER (FUSION vNEXT FINAL)
 ====================================================
 */
 
@@ -21,56 +21,45 @@ function lower(v) {
   return safe(v).toLowerCase();
 }
 
-function truthyString(value) {
+function truthy(value) {
   const v = lower(value);
-  return v === "true" || v === "1" || v === "si" || v === "sí" || v === "yes";
+  return ["true", "1", "si", "sí", "yes"].includes(v);
+}
+
+function hasValue(v) {
+  if (v === null || v === undefined) return false;
+  if (typeof v === "string") return v.trim().length > 0;
+  if (Array.isArray(v)) return v.length > 0;
+  return true;
 }
 
 /*
 ====================================================
-MERGE MEMORY
+KNOWN DATA (ALINEADO CON STRATEGY ENGINE)
 ====================================================
 */
 
-function mergeKnownData(detected, lead = {}) {
-  return {
-    budget: detected.budget || lead?.budget || null,
-    use_case: detected.use_case || lead?.use_case || null,
-    problem: detected.problem || lead?.problem || null,
-    product_interest:
-      detected.product_interest || lead?.product_interest || null,
-  };
-}
-
-/*
-====================================================
-DETECTION
-====================================================
-*/
-
-function detectKnownData(text = "") {
+function extractKnownData(text = "") {
   const t = lower(text);
+  const raw = safe(text);
 
+  let budget = null;
   let use_case = null;
   let product_interest = null;
   let problem = null;
-  let budget = null;
 
+  // uso
   if (t.includes("trabajo")) use_case = "WORK";
   if (t.includes("estudio")) use_case = "STUDY";
 
+  // producto
   if (t.includes("laptop") || t.includes("computadora") || t.includes("pc")) {
     product_interest = "LAPTOP";
   }
+  if (t.includes("impresora")) product_interest = "PRINTER";
+  if (t.includes("monitor")) product_interest = "MONITOR";
 
-  if (t.includes("impresora")) {
-    product_interest = "PRINTER";
-  }
-
-  if (t.includes("monitor")) {
-    product_interest = "MONITOR";
-  }
-
+  // problema
   if (
     t.includes("no imprime") ||
     t.includes("error") ||
@@ -81,42 +70,53 @@ function detectKnownData(text = "") {
     t.includes("reparacion") ||
     t.includes("reparación")
   ) {
-    problem = safe(text);
+    problem = raw;
   }
 
-  const currencyMatch = safe(text).match(/₡\s*([\d.,]+)/i);
-  if (currencyMatch?.[1]) {
-    const value = Number(currencyMatch[1].replace(/[.,]/g, ""));
-    budget = Number.isNaN(value) ? null : value;
+  // presupuesto
+  const colon = raw.match(/₡\s*([\d.,]+)/i);
+  if (colon?.[1]) {
+    const val = Number(colon[1].replace(/[.,]/g, ""));
+    if (!Number.isNaN(val)) budget = val;
   }
 
   if (!budget) {
-    const milMatch = safe(text).match(/(\d{2,3})\s*mil\b/i);
-    if (milMatch?.[1]) {
-      const value = Number(milMatch[1]) * 1000;
-      budget = Number.isNaN(value) ? null : value;
+    const mil = raw.match(/(\d{2,3})\s*mil\b/i);
+    if (mil?.[1]) {
+      const val = Number(mil[1]) * 1000;
+      if (!Number.isNaN(val)) budget = val;
     }
   }
 
   if (!budget) {
-    const numeric = t.match(/(\d{5,7})/);
-    if (numeric?.[1]) {
-      const value = Number(numeric[1]);
-      budget = Number.isNaN(value) ? null : value;
+    const num = raw.match(/\b(\d{5,7})\b/);
+    if (num?.[1]) {
+      const val = Number(num[1]);
+      if (!Number.isNaN(val)) budget = val;
     }
   }
 
   return {
     budget,
     use_case,
-    problem,
     product_interest,
+    problem,
+  };
+}
+
+function mergeKnownData(detected, lead = {}) {
+  return {
+    budget: detected.budget ?? lead?.budget ?? null,
+    use_case: detected.use_case ?? lead?.use_case ?? null,
+    product_interest:
+      detected.product_interest ?? lead?.product_interest ?? null,
+    problem: detected.problem ?? lead?.problem ?? null,
   };
 }
 
 /*
 ====================================================
-STAGE DETECTION
+STAGE (COMPATIBLE CON STRATEGY ENGINE)
 ====================================================
 */
 
@@ -126,68 +126,78 @@ function detectStage({ lead = {}, known_data }) {
   if (known_data.problem) return "QUALIFYING";
 
   if (
-    known_data.product_interest &&
-    known_data.use_case &&
-    known_data.budget
+    hasValue(known_data.product_interest) &&
+    hasValue(known_data.use_case) &&
+    hasValue(known_data.budget)
   ) {
     return "MID";
   }
 
-  if (known_data.product_interest) {
-    return "QUALIFYING";
-  }
+  if (known_data.product_interest) return "QUALIFYING";
 
   return "EARLY";
 }
 
 /*
 ====================================================
-PERSONA BUILDER
+STRATEGY INPUTS (RECUPERADO)
 ====================================================
 */
 
-function buildPersona(config = {}) {
-  const dynamicRestrictions = [];
-
-  if (config?.allow_technical_explanations === false) {
-    dynamicRestrictions.push("no_technical_explanations");
-  }
-
-  if (config?.allow_information_dump === false) {
-    dynamicRestrictions.push("no_information_dump");
-  }
-
-  if (config?.must_close_conversation === true) {
-    dynamicRestrictions.push("must_close_conversation");
-  }
-
+function buildStrategyInputs({ known_data = {}, history = [], lead = {} }) {
   return {
-    name:
-      config?.agent_name ||
-      config?.assistant_name ||
-      "Asistente",
+    has_problem: !!known_data.problem,
+    has_budget: !!known_data.budget,
+    has_product_interest: !!known_data.product_interest,
+    has_use_case: !!known_data.use_case,
 
-    tone: config?.tone || "neutral_professional",
+    has_enough_info:
+      !!known_data.product_interest &&
+      (!!known_data.use_case || !!known_data.problem),
 
-    emoji_policy: config?.emoji_policy || "max_1",
+    needs_qualification:
+      !known_data.use_case || !known_data.product_interest,
 
-    communication_style:
-      config?.communication_style || "concise",
+    can_close:
+      !!known_data.product_interest &&
+      !!known_data.budget,
 
-    restrictions: [
-      ...dynamicRestrictions,
-      "no_technical_explanations",
-      "no_information_dump",
-      "must_close_conversation",
-    ],
+    interaction_depth: history.length,
+    repeat_user: history.length > 3,
 
-    closing_style: config?.closing_style || "soft_close",
+    readiness_level:
+      lead?.score >= 80
+        ? "HIGH"
+        : lead?.score >= 40
+        ? "MEDIUM"
+        : "LOW",
   };
 }
 
 /*
 ====================================================
-BUSINESS RULES BUILDER
+PERSONA
+====================================================
+*/
+
+function buildPersona(config = {}) {
+  return {
+    name: config?.agent_name || "Asistente",
+    tone: config?.tone || "neutral_professional",
+    emoji_policy: config?.emoji_policy || "max_1",
+    communication_style: config?.communication_style || "concise",
+    closing_style: config?.closing_style || "soft_close",
+    restrictions: [
+      "no_technical_explanations",
+      "no_information_dump",
+      "must_close_conversation",
+    ],
+  };
+}
+
+/*
+====================================================
+BUSINESS RULES (RECUPERADO COMPLETO)
 ====================================================
 */
 
@@ -201,8 +211,7 @@ function buildBusinessRules(config = {}, business = {}) {
     restrictions: [
       "no_invent_information",
       "use_only_business_data",
-      "ask_for_confirmation_if_missing_data",
-      "do_not_repeat_answered_questions",
+      "ask_if_missing_data",
       "must_close_or_ask",
       "max_1_emoji",
       "no_information_dump",
@@ -214,14 +223,14 @@ function buildBusinessRules(config = {}, business = {}) {
 
 /*
 ====================================================
-CONSTRAINTS BUILDER
+CONSTRAINTS (RECUPERADO COMPLETO)
 ====================================================
 */
 
 function buildConstraints(config = {}, business = {}) {
   const deliveryConfigured =
     business?.delivery_available === true ||
-    truthyString(business?.delivery_available);
+    truthy(business?.delivery_available);
 
   return {
     max_lines_early: 4,
@@ -229,7 +238,6 @@ function buildConstraints(config = {}, business = {}) {
     max_emojis: 1,
     no_invent_information: true,
     ask_if_missing_data: true,
-    do_not_repeat_answered_questions: true,
     must_close_or_ask: true,
     no_technical_explanations: true,
     no_information_dump: true,
@@ -254,156 +262,104 @@ export async function buildContext({
   text = "",
 }) {
   try {
-    /*
-    ========================================
-    CORE DATA
-    ========================================
-    */
+    const business =
+      (
+        await pool.query(
+          `SELECT * FROM business_profile WHERE organization_id = $1 LIMIT 1`,
+          [organization_id]
+        )
+      ).rows[0] || {};
 
-    const business = (
-      await pool.query(
-        `SELECT * FROM business_profile WHERE organization_id = $1 LIMIT 1`,
-        [organization_id]
-      )
-    ).rows[0] || {};
+    const config =
+      (
+        await pool.query(
+          `SELECT * FROM prompt_config WHERE organization_id = $1 LIMIT 1`,
+          [organization_id]
+        )
+      ).rows[0] || {};
 
-    const config = (
-      await pool.query(
-        `SELECT * FROM prompt_config WHERE organization_id = $1 LIMIT 1`,
-        [organization_id]
-      )
-    ).rows[0] || {};
-
-    const lead = phone
-      ? (
-          await pool.query(
-            `SELECT * FROM leads WHERE organization_id = $1 AND phone = $2 LIMIT 1`,
-            [organization_id, phone]
-          )
-        ).rows[0] || {}
-      : {};
+    const lead =
+      phone &&
+      (
+        await pool.query(
+          `SELECT * FROM leads WHERE organization_id = $1 AND phone = $2 LIMIT 1`,
+          [organization_id, phone]
+        )
+      ).rows[0];
 
     /*
-    ========================================
+    ============================
     HISTORY
-    ========================================
+    ============================
     */
 
     let history = [];
 
     if (phone) {
-      const conversation = (
-        await pool.query(
-          `
-          SELECT id
-          FROM conversations
-          WHERE organization_id = $1
-          AND external_user_id = $2
-          ORDER BY updated_at DESC
-          LIMIT 1
-          `,
-          [organization_id, phone]
-        )
-      ).rows[0];
-
-      if (conversation?.id) {
-        const rows = (
+      const conv =
+        (
           await pool.query(
             `
-            SELECT role, content, created_at
-            FROM messages
+            SELECT id FROM conversations
             WHERE organization_id = $1
-            AND conversation_id = $2
-            ORDER BY created_at DESC
-            LIMIT 12
+            AND external_user_id = $2
+            ORDER BY updated_at DESC
+            LIMIT 1
             `,
-            [organization_id, conversation.id]
+            [organization_id, phone]
           )
-        ).rows || [];
+        ).rows[0];
 
-        history = rows.reverse().map((m) => ({
-          role: m.role,
-          content: m.content,
-        }));
+      if (conv?.id) {
+        const rows =
+          (
+            await pool.query(
+              `
+              SELECT role, content
+              FROM messages
+              WHERE conversation_id = $1
+              ORDER BY created_at DESC
+              LIMIT 12
+              `,
+              [conv.id]
+            )
+          ).rows || [];
+
+        history = rows.reverse();
       }
     }
 
     /*
-    ========================================
+    ============================
     DATA
-    ========================================
+    ============================
     */
 
-    const detected = detectKnownData(text);
+    const detected = extractKnownData(text);
     const known_data = mergeKnownData(detected, lead);
 
-    /*
-    ========================================
-    STAGE
-    ========================================
-    */
+    const stage = detectStage({ lead, known_data });
 
-    const stage = detectStage({
-      lead,
+    const strategy_inputs = buildStrategyInputs({
       known_data,
       history,
+      lead,
     });
 
     /*
-    ========================================
-    STRATEGY INPUTS
-    ========================================
-    */
-
-    const strategy_inputs = {
-      has_problem: !!known_data.problem,
-      has_budget: !!known_data.budget,
-      has_product_interest: !!known_data.product_interest,
-      has_use_case: !!known_data.use_case,
-
-      has_enough_info:
-        !!known_data.product_interest &&
-        (!!known_data.use_case || !!known_data.problem),
-
-      needs_qualification:
-        !known_data.use_case || !known_data.product_interest,
-
-      can_close:
-        !!known_data.product_interest &&
-        !!known_data.budget &&
-        stage === "MID",
-
-      interaction_depth: history.length,
-      repeat_user: history.length > 3,
-
-      readiness_level:
-        lead?.score >= 80
-          ? "HIGH"
-          : lead?.score >= 40
-          ? "MEDIUM"
-          : "LOW",
-    };
-
-    const business_rules = buildBusinessRules(config, business);
-    const constraints = buildConstraints(config, business);
-
-    /*
-    ========================================
+    ============================
     OUTPUT
-    ========================================
+    ============================
     */
 
     return {
       organization: {
         id: organization_id,
-        business_name: business?.business_name || "el negocio",
+        business_name: business?.business_name || "negocio",
       },
 
       assistant: {
-        name:
-          config?.agent_name ||
-          config?.assistant_name ||
-          "Asistente",
+        name: config?.agent_name || "Asistente",
       },
 
       persona: buildPersona(config),
@@ -418,16 +374,11 @@ export async function buildContext({
 
       user_message: safe(text),
 
-      sales_context: {
-        interest_level: lead?.interest_level || "LOW",
-        lead_score: lead?.score || 0,
-      },
-
       history,
 
-      business_rules,
+      business_rules: buildBusinessRules(config, business),
 
-      constraints,
+      constraints: buildConstraints(config, business),
 
       business_context: {
         name: business?.business_name || null,
@@ -437,82 +388,35 @@ export async function buildContext({
           iban: business?.iban || null,
         },
         delivery: {
-          available: constraints.delivery_available,
+          available:
+            business?.delivery_available === true ||
+            truthy(business?.delivery_available),
         },
+      },
+
+      sales_context: {
+        interest_level: lead?.interest_level || "LOW",
+        lead_score: lead?.score || 0,
       },
     };
   } catch (err) {
-    console.error("❌ CONTEXT ERROR", err);
+    console.error("❌ CONTEXT ERROR:", err);
 
     return {
       organization: { id: organization_id },
       assistant: { name: "Asistente" },
-      persona: {
-        name: "Asistente",
-        tone: "neutral_professional",
-        emoji_policy: "max_1",
-        communication_style: "concise",
-        restrictions: [
-          "no_technical_explanations",
-          "no_information_dump",
-          "must_close_conversation",
-        ],
-        closing_style: "soft_close",
-      },
       intent: detectIntent(text),
       stage: "EARLY",
       known_data: {},
       strategy_inputs: {},
+      history: [],
+      business_rules: {},
+      constraints: {},
+      business_context: {},
+      user_message: safe(text),
       sales_context: {
         interest_level: "LOW",
         lead_score: 0,
-      },
-      history: [],
-      business_rules: {
-        tone: "profesional cercano",
-        emoji_policy: "max_1",
-        communication_style: "concise",
-        closing_style: "soft_close",
-        instructions: "",
-        restrictions: [
-          "no_invent_information",
-          "use_only_business_data",
-          "ask_for_confirmation_if_missing_data",
-          "do_not_repeat_answered_questions",
-          "must_close_or_ask",
-          "max_1_emoji",
-          "no_information_dump",
-          "no_technical_explanations",
-        ],
-      },
-      constraints: {
-        max_lines_early: 4,
-        max_lines_default: 5,
-        max_emojis: 1,
-        no_invent_information: true,
-        ask_if_missing_data: true,
-        do_not_repeat_answered_questions: true,
-        must_close_or_ask: true,
-        no_technical_explanations: true,
-        no_information_dump: true,
-        payments_available: {
-          sinpe: false,
-          iban: false,
-        },
-        delivery_available: false,
-        tone: "profesional cercano",
-      },
-      user_message: safe(text),
-      business_context: {
-        name: null,
-        location: null,
-        payments: {
-          sinpe: null,
-          iban: null,
-        },
-        delivery: {
-          available: false,
-        },
       },
     };
   }
