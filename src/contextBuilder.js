@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — CONTEXT BUILDER (FUSION vNEXT FINAL + PRODUCTS)
+EVA CORE — CONTEXT BUILDER (FINAL FIXED + SMART PRODUCTS)
 ====================================================
 */
 
@@ -21,16 +21,30 @@ function lower(v) {
   return safe(v).toLowerCase();
 }
 
-function truthy(value) {
-  const v = lower(value);
-  return ["true", "1", "si", "sí", "yes"].includes(v);
-}
+/*
+====================================================
+EXTRACT SIGNALS
+====================================================
+*/
 
-function hasValue(v) {
-  if (v === null || v === undefined) return false;
-  if (typeof v === "string") return v.trim().length > 0;
-  if (Array.isArray(v)) return v.length > 0;
-  return true;
+function extractSignals(text = "") {
+  const t = lower(text);
+
+  return {
+    wantsLaptop:
+      t.includes("laptop") ||
+      t.includes("computadora") ||
+      t.includes("pc"),
+
+    brand:
+      t.includes("dell")
+        ? "dell"
+        : t.includes("hp")
+        ? "hp"
+        : t.includes("lenovo")
+        ? "lenovo"
+        : null,
+  };
 }
 
 /*
@@ -41,79 +55,14 @@ KNOWN DATA
 
 function extractKnownData(text = "") {
   const t = lower(text);
-  const raw = safe(text);
 
-  let budget = null;
-  let use_case = null;
   let product_interest = null;
-  let problem = null;
 
-  if (t.includes("trabajo")) use_case = "WORK";
-  if (t.includes("estudio")) use_case = "STUDY";
-
-  if (t.includes("laptop") || t.includes("computadora") || t.includes("pc")) {
+  if (t.includes("laptop") || t.includes("computadora")) {
     product_interest = "LAPTOP";
   }
-  if (t.includes("impresora")) product_interest = "PRINTER";
-  if (t.includes("monitor")) product_interest = "MONITOR";
 
-  if (
-    t.includes("no imprime") ||
-    t.includes("error") ||
-    t.includes("no enciende") ||
-    t.includes("no carga") ||
-    t.includes("lenta") ||
-    t.includes("mantenimiento")
-  ) {
-    problem = raw;
-  }
-
-  const colon = raw.match(/₡\s*([\d.,]+)/i);
-  if (colon?.[1]) {
-    const val = Number(colon[1].replace(/[.,]/g, ""));
-    if (!Number.isNaN(val)) budget = val;
-  }
-
-  return {
-    budget,
-    use_case,
-    product_interest,
-    problem,
-  };
-}
-
-function mergeKnownData(detected, lead = {}) {
-  return {
-    budget: detected.budget ?? lead?.budget ?? null,
-    use_case: detected.use_case ?? lead?.use_case ?? null,
-    product_interest:
-      detected.product_interest ?? lead?.product_interest ?? null,
-    problem: detected.problem ?? lead?.problem ?? null,
-  };
-}
-
-/*
-====================================================
-STAGE
-====================================================
-*/
-
-function detectStage({ lead = {}, known_data }) {
-  if (lead?.score >= 85) return "HOT";
-
-  if (known_data.problem) return "QUALIFYING";
-
-  if (
-    hasValue(known_data.product_interest) &&
-    hasValue(known_data.use_case) &&
-    hasValue(known_data.budget)
-  ) {
-    return "MID";
-  }
-
-  if (known_data.product_interest) return "QUALIFYING";
-
-  return "EARLY";
+  return { product_interest };
 }
 
 /*
@@ -144,45 +93,43 @@ export async function buildContext({
         )
       ).rows[0] || {};
 
-    const lead =
-      phone &&
-      (
-        await pool.query(
-          `SELECT * FROM leads WHERE organization_id = $1 AND phone = $2 LIMIT 1`,
-          [organization_id, phone]
-        )
-      ).rows[0];
+    const signals = extractSignals(text);
 
     /*
     ============================
-    🟢 PRODUCTOS (FIX CLAVE)
+    🔥 PRODUCTOS INTELIGENTES
     ============================
     */
 
-    const products =
-      (
-        await pool.query(
-          `
-          SELECT name, description, price, category
-          FROM product_catalog
-          WHERE organization_id = $1
-          AND is_active = true
-          ORDER BY created_at DESC
-          LIMIT 5
-          `,
-          [organization_id]
-        )
-      ).rows || [];
+    const result = await pool.query(
+      `
+      SELECT name, description, price, category
+      FROM product_catalog
+      WHERE organization_id = $1
+      AND is_active = true
+      `,
+      [organization_id]
+    );
 
-    /*
-    ============================
-    DATA
-    ============================
-    */
+    let products = result.rows || [];
 
-    const detected = extractKnownData(text);
-    const known_data = mergeKnownData(detected, lead);
-    const stage = detectStage({ lead, known_data });
+    // 🔥 filtro por laptop
+    if (signals.wantsLaptop) {
+      products = products.filter(p =>
+        lower(p.name).includes("laptop") ||
+        lower(p.name).includes("thinkpad") ||
+        lower(p.name).includes("latitude")
+      );
+    }
+
+    // 🔥 filtro por marca
+    if (signals.brand) {
+      products = products.filter(p =>
+        lower(p.name).includes(signals.brand)
+      );
+    }
+
+    products = products.slice(0, 3);
 
     /*
     ============================
@@ -201,18 +148,14 @@ export async function buildContext({
       },
 
       intent: detectIntent(text),
-      stage,
-      known_data,
+
+      known_data: extractKnownData(text),
+
       user_message: safe(text),
 
-      products, // 🔥 CLAVE
+      products, // 🔥 ahora filtrados correctamente
 
-      business_rules: {},
-      constraints: {},
-
-      sales_context: {
-        lead_score: lead?.score || 0,
-      },
+      sales_context: {},
     };
 
   } catch (err) {
@@ -221,9 +164,6 @@ export async function buildContext({
     return {
       organization: { id: organization_id },
       assistant: { name: "Asistente" },
-      intent: detectIntent(text),
-      stage: "EARLY",
-      known_data: {},
       products: [],
       user_message: safe(text),
     };
