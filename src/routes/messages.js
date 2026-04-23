@@ -210,10 +210,7 @@ router.post("/inbound", authenticate, async (req, res) => {
     ========================================
     */
 
-    const result = await handleInbound({
-      ...payload,
-      context,
-    });
+  const result = await handleInbound(payload);
 
     /*
     ========================================
