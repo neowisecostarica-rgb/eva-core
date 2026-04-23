@@ -1,6 +1,6 @@
 /*
 ====================================================
-EVA CORE — PROMPT BUILDER (CONTROLLED vNEXT FINAL)
+EVA CORE — PROMPT BUILDER (FUSION vNEXT FINAL + PRODUCTS)
 ====================================================
 */
 
@@ -16,10 +16,10 @@ export function buildPrompt({
     strategy,
     known_data = {},
     business_rules = {},
-    constraints = {},
     assistant = {},
     organization = {},
     user_message = "",
+    products = [], // 🔥 ahora lo usamos desde context
   } = context || {};
 
   const agentName =
@@ -29,7 +29,7 @@ export function buildPrompt({
 
   /*
   ====================================================
-  SYSTEM RULES (HARD ENFORCEMENT)
+  SYSTEM RULES
   ====================================================
   */
 
@@ -54,7 +54,7 @@ REGLAS OBLIGATORIAS:
 
   /*
   ====================================================
-  STRATEGY ENFORCEMENT (CRÍTICO)
+  STRATEGY
   ====================================================
   */
 
@@ -105,7 +105,7 @@ NO ignores esta estrategia.
 
   /*
   ====================================================
-  CONTEXT BLOCK
+  CONTEXT
   ====================================================
   */
 
@@ -127,6 +127,33 @@ Datos conocidos:
 
   /*
   ====================================================
+  PRODUCTOS (🔥 FIX CLAVE)
+  ====================================================
+  */
+
+  const PRODUCTS_BLOCK =
+    products && products.length
+      ? `
+PRODUCTOS DISPONIBLES (USA ESTA INFORMACIÓN PARA RESPONDER):
+
+${products
+  .map(
+    (p) =>
+      `- ${p.name} | Precio: ₡${p.price} | ${p.category}`
+  )
+  .join("\n")}
+
+INSTRUCCIÓN CRÍTICA:
+- Si el cliente pregunta precio → responde con precio
+- Si el cliente está listo → recomienda directamente
+- NO evites responder si tienes la información
+`
+      : `
+NO HAY PRODUCTOS DISPONIBLES.
+`;
+
+  /*
+  ====================================================
   BUSINESS RULES
   ====================================================
   */
@@ -144,7 +171,7 @@ ${(business_rules?.restrictions || [])
 
   /*
   ====================================================
-  HISTORY (LIMITED)
+  HISTORY
   ====================================================
   */
 
@@ -172,7 +199,11 @@ ${STRATEGY_BLOCK}
 
 ${CONTEXT_BLOCK}
 
+${PRODUCTS_BLOCK}
+
 ${BUSINESS_BLOCK}
+
+${HISTORY_BLOCK}
 
 Responde de forma clara, humana y enfocada en acción.
 `;
