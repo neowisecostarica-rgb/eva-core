@@ -61,3 +61,11 @@ F. Ejecutar pruebas Node/CI sobre SHA exacto; ningún PASS puede atribuirse sin 
 - No se ejecutó `query_render_postgres` por no contar con `postgresId` verificado. No se imprimieron secretos ni se consultaron datos personales.
 - Accionamiento requerido: localizar en panel de Render el workspace/servicio efectivamente asociado a EVA Core, o conectar la cuenta correcta; entonces ejecutar el inventario solo lectura ya preparado y retomar gate de membresías.
 - Estado MB-003A sigue **BLOQUEADO / NO-GO**. No crear nueva PostgreSQL ni cambiar DATABASE_URL por este hallazgo; no merge/deploy, no alta Menús QR.
+
+## Evidencia de infraestructura aportada por usuario — 2026-11-03
+- Captura de dashboard Render en el workspace **Neo Wise's workspace**, proyecto **Evangelina**, entorno **Production**.
+- Se observan dos recursos: `eva-core` (Node) y `eva-db` (PostgreSQL 18), ambos en Oregon y ambos con estado **Suspended by Render**.
+- Banner visible: **Workspace suspended — Render has suspended your services due to non-payment**. No se verificó importe de factura ni estado de pagos, ni se intentó reactivar servicios.
+- El conector de Render previamente vinculado a `Gustavo's workspace` corresponde a un workspace diferente; su inventario vacío no significa que los recursos de EVA no existan.
+- **Bloqueo inmediato:** acceso autorizado al workspace correcto y regularización/confirmación de las condiciones de suspensión antes de cualquier consulta al esquema; no crear otra base, no cambiar DATABASE_URL, no realizar deploy o migraciones.
+- La captura acredita existencia visible y suspensión; no acredita disponibilidad de consultas SQL, integridad de datos, backups ni posibilidad de recuperación. MB-003A sigue BLOQUEADO para integración y alta real de Menús QR.
