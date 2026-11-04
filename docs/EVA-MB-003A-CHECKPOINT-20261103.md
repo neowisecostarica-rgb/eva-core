@@ -33,3 +33,9 @@ F. Ejecutar pruebas Node/CI sobre SHA exacto; ningún PASS puede atribuirse sin 
 
 ## Decisión
 **Megabloque cerrado en entrega técnica como BLOQUEADO para lanzamiento multiempresa.** Se han entregado componentes y pruebas candidatos en PR borrador. La activación requiere cumplir A-F. No abrir otro megabloque en lugar de resolver estos bloqueos; mantener MB-003A como gate hasta verificarlo.
+
+## QA y evidencia final — 2026-11-03
+- GitHub Actions run `41764236798` sobre SHA `dabcdd5f6790625f631cc244d8259ea66b137efe`: `security-unit` completed/success.
+- Etapas de CI verificadas: `Run isolated security contract tests` PASS; `Check syntax without connecting to services` PASS. Se ejecutaron fixtures con tenants ficticios en `tests/eva-mb-003a-tenant-authorization.test.js`.
+- QA runtime/DB (dos empresas reales de prueba, membresía persistida, acceso por API Base44): **NO VERIFICADO / BLOQUEADO** por falta de esquema PostgreSQL y credenciales de lectura autorizadas.
+- No se hizo merge ni deploy. Dictamen global **BLOQUEADO**, aunque CI aislado PASS.
