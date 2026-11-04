@@ -47,3 +47,8 @@ F. Ejecutar pruebas Node/CI sobre SHA exacto; ningún PASS puede atribuirse sin 
 - Nuevo workflow `.github/workflows/eva-mb-003a-postgres.yml` en GitHub Actions con PostgreSQL 16 descartable, conexión restringida a localhost y sin credenciales de producción. **PASS confirmado** en run `41765058375`, job `postgres-isolation` sobre commit `a26dc6201b3fc37334a2a72fb121a3b791822f25`.
 - La ampliación del test `eva-mb-003a-postgres-isolation.test.js` coincidió con el patrón amplio anterior de CI unitario; run `41765058265` tuvo FAIL por ejecutar integración sin base. El workflow unitario se corrigió separando explícitamente suites con commit `990dda728331654e251f6cc081470e2ad03f8cee`. No atribuir PASS al SHA actualizado hasta confirmar sus ejecuciones.
 - **Dictamen:** PASS limitado de SQL contra PostgreSQL efímero; BLOQUEADO para validar membresías y aislamiento API multiempresa real. No hay merge, deploy, cambios en datos, creación de tenants ni activación de ventas.
+
+### Resultados de CI posteriores a la separación de suites
+- Sobre commit `990dda728331654e251f6cc081470e2ad03f8cee`: run `41765107373` security-unit **completed/success**, pruebas unitarias y sintaxis PASS.
+- Sobre el mismo commit: run `41765107516` postgres-isolation **completed/success**, PostgreSQL temporal e inserciones tenant-scoped PASS.
+- Estos dos PASS no demuestran pertenencia de usuario/membresía a tenant ni RLS real, porque usan fixtures; no habilitan merge, publicación o alta real de Menús QR.
