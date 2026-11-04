@@ -8,6 +8,8 @@ on:
       - 'src/routes/**'
       - 'src/followupWorker.js'
       - 'tests/eva-mb-00*.test.js'
+      - 'src/lib/tenantAuthorization.js'
+      - 'src/db.js'
       - 'src/lib/businessProfilePolicy.js'
       - '.github/workflows/eva-mb-002-security.yml'
   workflow_dispatch:
@@ -24,13 +26,15 @@ jobs:
         with:
           node-version: '20'
       - name: Run isolated security contract tests
-        run: node --test tests/eva-mb-00*.test.js
+        run: node --test tests/eva-mb-002-*.test.js tests/eva-mb-003-business-profile.test.js tests/eva-mb-003a-tenant-authorization.test.js
       - name: Check syntax without connecting to services
         run: |
           node --check src/server.js
           node --check src/lib/auth.js
           node --check src/lib/metaSignature.js
           node --check src/lib/businessProfilePolicy.js
+          node --check src/lib/tenantAuthorization.js
+          node --check src/db.js
           node --check src/routes/businessProfile.js
           node --check src/routes/messages.js
           node --check src/routes/whatsappWebhook.js
