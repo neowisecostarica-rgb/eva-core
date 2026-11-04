@@ -55,3 +55,7 @@ NO-GO para beta multiempresa/autonomía y para merge. PR borrador sin deploy y s
 - El control NO es suficiente para multiempresa: auth mantiene ORG_PRIMARY global y no existe membership validada.
 - NO se creó tenant ni se escribieron registros PostgreSQL: no tenemos consulta segura/autorizada sobre la tabla existente ni prueba de no duplicación.
 - NO merge/deploy hasta verificar CI del SHA, compatibilidad, cambios de webhook y gate de identidad/tenant. Menús QR permanece en ficha preliminar del PR #3 de eva-sales-hub.
+
+### Evidencia CI de corrección del perfil empresarial
+- Commit de código `c860d316e8851fe4c7faad36ab4fca2f917ca36d`: GitHub Actions run `41762920272`, job `security-unit`, conclusión **success**; cubrió `node --test tests/eva-mb-00*.test.js` y comprobaciones de sintaxis del perfil, política y servidor.
+- Este PASS corresponde exclusivamente a pruebas automatizadas aisladas del código candidato; no constituye QA E2E, auditoría de PostgreSQL ni prueba de tenant real.
