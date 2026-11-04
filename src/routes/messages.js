@@ -32,9 +32,7 @@ router.post("/outbound", authenticate, async (req, res) => {
   });
 
   try {
-    log.info("OUTBOUND_REQUEST_RECEIVED", {
-      raw: req.body,
-    });
+    log.info("OUTBOUND_REQUEST_RECEIVED");
 
     if (!organization_id) {
       log.error("AUTH_FAILED");
@@ -105,9 +103,7 @@ router.post("/inbound", authenticate, async (req, res) => {
   });
 
   try {
-    log.info("INBOUND_REQUEST_RECEIVED", {
-      raw: req.body,
-    });
+    log.info("INBOUND_REQUEST_RECEIVED");
 
     if (!organization_id) {
       log.error("AUTH_FAILED");
@@ -168,8 +164,8 @@ router.post("/inbound", authenticate, async (req, res) => {
 
     if (payload.message_id) {
       const existing = await db.query(
-        `SELECT id FROM messages WHERE external_message_id = $1 LIMIT 1`,
-        [payload.message_id]
+        `SELECT id FROM messages WHERE external_message_id = $1 AND organization_id = $2 LIMIT 1`,
+        [payload.message_id, organization_id]
       );
 
       if (existing.rows.length > 0) {

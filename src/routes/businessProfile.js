@@ -1,5 +1,7 @@
 import express from "express";
 import db from "../db.js";
+import { authenticate } from "../lib/auth.js";
+import { buildBusinessProfileUpdate } from "../lib/businessProfilePolicy.js";
 
 const router = express.Router();
 
@@ -8,9 +10,9 @@ const router = express.Router();
 GET BUSINESS PROFILE
 ====================================================
 */
-router.get("/", async (req, res) => {
+router.get("/", authenticate, async (req, res) => {
   try {
-    const organization_id = req.headers["x-eva-org-id"];
+    const organization_id = req.organization_id;
 
     if (!organization_id) {
       return res.status(400).json({
@@ -49,32 +51,15 @@ router.get("/", async (req, res) => {
 UPDATE BUSINESS PROFILE
 ====================================================
 */
-router.patch("/", async (req, res) => {
+router.patch("/", authenticate, async (req, res) => {
   try {
-    const organization_id = req.headers["x-eva-org-id"];
-    const payload = req.body;
-
-    const fields = Object.keys(payload);
-
-    if (!organization_id || fields.length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: "Datos incompletos"
-      });
+    const organization_id = req.organization_id;
+    const update = buildBusinessProfileUpdate(req.body, organization_id);
+    if (!update.ok) {
+      return res.status(400).json({ success: false, error: update.error });
     }
 
-    const setClause = fields
-      .map((f, i) => `${f} = $${i + 2}`)
-      .join(", ");
-
-    const values = [organization_id, ...fields.map(f => payload[f])];
-
-    const query = `
-      UPDATE business_profile
-      SET ${setClause}, updated_at = now()
-      WHERE organization_id = $1
-      RETURNING *
-    `;
+    const { query, values } = update;
 
     const result = await db.query(query, values);
 
