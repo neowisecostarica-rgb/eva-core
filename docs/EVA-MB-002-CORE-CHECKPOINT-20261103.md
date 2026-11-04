@@ -46,3 +46,12 @@ NO-GO para beta multiempresa/autonomía y para merge. PR borrador sin deploy y s
 - Estado del bloque: CERRADO ADMINISTRATIVAMENTE / NO-GO. Correcciones quedan candidatas en PR borrador; NO merge/deploy.
 - Bloqueante beta: autorización server-side vinculada a identidad y membership, pruebas negativas entre dos tenants, webhook firmado validado en integración, no duplicación robusta en base de datos y aceptación QA.
 - Próxima fase: EVA-SEC-MT-001 con diseño migratorio sobre base real, sin crear tablas duplicadas. No activar EVA-MQR-009 ni white label hasta gate GO.
+
+## EVA-MB-003 · Desbloqueo técnico de cliente Menús QR (2026-11-03)
+- Se identificó y reutilizó `authenticate` y la consulta SQL `business_profile` existentes. No se creó otro modelo de empresa.
+- Cierre de hallazgo P0 de código, candidato en rama: `/v1/business-profile` GET/PATCH requieren ahora `authenticate`; organización tomada exclusivamente de `req.organization_id` asignada en servidor. Cabecera de otra organización falla en auth.
+- PATCH usa `buildBusinessProfileUpdate` y lista cerrada de campos existentes: business_name, sinpe_number, bank_name y delivery_available; ya no construye identificadores SQL con cualquier clave enviada.
+- Pruebas negativas en `tests/eva-mb-003-business-profile.test.js` y workflow ampliado para incluirlas.
+- El control NO es suficiente para multiempresa: auth mantiene ORG_PRIMARY global y no existe membership validada.
+- NO se creó tenant ni se escribieron registros PostgreSQL: no tenemos consulta segura/autorizada sobre la tabla existente ni prueba de no duplicación.
+- NO merge/deploy hasta verificar CI del SHA, compatibilidad, cambios de webhook y gate de identidad/tenant. Menús QR permanece en ficha preliminar del PR #3 de eva-sales-hub.
