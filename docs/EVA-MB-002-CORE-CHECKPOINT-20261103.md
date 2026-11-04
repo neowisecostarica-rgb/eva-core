@@ -37,3 +37,12 @@ NO-GO para beta multiempresa/autonomía y para merge. PR borrador sin deploy y s
 - Agregado `tests/eva-mb-002-service-identity.test.js` y workflow de CI dedicado; no se han ejecutado aquí ni confirmado resultados.
 - Pendiente: contratos del proveedor de identidad, consulta real de tablas y membresías, roles server-side, dos organizaciones ficticias, QA de usuarios, consentimientos y despliegue controlado.
 - Prioridad de implementación posterior: extender autenticación actual con membresía verificable por usuario/servicio, nunca confiar en organización indicada por el navegador.
+
+## Cierre formal de MB-002 (2026-11-03) — dictamen NO-GO multiempresa
+- GitHub Actions EVA MB-002 Security Gates, run 41761900744, job security-unit: completed/success para SHA c6b60c747abc8417aca5ce12cd957991cfe498fd. Pasaron pruebas unitarias aisladas y chequeo sintáctico. No equivalen a QA E2E ni pruebas de permisos tenant.
+- Se confirmó reutilización de authenticate existente, filtros SQL por organization_id y app Base44; no se inventó segundo motor de auth.
+- Autenticación actual sigue usando clave compartida y ORG_PRIMARY global. El endurecimiento bloquea headers dispares pero NO implementa membresías ni RBAC real.
+- Sin acceso verificado a esquema PostgreSQL remoto ni datos; no se alteraron tablas, secretos o canales.
+- Estado del bloque: CERRADO ADMINISTRATIVAMENTE / NO-GO. Correcciones quedan candidatas en PR borrador; NO merge/deploy.
+- Bloqueante beta: autorización server-side vinculada a identidad y membership, pruebas negativas entre dos tenants, webhook firmado validado en integración, no duplicación robusta en base de datos y aceptación QA.
+- Próxima fase: EVA-SEC-MT-001 con diseño migratorio sobre base real, sin crear tablas duplicadas. No activar EVA-MQR-009 ni white label hasta gate GO.
