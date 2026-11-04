@@ -24,6 +24,7 @@ import { registerConversationRoutes } from "./api/conversations.js";
 import { registerLeadRoutes } from "./api/leads.js";
 
 import { authenticate } from "./lib/auth.js";
+import { requireMetaSignature } from "./lib/metaSignature.js";
 
 import { startFollowupWorker } from "./followupWorker.js";
 
@@ -50,7 +51,10 @@ MIDDLEWARES
 ====================================================
 */
 app.use(cors());
-app.use(express.json({ limit: "2mb" }));
+app.use(express.json({
+  limit: "2mb",
+  verify: (req, _res, buffer) => { req.rawBody = Buffer.from(buffer); },
+}));
 
 /*
 ====================================================
@@ -69,7 +73,10 @@ app.get(CONFIG.routes.health, (req, res) => {
 WEBHOOK
 ====================================================
 */
-app.use(CONFIG.routes.webhook, whatsappWebhook);
+app.use(CONFIG.routes.webhook, (req, res, next) => {
+  if (req.method !== "POST") return next();
+  return requireMetaSignature(req, res, next);
+}, whatsappWebhook);
 
 /*
 ====================================================
@@ -177,4 +184,8 @@ async function sendWhatsAppMessage({ phone, message }) {
 FOLLOWUP WORKER
 ====================================================
 */
-startFollowupWorker(sendWhatsAppMessage);
+if (process.env.EVA_ENABLE_AUTOMATED_FOLLOWUPS === "true") {
+  startFollowupWorker(sendWhatsAppMessage);
+} else {
+  console.log("EVA automated followups disabled (explicit opt-in required)");
+}
