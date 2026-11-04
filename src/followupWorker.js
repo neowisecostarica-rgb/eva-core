@@ -248,10 +248,11 @@ export async function processFollowups(sendMessage) {
             SELECT role, content, created_at
             FROM messages
             WHERE conversation_id = $1
+              AND organization_id = $2
             ORDER BY created_at DESC
             LIMIT 1
             `,
-            [followup.conversation_id]
+            [followup.conversation_id, followup.organization_id]
           );
 
           lastMessage = res.rows[0] || null;
