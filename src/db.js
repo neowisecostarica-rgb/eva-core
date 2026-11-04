@@ -212,7 +212,7 @@ export async function saveMessage({
     const content = safe(text);
     if (!content) return;
 
-    await pool.query(
+    const insert = await pool.query(
       `
       INSERT INTO messages (
         organization_id,
@@ -222,10 +222,16 @@ export async function saveMessage({
         external_message_id,
         created_at
       )
-      VALUES ($1, $2, $3, $4, $5, NOW())
+      SELECT $1, c.id, $3, $4, $5, NOW()
+      FROM conversations c
+      WHERE c.id = $2 AND c.organization_id = $1
+      RETURNING id
       `,
       [organization_id, conversation_id, role, content, message_id]
     );
+    if (insert.rowCount !== 1) {
+      throw new Error("Conversation does not belong to authenticated organization");
+    }
 
     await pool.query(
       `
