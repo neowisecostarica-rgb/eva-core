@@ -9,6 +9,7 @@ on:
       - 'src/followupWorker.js'
       - 'tests/eva-mb-00*.test.js'
       - 'src/lib/tenantAuthorization.js'
+      - 'src/db.js'
       - 'src/lib/businessProfilePolicy.js'
       - '.github/workflows/eva-mb-002-security.yml'
   workflow_dispatch:
@@ -33,6 +34,7 @@ jobs:
           node --check src/lib/metaSignature.js
           node --check src/lib/businessProfilePolicy.js
           node --check src/lib/tenantAuthorization.js
+          node --check src/db.js
           node --check src/routes/businessProfile.js
           node --check src/routes/messages.js
           node --check src/routes/whatsappWebhook.js
