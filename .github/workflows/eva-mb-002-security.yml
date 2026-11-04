@@ -26,7 +26,7 @@ jobs:
         with:
           node-version: '20'
       - name: Run isolated security contract tests
-        run: node --test tests/eva-mb-00*.test.js
+        run: node --test tests/eva-mb-002-*.test.js tests/eva-mb-003-business-profile.test.js tests/eva-mb-003a-tenant-authorization.test.js
       - name: Check syntax without connecting to services
         run: |
           node --check src/server.js
