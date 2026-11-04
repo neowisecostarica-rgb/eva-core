@@ -39,3 +39,11 @@ F. Ejecutar pruebas Node/CI sobre SHA exacto; ningún PASS puede atribuirse sin 
 - Etapas de CI verificadas: `Run isolated security contract tests` PASS; `Check syntax without connecting to services` PASS. Se ejecutaron fixtures con tenants ficticios en `tests/eva-mb-003a-tenant-authorization.test.js`.
 - QA runtime/DB (dos empresas reales de prueba, membresía persistida, acceso por API Base44): **NO VERIFICADO / BLOQUEADO** por falta de esquema PostgreSQL y credenciales de lectura autorizadas.
 - No se hizo merge ni deploy. Dictamen global **BLOQUEADO**, aunque CI aislado PASS.
+
+## Continuación 2026-11-03: verificación de PostgreSQL aislado
+- Se buscó conector de PostgreSQL / Render / Neon / Supabase en las herramientas disponibles: ninguno expone la base EVA Core. No se encontró autorización para leer el esquema productivo. **Inventario real sigue BLOQUEADO**.
+- Se reutilizó la sentencia `INSERT INTO messages ... SELECT ... FROM conversations WHERE organization_id=$1` ya implementada en esta rama; no se creó tabla ni servicio en producción.
+- Archivo `tests/eva-mb-003a-postgres-isolation.test.js`: extrae la sentencia SQL literal de `src/db.js` y la ejecuta contra PostgreSQL 16 efímero. Crea tablas TEMP y dos organizaciones ficticias dentro de una transacción revertida; comprueba inserciones tenant A/B y denegación de operación cross-tenant (rowCount=0).
+- Nuevo workflow `.github/workflows/eva-mb-003a-postgres.yml` en GitHub Actions con PostgreSQL 16 descartable, conexión restringida a localhost y sin credenciales de producción. **PASS confirmado** en run `41765058375`, job `postgres-isolation` sobre commit `a26dc6201b3fc37334a2a72fb121a3b791822f25`.
+- La ampliación del test `eva-mb-003a-postgres-isolation.test.js` coincidió con el patrón amplio anterior de CI unitario; run `41765058265` tuvo FAIL por ejecutar integración sin base. El workflow unitario se corrigió separando explícitamente suites con commit `990dda728331654e251f6cc081470e2ad03f8cee`. No atribuir PASS al SHA actualizado hasta confirmar sus ejecuciones.
+- **Dictamen:** PASS limitado de SQL contra PostgreSQL efímero; BLOQUEADO para validar membresías y aislamiento API multiempresa real. No hay merge, deploy, cambios en datos, creación de tenants ni activación de ventas.
