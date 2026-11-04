@@ -29,3 +29,11 @@ Backend encontrado: neowisecostarica-rgb/eva-core, main, Node/Express/PostgreSQL
 
 ## Dictamen
 NO-GO para beta multiempresa/autonomía y para merge. PR borrador sin deploy y sin tocar producción.
+
+## Continuidad: reutilizar antes de crear (03/11, nueva revisión)
+- Reutilizado `src/lib/auth.js` (ya existente), `req.organization_id` y SQL tenant-scoped de leads/conversations/products/setup. No se ha creado otro proveedor de autenticación.
+- Revisado Base44: `User` y `PipelineEvent` son los únicos esquemas visibles; no existe evidencia de Membership persistida. No crear otra colección sin validar inventario SQL real.
+- Corregida en candidato la comparación del secreto con `timingSafeEqual` y rechazo fail-closed si `x-eva-org-id` difiere de `ORG_PRIMARY`. Mantiene compatibilidad con la organización única actual y NO habilita multiempresa.
+- Agregado `tests/eva-mb-002-service-identity.test.js` y workflow de CI dedicado; no se han ejecutado aquí ni confirmado resultados.
+- Pendiente: contratos del proveedor de identidad, consulta real de tablas y membresías, roles server-side, dos organizaciones ficticias, QA de usuarios, consentimientos y despliegue controlado.
+- Prioridad de implementación posterior: extender autenticación actual con membresía verificable por usuario/servicio, nunca confiar en organización indicada por el navegador.
