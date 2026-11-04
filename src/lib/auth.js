@@ -1,71 +1,46 @@
-/*
-====================================================
-EVA CORE — AUTH (Production Safe vNext FIXED)
-====================================================
-*/
+import { timingSafeEqual } from "node:crypto";
+
+// Reuse the existing single-organization identity, fail-closed.
+// This is not multi-tenant RBAC; it prevents silent organization header mismatches.
+export function verifyServiceIdentity({ providedKey, configuredKey, expectedOrg, requestedOrg }) {
+  if (typeof configuredKey !== "string" || !configuredKey ||
+      typeof expectedOrg !== "string" || !expectedOrg) {
+    return { ok: false, status: 503, error: "Service identity not configured" };
+  }
+  if (typeof providedKey !== "string" || !providedKey) {
+    return { ok: false, status: 401, error: "API key required" };
+  }
+  const supplied = Buffer.from(providedKey);
+  const configured = Buffer.from(configuredKey);
+  if (supplied.length !== configured.length || !timingSafeEqual(supplied, configured)) {
+    return { ok: false, status: 403, error: "Invalid API key" };
+  }
+  if (requestedOrg != null &&
+      (typeof requestedOrg !== "string" || requestedOrg !== expectedOrg)) {
+    return { ok: false, status: 403, error: "Organization not authorized" };
+  }
+  return { ok: true, organization_id: expectedOrg };
+}
 
 export async function authenticate(req, res, next) {
   try {
-    const rawApiKey =
-      req.headers["x-api-key"] ||
-      req.headers["authorization"] ||
-      "";
-
-    const apiKey = String(rawApiKey).startsWith("Bearer ")
-      ? String(rawApiKey).slice(7).trim()
-      : String(rawApiKey).trim();
-
-    if (!apiKey) {
-      return res.status(401).json({
-        success: false,
-        error: "API key requerida",
-      });
-    }
-
-    const VALID_API_KEY = process.env.EVA_API_KEY;
-
-    if (!VALID_API_KEY) {
-      console.error("❌ EVA_API_KEY no configurada");
-      return res.status(500).json({
-        success: false,
-        error: "Server misconfigured",
-      });
-    }
-
-    if (apiKey !== VALID_API_KEY) {
-      console.warn("⚠️ API key inválida");
-      return res.status(403).json({
-        success: false,
-        error: "API key inválida",
-      });
-    }
-
-    const orgId = process.env.ORG_PRIMARY;
-
-    if (!orgId) {
-      console.error("❌ ORG_PRIMARY no definido");
-      return res.status(500).json({
-        success: false,
-        error: "Organization no configurada",
-      });
-    }
-
-    // ✅ LOG CORRECTO (ya con variables definidas)
-    console.log("🔐 AUTH OK:", {
-      orgId,
-      apiKey: "OK",
+    const raw = req.headers["x-api-key"] ?? req.headers.authorization ?? "";
+    const key = typeof raw === "string" && /^Bearer /i.test(raw)
+      ? raw.slice(7).trim() : raw;
+    const result = verifyServiceIdentity({
+      providedKey: key,
+      configuredKey: process.env.EVA_API_KEY,
+      expectedOrg: process.env.ORG_PRIMARY,
+      requestedOrg: req.headers["x-eva-org-id"],
     });
-
-    req.organization = { id: orgId };
-    req.organization_id = orgId;
-
+    if (!result.ok) {
+      return res.status(result.status).json({ success: false, error: result.error });
+    }
+    req.organization = { id: result.organization_id };
+    req.organization_id = result.organization_id;
     next();
-
-  } catch (err) {
-    console.error("❌ AUTH ERROR:", err.message);
-    return res.status(500).json({
-      success: false,
-      error: "Error en autenticación",
-    });
+  } catch (error) {
+    console.error("EVA authentication failure", error?.name);
+    return res.status(500).json({ success: false, error: "Authentication failure" });
   }
 }
