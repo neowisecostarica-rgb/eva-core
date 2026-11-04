@@ -1,0 +1,40 @@
+name: EVA MB-003A PostgreSQL Isolation
+on:
+  pull_request:
+    paths:
+      - 'src/db.js'
+      - 'tests/eva-mb-003a-postgres-isolation.test.js'
+      - '.github/workflows/eva-mb-003a-postgres.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  postgres-isolation:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: eva_test
+          POSTGRES_PASSWORD: eva_test
+          POSTGRES_DB: eva_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U eva_test -d eva_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install dependencies without running scripts
+        run: npm install --ignore-scripts --no-audit --no-fund --package-lock=false
+      - name: Test tenant-owned messages against disposable PostgreSQL
+        env:
+          EVA_TEST_DATABASE_URL: postgresql://eva_test:eva_test@127.0.0.1:5432/eva_test
+        run: node --test tests/eva-mb-003a-postgres-isolation.test.js
