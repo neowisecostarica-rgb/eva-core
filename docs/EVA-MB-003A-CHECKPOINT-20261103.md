@@ -52,3 +52,12 @@ F. Ejecutar pruebas Node/CI sobre SHA exacto; ningún PASS puede atribuirse sin 
 - Sobre commit `990dda728331654e251f6cc081470e2ad03f8cee`: run `41765107373` security-unit **completed/success**, pruebas unitarias y sintaxis PASS.
 - Sobre el mismo commit: run `41765107516` postgres-isolation **completed/success**, PostgreSQL temporal e inserciones tenant-scoped PASS.
 - Estos dos PASS no demuestran pertenencia de usuario/membresía a tenant ni RLS real, porque usan fixtures; no habilitan merge, publicación o alta real de Menús QR.
+
+## Verificación directa de Render — 2026-11-03
+- Render fue conectado y consultado con `list_workspaces`. Único workspace accesible: `Gustavo's workspace`, ID `tea-d6tc7gfgi27c73djdnv0`.
+- `list_postgres_instances` para ese workspace: `No Postgres instances found`.
+- `list_services` para ese mismo workspace: respuesta `null` (no es evidencia concluyente de ausencia de EVA Core).
+- **No se ha localizado la instancia real de PostgreSQL** ni el servicio EVA Core en la cuenta accesible. Esto no prueba que no existan en otra cuenta, workspace o proveedor.
+- No se ejecutó `query_render_postgres` por no contar con `postgresId` verificado. No se imprimieron secretos ni se consultaron datos personales.
+- Accionamiento requerido: localizar en panel de Render el workspace/servicio efectivamente asociado a EVA Core, o conectar la cuenta correcta; entonces ejecutar el inventario solo lectura ya preparado y retomar gate de membresías.
+- Estado MB-003A sigue **BLOQUEADO / NO-GO**. No crear nueva PostgreSQL ni cambiar DATABASE_URL por este hallazgo; no merge/deploy, no alta Menús QR.
