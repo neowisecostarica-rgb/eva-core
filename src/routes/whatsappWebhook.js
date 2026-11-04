@@ -59,10 +59,7 @@ router.get("/", (req, res) => {
     return res.status(200).send(challenge);
   }
 
-  console.error("❌ Webhook verification failed", {
-    received_token: token,
-    expected_token: VERIFY_TOKEN
-  });
+  console.error("Webhook verification failed");
 
   return res.sendStatus(403);
 });
@@ -97,12 +94,7 @@ router.post("/", async (req, res) => {
     const text = extractText(message);
     const message_id = message.id || null;
 
-    console.log("📩 Incoming:", {
-      phone,
-      text,
-      type: message.type,
-      message_id
-    });
+    console.log("WhatsApp inbound received:", { type: message.type, hasMessageId: !!message_id });
 
     /* ======================================
        🔥 IDENTITY / DUPLICATE BLOCK
@@ -142,13 +134,13 @@ router.post("/", async (req, res) => {
 
     if (!evaResponse.ok) {
       const err = await evaResponse.text();
-      console.error("❌ EVA ERROR:", err);
+      console.error("EVA upstream error status:", evaResponse.status);
       return res.sendStatus(500);
     }
 
     const data = await evaResponse.json();
 
-    console.log("🧠 EVA RESPONSE:", data);
+    // Do not log customer conversation content.
 
     /* ======================================
        CONTRACT VALIDATION
@@ -206,7 +198,7 @@ router.post("/", async (req, res) => {
 
     const waData = await waResponse.json();
 
-    console.log("✅ WhatsApp OK:", waData);
+    console.log("WhatsApp response status:", waResponse.status);
 
     return res.sendStatus(200);
 
